@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use image::GenericImageView;
-use crate::models::{DefectTag, FaceInfo, RetouchStatus};
+use crate::models::{DefectTag, ExifMetadata, FaceInfo, RetouchStatus};
 use crate::rules::face::{detect_faces_heuristic, sort_and_truncate_faces};
 
 pub const CACHE_DIR_NAME: &str = ".quickpick_cache";
@@ -23,6 +23,7 @@ pub struct CatalogItem {
     pub defect_tags: Vec<DefectTag>,
     pub burst_group_id: Option<String>,
     pub faces: Vec<FaceInfo>,
+    pub exif: Option<ExifMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -233,6 +234,7 @@ pub fn build_folder_cache<P: AsRef<Path>>(
             defect_tags: photo.defect_tags.clone(),
             burst_group_id: photo.burst_group_id.clone(),
             faces,
+            exif: photo.exif.clone(),
         });
     }
 
@@ -279,6 +281,19 @@ mod tests {
                 defect_tags: vec![],
                 burst_group_id: Some("grp-1".to_string()),
                 faces: vec![],
+                exif: Some(ExifMetadata {
+                    camera_make: Some("SONY".to_string()),
+                    camera_model: Some("ILCE-7RM5".to_string()),
+                    lens_model: Some("FE 24-70mm F2.8 GM II".to_string()),
+                    lens_make: Some("Sony".to_string()),
+                    focal_length: Some(50.0),
+                    focal_length_35mm: Some(50),
+                    aperture: Some(2.8),
+                    shutter_speed: Some("1/500s".to_string()),
+                    shutter_speed_value: Some(0.002),
+                    iso: Some(100),
+                    date_time_original: Some("2026-08-15 14:30:00".to_string()),
+                }),
             }],
         };
 
@@ -294,6 +309,11 @@ mod tests {
         assert_eq!(loaded.photo_count, 1);
         assert_eq!(loaded.items[0].filename, "_DSC0001.ARW");
         assert_eq!(loaded.items[0].burst_group_id.as_deref(), Some("grp-1"));
+        let exif = loaded.items[0].exif.as_ref().unwrap();
+        assert_eq!(exif.camera_model.as_deref(), Some("ILCE-7RM5"));
+        assert_eq!(exif.lens_model.as_deref(), Some("FE 24-70mm F2.8 GM II"));
+        assert_eq!(exif.shutter_speed.as_deref(), Some("1/500s"));
+        assert_eq!(exif.aperture, Some(2.8));
 
         // 清理
         let _ = fs::remove_dir_all(&temp_dir);

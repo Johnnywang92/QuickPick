@@ -17,6 +17,39 @@ import {
 export type FilterCategory = 'all' | 'pending' | 'failed' | 'clean' | 'fixable' | 'fatal' | 'picked';
 export type ScenePreset = 'group' | 'candid' | 'portrait';
 
+export const isPhotoMatchingFilter = (
+  photo: PhotoItem,
+  filter: FilterCategory,
+  camera: string | null = null,
+  lens: string | null = null,
+): boolean => {
+  const matchesCategory =
+    filter === 'all' ||
+    (filter === 'clean' && photo.retouch_status === 'clean') ||
+    (filter === 'pending' && photo.retouch_status === 'pending') ||
+    (filter === 'failed' && photo.retouch_status === 'failed') ||
+    (filter === 'fixable' && photo.retouch_status === 'fixable') ||
+    (filter === 'fatal' && photo.retouch_status === 'fatal') ||
+    (filter === 'picked' && photo.pick_status === 'Pick');
+
+  if (!matchesCategory) return false;
+
+  if (camera) {
+    const camDisplay = [photo.exif?.camera_make, photo.exif?.camera_model].filter(Boolean).join(' ');
+    if (camDisplay !== camera && photo.exif?.camera_model !== camera) {
+      return false;
+    }
+  }
+
+  if (lens) {
+    if (photo.exif?.lens_model !== lens && photo.exif?.lens_make !== lens) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 const updateSourceHash = (photos: PhotoItem[], path: string, sourceHash: string) =>
   photos.map((photo) =>
     photo.path === path ? { ...photo, xmp_source_hash: sourceHash } : photo,
@@ -29,6 +62,7 @@ export interface XmpConflict {
   localPhoto: PhotoItem;
   originalPhoto: PhotoItem;
   message: string;
+  origin: 'write' | 'undo';
 }
 
 type TriageSnapshot = Pick<
@@ -57,17 +91,28 @@ const snapshotTriage = (photo: PhotoItem): TriageSnapshot => ({
 const appendUndoEntry = (stack: UndoEntry[], entry: UndoEntry) =>
   [...stack, entry].slice(-MAX_UNDO_ENTRIES);
 
+const removePathFromLatestUndo = (stack: UndoEntry[], path: string) => {
+  if (stack.length === 0) return stack;
+  const latest = stack[stack.length - 1];
+  const remaining = latest.snapshots.filter((snapshot) => snapshot.path !== path);
+  return remaining.length > 0
+    ? [...stack.slice(0, -1), { ...latest, snapshots: remaining }]
+    : stack.slice(0, -1);
+};
+
 const isXmpConflictError = (error: unknown) => String(error).includes('XMP_CONFLICT:');
 
 const makeXmpConflict = (
   error: unknown,
   photo: PhotoItem,
   patch: Partial<PhotoItem>,
+  origin: XmpConflict['origin'] = 'write',
 ): XmpConflict | null => isXmpConflictError(error)
   ? {
       localPhoto: { ...photo, ...patch },
       originalPhoto: photo,
       message: String(error).replace(/^.*XMP_CONFLICT:/, ''),
+      origin,
     }
   : null;
 
@@ -79,6 +124,8 @@ interface PhotoStore {
   autoAdvance: boolean;
   isLoading: boolean;
   currentPreviewUrl: string | null;
+  previewStatus: 'idle' | 'loading' | 'loaded' | 'error';
+  previewError: string | null;
   engineInfo: EngineInfo | null;
   writeStatus: 'idle' | 'saving' | 'saved' | 'error';
   writeError: string | null;
@@ -106,8 +153,13 @@ interface PhotoStore {
   initEngine: () => Promise<void>;
   openFolder: (path: string) => Promise<void>;
   selectIndex: (index: number) => Promise<void>;
+  retryCurrentPreview: () => Promise<void>;
   selectPhotoByFilename: (filename: string) => Promise<void>;
   setActiveFilter: (filter: FilterCategory) => void;
+  selectedCamera: string | null;
+  selectedLens: string | null;
+  setSelectedCamera: (camera: string | null) => void;
+  setSelectedLens: (lens: string | null) => void;
   nextPhoto: () => void;
   prevPhoto: () => void;
   setRating: (rating: number) => Promise<void>;
@@ -122,12 +174,15 @@ interface PhotoStore {
   isCompareMode: boolean;
   compareTargetIndex: number | null;
   comparePreviewUrl: string | null;
+  comparePreviewStatus: 'idle' | 'loading' | 'loaded' | 'error';
+  comparePreviewError: string | null;
   syncZoomAndPan: boolean;
 
   enterCompareMode: (candidateIndex?: number) => void;
   exitCompareMode: () => void;
   toggleCompareMode: () => void;
   setCompareTargetIndex: (index: number) => void;
+  retryComparePreview: () => Promise<void>;
   nextCompareCandidate: () => void;
   prevCompareCandidate: () => void;
   swapComparePhotos: () => void;
@@ -150,14 +205,20 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   photos: [],
   currentIndex: 0,
   activeFilter: 'all',
+  selectedCamera: null,
+  selectedLens: null,
   autoAdvance: true,
   isLoading: false,
   isExportModalOpen: false,
   isCompareMode: false,
   compareTargetIndex: null,
   comparePreviewUrl: null,
+  comparePreviewStatus: 'idle',
+  comparePreviewError: null,
   syncZoomAndPan: true,
   currentPreviewUrl: null,
+  previewStatus: 'idle',
+  previewError: null,
   engineInfo: null,
   writeStatus: 'idle',
   writeError: null,
@@ -191,10 +252,12 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
           photos: patchPhoto(state.photos, local.path, { ...local, xmp_source_hash: sourceHash }),
           xmpConflict: null,
           writeStatus: 'saved',
-          undoStack: appendUndoEntry(state.undoStack, {
-            label: `撤销 ${local.filename} 的冲突覆盖`,
-            snapshots: [snapshotTriage(conflict.originalPhoto)],
-          }),
+          undoStack: conflict.origin === 'undo'
+            ? removePathFromLatestUndo(state.undoStack, local.path)
+            : appendUndoEntry(state.undoStack, {
+                label: `撤销 ${local.filename} 的冲突覆盖`,
+                snapshots: [snapshotTriage(conflict.originalPhoto)],
+              }),
         }));
         return;
       }
@@ -220,6 +283,9 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         photos: patchPhoto(state.photos, local.path, diskPhoto),
         xmpConflict: null,
         writeStatus: 'saved',
+        undoStack: conflict.origin === 'undo'
+          ? removePathFromLatestUndo(state.undoStack, local.path)
+          : state.undoStack,
       }));
     } catch (error) {
       set({
@@ -264,7 +330,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
       } catch (error) {
         failures.push(snapshot);
         errors.push(`${snapshot.filename}: ${String(error)}`);
-        conflict ??= makeXmpConflict(error, current, snapshot);
+        conflict ??= makeXmpConflict(error, current, snapshot, 'undo');
       }
     }
 
@@ -421,7 +487,15 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
       getPhotoPreview(candidatePhoto.path).then((url) => {
         previewCache.set(candidatePhoto.path, url);
         if (get().compareTargetIndex === targetIdx) {
-          set({ comparePreviewUrl: url });
+          set({ comparePreviewUrl: url, comparePreviewStatus: 'loaded', comparePreviewError: null });
+        }
+      }).catch((error) => {
+        if (get().compareTargetIndex === targetIdx) {
+          set({
+            comparePreviewUrl: null,
+            comparePreviewStatus: 'error',
+            comparePreviewError: `提取 ${candidatePhoto.filename} 对比预览失败：${String(error)}`,
+          });
         }
       });
     }
@@ -430,6 +504,8 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
       isCompareMode: true,
       compareTargetIndex: targetIdx,
       comparePreviewUrl: candidateUrl,
+      comparePreviewStatus: candidateUrl ? 'loaded' : 'loading',
+      comparePreviewError: null,
     });
   },
 
@@ -438,6 +514,8 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
       isCompareMode: false,
       compareTargetIndex: null,
       comparePreviewUrl: null,
+      comparePreviewStatus: 'idle',
+      comparePreviewError: null,
     });
   },
 
@@ -454,17 +532,58 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     if (index < 0 || index >= photos.length || index === currentIndex) return;
 
     const candidatePhoto = photos[index];
-    set({ compareTargetIndex: index });
+    set({
+      compareTargetIndex: index,
+      comparePreviewUrl: null,
+      comparePreviewStatus: 'loading',
+      comparePreviewError: null,
+    });
 
     if (previewCache.has(candidatePhoto.path)) {
-      set({ comparePreviewUrl: previewCache.get(candidatePhoto.path)! });
+      set({
+        comparePreviewUrl: previewCache.get(candidatePhoto.path)!,
+        comparePreviewStatus: 'loaded',
+      });
     } else {
       getPhotoPreview(candidatePhoto.path).then((url) => {
         previewCache.set(candidatePhoto.path, url);
         if (get().compareTargetIndex === index) {
-          set({ comparePreviewUrl: url });
+          set({ comparePreviewUrl: url, comparePreviewStatus: 'loaded', comparePreviewError: null });
+        }
+      }).catch((error) => {
+        if (get().compareTargetIndex === index) {
+          set({
+            comparePreviewUrl: null,
+            comparePreviewStatus: 'error',
+            comparePreviewError: `提取 ${candidatePhoto.filename} 对比预览失败：${String(error)}`,
+          });
         }
       });
+    }
+  },
+
+  retryComparePreview: async () => {
+    const { photos, compareTargetIndex, previewCache } = get();
+    if (compareTargetIndex === null) return;
+    const photo = photos[compareTargetIndex];
+    if (!photo) return;
+
+    previewCache.delete(photo.path);
+    set({ comparePreviewUrl: null, comparePreviewStatus: 'loading', comparePreviewError: null });
+    try {
+      const url = await getPhotoPreview(photo.path);
+      previewCache.set(photo.path, url);
+      if (get().photos[get().compareTargetIndex ?? -1]?.path === photo.path) {
+        set({ comparePreviewUrl: url, comparePreviewStatus: 'loaded', comparePreviewError: null });
+      }
+    } catch (error) {
+      if (get().photos[get().compareTargetIndex ?? -1]?.path === photo.path) {
+        set({
+          comparePreviewUrl: null,
+          comparePreviewStatus: 'error',
+          comparePreviewError: `提取 ${photo.filename} 对比预览失败：${String(error)}`,
+        });
+      }
     }
   },
 
@@ -613,6 +732,14 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         isLoading: false,
         activeFilter: 'all',
         isProxyAccelerated,
+        currentPreviewUrl: null,
+        previewStatus: photos.length > 0 ? 'loading' : 'idle',
+        previewError: null,
+        isCompareMode: false,
+        compareTargetIndex: null,
+        comparePreviewUrl: null,
+        comparePreviewStatus: 'idle',
+        comparePreviewError: null,
         undoStack: [],
         isUndoing: false,
         writeStatus: 'idle',
@@ -631,22 +758,40 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setActiveFilter: (filter: FilterCategory) => {
     set({ activeFilter: filter });
-    const { photos } = get();
-    // 切换筛选后，如果当前照片不在筛选结果内，跳到筛选结果的第一张
-    const isCurrentMatch = (p: PhotoItem) => {
-      if (filter === 'all') return true;
-      if (filter === 'pending') return p.retouch_status === 'pending';
-      if (filter === 'failed') return p.retouch_status === 'failed';
-      if (filter === 'clean') return p.retouch_status === 'clean';
-      if (filter === 'fixable') return p.retouch_status === 'fixable';
-      if (filter === 'fatal') return p.retouch_status === 'fatal';
-      if (filter === 'picked') return p.pick_status === 'Pick';
-      return true;
-    };
-
+    const { photos, selectedCamera, selectedLens } = get();
     const current = photos[get().currentIndex];
-    if (current && !isCurrentMatch(current)) {
-      const firstMatchIdx = photos.findIndex(isCurrentMatch);
+    if (current && !isPhotoMatchingFilter(current, filter, selectedCamera, selectedLens)) {
+      const firstMatchIdx = photos.findIndex((p) =>
+        isPhotoMatchingFilter(p, filter, selectedCamera, selectedLens),
+      );
+      if (firstMatchIdx !== -1) {
+        get().selectIndex(firstMatchIdx);
+      }
+    }
+  },
+
+  setSelectedCamera: (camera: string | null) => {
+    set({ selectedCamera: camera });
+    const { photos, activeFilter, selectedLens } = get();
+    const current = photos[get().currentIndex];
+    if (current && !isPhotoMatchingFilter(current, activeFilter, camera, selectedLens)) {
+      const firstMatchIdx = photos.findIndex((p) =>
+        isPhotoMatchingFilter(p, activeFilter, camera, selectedLens),
+      );
+      if (firstMatchIdx !== -1) {
+        get().selectIndex(firstMatchIdx);
+      }
+    }
+  },
+
+  setSelectedLens: (lens: string | null) => {
+    set({ selectedLens: lens });
+    const { photos, activeFilter, selectedCamera } = get();
+    const current = photos[get().currentIndex];
+    if (current && !isPhotoMatchingFilter(current, activeFilter, selectedCamera, lens)) {
+      const firstMatchIdx = photos.findIndex((p) =>
+        isPhotoMatchingFilter(p, activeFilter, selectedCamera, lens),
+      );
       if (firstMatchIdx !== -1) {
         get().selectIndex(firstMatchIdx);
       }
@@ -658,17 +803,26 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     if (index < 0 || index >= photos.length) return;
 
     const currentPhoto = photos[index];
-    set({ currentIndex: index, focusedFace: null });
+    set({ currentIndex: index, focusedFace: null, previewError: null });
 
     // 1. 如果缓存中已有当前预览图，立刻 0ms 展示
     if (previewCache.has(currentPhoto.path)) {
-      set({ currentPreviewUrl: previewCache.get(currentPhoto.path)! });
+      set({ currentPreviewUrl: previewCache.get(currentPhoto.path)!, previewStatus: 'loaded' });
     } else {
+      set({ currentPreviewUrl: null, previewStatus: 'loading' });
       getPhotoPreview(currentPhoto.path).then((url) => {
-        if (get().currentIndex === index) {
-          set({ currentPreviewUrl: url });
+        if (get().photos[get().currentIndex]?.path === currentPhoto.path) {
+          set({ currentPreviewUrl: url, previewStatus: 'loaded', previewError: null });
         }
         previewCache.set(currentPhoto.path, url);
+      }).catch((error) => {
+        if (get().photos[get().currentIndex]?.path === currentPhoto.path) {
+          set({
+            currentPreviewUrl: null,
+            previewStatus: 'error',
+            previewError: `提取 ${currentPhoto.filename} 预览失败：${String(error)}`,
+          });
+        }
       });
     }
 
@@ -680,7 +834,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         if (!previewCache.has(item.path)) {
           getPhotoPreview(item.path).then((url) => {
             previewCache.set(item.path, url);
-          });
+          }).catch(() => {});
         }
       }
     }
@@ -701,6 +855,30 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     }
   },
 
+  retryCurrentPreview: async () => {
+    const { photos, currentIndex, previewCache } = get();
+    const photo = photos[currentIndex];
+    if (!photo) return;
+
+    previewCache.delete(photo.path);
+    set({ currentPreviewUrl: null, previewStatus: 'loading', previewError: null });
+    try {
+      const url = await getPhotoPreview(photo.path);
+      previewCache.set(photo.path, url);
+      if (get().photos[get().currentIndex]?.path === photo.path) {
+        set({ currentPreviewUrl: url, previewStatus: 'loaded', previewError: null });
+      }
+    } catch (error) {
+      if (get().photos[get().currentIndex]?.path === photo.path) {
+        set({
+          currentPreviewUrl: null,
+          previewStatus: 'error',
+          previewError: `提取 ${photo.filename} 预览失败：${String(error)}`,
+        });
+      }
+    }
+  },
+
   selectPhotoByFilename: async (filename: string) => {
     const { photos, selectIndex } = get();
     const idx = photos.findIndex((p) => p.filename === filename);
@@ -710,55 +888,25 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   nextPhoto: () => {
-    const { currentIndex, photos, activeFilter, selectIndex } = get();
+    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, selectIndex } = get();
     if (photos.length === 0) return;
 
-    if (activeFilter === 'all') {
-      if (currentIndex < photos.length - 1) {
-        selectIndex(currentIndex + 1);
-      }
-    } else {
-      // 在当前筛选流中寻找下一个匹配项
-      for (let i = currentIndex + 1; i < photos.length; i++) {
-        const p = photos[i];
-        if (
-          (activeFilter === 'clean' && p.retouch_status === 'clean') ||
-          (activeFilter === 'pending' && p.retouch_status === 'pending') ||
-          (activeFilter === 'failed' && p.retouch_status === 'failed') ||
-          (activeFilter === 'fixable' && p.retouch_status === 'fixable') ||
-          (activeFilter === 'fatal' && p.retouch_status === 'fatal') ||
-          (activeFilter === 'picked' && p.pick_status === 'Pick')
-        ) {
-          selectIndex(i);
-          break;
-        }
+    for (let i = currentIndex + 1; i < photos.length; i++) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens)) {
+        selectIndex(i);
+        break;
       }
     }
   },
 
   prevPhoto: () => {
-    const { currentIndex, photos, activeFilter, selectIndex } = get();
+    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, selectIndex } = get();
     if (photos.length === 0) return;
 
-    if (activeFilter === 'all') {
-      if (currentIndex > 0) {
-        selectIndex(currentIndex - 1);
-      }
-    } else {
-      // 在当前筛选流中寻找上一个匹配项
-      for (let i = currentIndex - 1; i >= 0; i--) {
-        const p = photos[i];
-        if (
-          (activeFilter === 'clean' && p.retouch_status === 'clean') ||
-          (activeFilter === 'pending' && p.retouch_status === 'pending') ||
-          (activeFilter === 'failed' && p.retouch_status === 'failed') ||
-          (activeFilter === 'fixable' && p.retouch_status === 'fixable') ||
-          (activeFilter === 'fatal' && p.retouch_status === 'fatal') ||
-          (activeFilter === 'picked' && p.pick_status === 'Pick')
-        ) {
-          selectIndex(i);
-          break;
-        }
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens)) {
+        selectIndex(i);
+        break;
       }
     }
   },
@@ -767,6 +915,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     const { currentIndex, photos, autoAdvance, nextPhoto } = get();
     const photo = photos[currentIndex];
     if (!photo) return;
+    if (photo.rating === rating) return;
 
     const updated = { ...photo, rating };
     const newPhotos = [...photos];
@@ -784,7 +933,14 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         photo.burst_group_id,
         photo.xmp_source_hash,
       );
-      set((state) => ({ photos: updateSourceHash(state.photos, photo.path, sourceHash), writeStatus: 'saved' }));
+      set((state) => ({
+        photos: updateSourceHash(state.photos, photo.path, sourceHash),
+        writeStatus: 'saved',
+        undoStack: appendUndoEntry(state.undoStack, {
+          label: `撤销 ${photo.filename} 的评分`,
+          snapshots: [snapshotTriage(photo)],
+        }),
+      }));
     } catch (e) {
       console.error('Failed to update rating in XMP', e);
       set((state) => ({
@@ -805,6 +961,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     const { currentIndex, photos } = get();
     const photo = photos[currentIndex];
     if (!photo) return;
+    if (photo.color_label === color_label) return;
 
     const updated = { ...photo, color_label };
     const newPhotos = [...photos];
@@ -822,7 +979,14 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         photo.burst_group_id,
         photo.xmp_source_hash,
       );
-      set((state) => ({ photos: updateSourceHash(state.photos, photo.path, sourceHash), writeStatus: 'saved' }));
+      set((state) => ({
+        photos: updateSourceHash(state.photos, photo.path, sourceHash),
+        writeStatus: 'saved',
+        undoStack: appendUndoEntry(state.undoStack, {
+          label: `撤销 ${photo.filename} 的色标`,
+          snapshots: [snapshotTriage(photo)],
+        }),
+      }));
     } catch (e) {
       console.error('Failed to update color label in XMP', e);
       set((state) => ({
@@ -838,6 +1002,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     const { currentIndex, photos, autoAdvance, nextPhoto } = get();
     const photo = photos[currentIndex];
     if (!photo) return;
+    if (photo.pick_status === pick_status) return;
 
     const updated = { ...photo, pick_status };
     const newPhotos = [...photos];
@@ -855,7 +1020,14 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         photo.burst_group_id,
         photo.xmp_source_hash,
       );
-      set((state) => ({ photos: updateSourceHash(state.photos, photo.path, sourceHash), writeStatus: 'saved' }));
+      set((state) => ({
+        photos: updateSourceHash(state.photos, photo.path, sourceHash),
+        writeStatus: 'saved',
+        undoStack: appendUndoEntry(state.undoStack, {
+          label: `撤销 ${photo.filename} 的采纳状态`,
+          snapshots: [snapshotTriage(photo)],
+        }),
+      }));
     } catch (e) {
       console.error('Failed to update pick status in XMP', e);
       set((state) => ({
@@ -876,6 +1048,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     const { currentIndex, photos } = get();
     const photo = photos[currentIndex];
     if (!photo) return;
+    if (photo.retouch_status === status) return;
 
     const updated = { ...photo, retouch_status: status };
     const newPhotos = [...photos];
@@ -893,7 +1066,14 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         photo.burst_group_id,
         photo.xmp_source_hash,
       );
-      set((state) => ({ photos: updateSourceHash(state.photos, photo.path, sourceHash), writeStatus: 'saved' }));
+      set((state) => ({
+        photos: updateSourceHash(state.photos, photo.path, sourceHash),
+        writeStatus: 'saved',
+        undoStack: appendUndoEntry(state.undoStack, {
+          label: `撤销 ${photo.filename} 的诊断覆写`,
+          snapshots: [snapshotTriage(photo)],
+        }),
+      }));
     } catch (e) {
       console.error('Failed to override retouch status in XMP', e);
       set((state) => ({
@@ -950,6 +1130,10 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
           xmp_source_hash: sourceHash,
         }),
         writeStatus: 'saved',
+        undoStack: appendUndoEntry(state.undoStack, {
+          label: `撤销 ${photo.filename} 的重新分析结果`,
+          snapshots: [snapshotTriage(photo)],
+        }),
       }));
     } catch (error) {
       set((state) => ({
@@ -996,6 +1180,12 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
           ? { ...photo, rating: update.rating, pick_status: update.pick_status, xmp_source_hash: update.sourceHash }
           : photo;
       }),
+      undoStack: updates.size > 0
+        ? appendUndoEntry(state.undoStack, {
+            label: `撤销批量采纳 ${updates.size} 张照片`,
+            snapshots: photos.filter((photo) => updates.has(photo.path)).map(snapshotTriage),
+          })
+        : state.undoStack,
     }));
     if (errors.length > 0) {
       const message = `${errors.length} 张写入失败\n${errors.slice(0, 3).join('\n')}`;
@@ -1034,6 +1224,12 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         const sourceHash = updates.get(photo.path);
         return sourceHash ? { ...photo, pick_status: 'Reject', xmp_source_hash: sourceHash } : photo;
       }),
+      undoStack: updates.size > 0
+        ? appendUndoEntry(state.undoStack, {
+            label: `撤销批量排除 ${updates.size} 张照片`,
+            snapshots: photos.filter((photo) => updates.has(photo.path)).map(snapshotTriage),
+          })
+        : state.undoStack,
     }));
     if (errors.length > 0) {
       const message = `${errors.length} 张写入失败\n${errors.slice(0, 3).join('\n')}`;
@@ -1076,6 +1272,12 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
           ? { ...photo, rating: update.rating, pick_status: update.pick_status, xmp_source_hash: update.sourceHash }
           : photo;
       }),
+      undoStack: updates.size > 0
+        ? appendUndoEntry(state.undoStack, {
+            label: `撤销 AI 批量建议 ${updates.size} 张照片`,
+            snapshots: photos.filter((photo) => updates.has(photo.path)).map(snapshotTriage),
+          })
+        : state.undoStack,
     }));
     if (errors.length > 0) {
       const message = `${errors.length} 张写入失败\n${errors.slice(0, 3).join('\n')}`;

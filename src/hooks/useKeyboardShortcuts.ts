@@ -16,6 +16,7 @@ export function useKeyboardShortcuts() {
     nextCompareCandidate,
     prevCompareCandidate,
     toggleFaceLoupe,
+    undoLast,
   } = usePhotoStore();
 
   useEffect(() => {
@@ -25,6 +26,12 @@ export function useKeyboardShortcuts() {
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
       ) {
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        void undoLast();
         return;
       }
 
@@ -159,5 +166,6 @@ export function useKeyboardShortcuts() {
     nextCompareCandidate,
     prevCompareCandidate,
     toggleFaceLoupe,
+    undoLast,
   ]);
 }

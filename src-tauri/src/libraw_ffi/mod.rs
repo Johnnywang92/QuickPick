@@ -20,7 +20,6 @@ pub enum LibRawError {
     #[error("未能提取到有效缩略图数据")]
     EmptyData,
 }
-
 #[derive(Debug, Clone)]
 pub struct RawThumbnail {
     pub data: Vec<u8>,
@@ -123,4 +122,132 @@ pub fn extract_embedded_thumbnail<P: AsRef<Path>>(path: P) -> Result<RawThumbnai
     };
 
     Ok(result)
+}
+
+fn c_chars_to_string(slice: &[std::ffi::c_char]) -> Option<String> {
+    let bytes: Vec<u8> = slice
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
+    if bytes.is_empty() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&bytes);
+    crate::engine::exif::clean_string(&s)
+}
+
+/// 从已经打开的 LibRaw 上下文中提取 EXIF 拍摄参数
+pub fn extract_raw_metadata_from_ctx(ctx_ptr: *mut std::ffi::c_void) -> Option<crate::models::ExifMetadata> {
+    if ctx_ptr.is_null() {
+        return None;
+    }
+
+    unsafe {
+        let iparams_ptr = libraw_get_iparams(ctx_ptr);
+        let lensinfo_ptr = libraw_get_lensinfo(ctx_ptr);
+        let imgother_ptr = libraw_get_imgother(ctx_ptr);
+
+        let (make, model) = if !iparams_ptr.is_null() {
+            let iparams = &*iparams_ptr;
+            let m = c_chars_to_string(&iparams.make);
+            let md = c_chars_to_string(&iparams.model);
+            crate::engine::exif::normalize_camera(m.as_deref(), md.as_deref())
+        } else {
+            (None, None)
+        };
+
+        let (lens_model, lens_make, focal_length_35mm) = if !lensinfo_ptr.is_null() {
+            let lensinfo = &*lensinfo_ptr;
+            let mut l_name = c_chars_to_string(&lensinfo.lens);
+            if l_name.is_none() {
+                l_name = c_chars_to_string(&lensinfo.makernotes.lens);
+            }
+            let l_make = c_chars_to_string(&lensinfo.lens_make);
+            let fl35 = if lensinfo.focal_length_in_35mm_format > 0 {
+                Some(lensinfo.focal_length_in_35mm_format as u32)
+            } else {
+                None
+            };
+            (l_name, l_make, fl35)
+        } else {
+            (None, None, None)
+        };
+
+        let (iso, shutter_speed_val, aperture, focal_length, date_time_original) = if !imgother_ptr.is_null() {
+            let imgother = &*imgother_ptr;
+            let iso = if imgother.iso_speed > 0.0 {
+                Some(imgother.iso_speed.round() as u32)
+            } else {
+                None
+            };
+            let shutter = if imgother.shutter > 0.0 {
+                Some(imgother.shutter)
+            } else {
+                None
+            };
+            let ap = if imgother.aperture > 0.0 {
+                Some(imgother.aperture)
+            } else {
+                None
+            };
+            let fl = if imgother.focal_len > 0.0 {
+                Some(imgother.focal_len)
+            } else {
+                None
+            };
+            let dt = if imgother.timestamp > 0 {
+                chrono::DateTime::from_timestamp(imgother.timestamp, 0)
+                    .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else {
+                None
+            };
+            (iso, shutter, ap, fl, dt)
+        } else {
+            (None, None, None, None, None)
+        };
+
+        let shutter_speed = shutter_speed_val.map(crate::engine::exif::format_shutter_speed);
+
+        if make.is_none()
+            && model.is_none()
+            && lens_model.is_none()
+            && aperture.is_none()
+            && shutter_speed_val.is_none()
+            && iso.is_none()
+        {
+            return None;
+        }
+
+        Some(crate::models::ExifMetadata {
+            camera_make: make,
+            camera_model: model,
+            lens_model,
+            lens_make,
+            focal_length,
+            focal_length_35mm,
+            aperture,
+            shutter_speed,
+            shutter_speed_value: shutter_speed_val,
+            iso,
+            date_time_original,
+        })
+    }
+}
+
+/// 从 RAW 文件中快速读取机身、镜头、曝光与拍摄参数
+pub fn extract_raw_metadata<P: AsRef<Path>>(path: P) -> Result<crate::models::ExifMetadata, LibRawError> {
+    let path_str = path
+        .as_ref()
+        .to_str()
+        .ok_or(LibRawError::InvalidPath)?;
+    let c_path = CString::new(path_str).map_err(|_| LibRawError::InvalidPath)?;
+
+    let ctx = LibRawContext::new()?;
+    let ret = unsafe { libraw_open_file(ctx.as_ptr(), c_path.as_ptr()) };
+    if ret != 0 {
+        return Err(LibRawError::OpenFileFailed(ret));
+    }
+
+    extract_raw_metadata_from_ctx(ctx.as_ptr()).ok_or(LibRawError::EmptyData)
 }

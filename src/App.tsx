@@ -7,10 +7,11 @@ import { TriageControls } from './components/triage/TriageControls';
 import { FilterToolbar } from './components/triage/FilterToolbar';
 import { DefectBadge } from './components/triage/DefectBadge';
 import { FaceLoupe } from './components/loupe/FaceLoupe';
+import { PhotoInfoHud } from './components/viewport/PhotoInfoHud';
 import { ExportModal } from './components/export/ExportModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { selectFolder } from './services/tauriBridge';
-import { FolderOpen, FolderOutput, Cpu, Sparkles, Image as ImageIcon, ArrowRightLeft, Users, Zap, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Copy, ShieldAlert } from 'lucide-react';
+import { FolderOpen, FolderOutput, Cpu, Sparkles, Image as ImageIcon, ArrowRightLeft, Users, Zap, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Copy, ShieldAlert, Undo2 } from 'lucide-react';
 
 export default function App() {
   const {
@@ -18,15 +19,20 @@ export default function App() {
     photos,
     currentIndex,
     currentPreviewUrl,
+    previewStatus,
+    previewError,
     engineInfo,
     isLoading,
     isCompareMode,
     writeStatus,
     writeError,
     xmpConflict,
+    undoStack,
+    isUndoing,
     clearWriteError,
     dismissXmpConflict,
     resolveXmpConflict,
+    undoLast,
     toggleCompareMode,
     isFaceLoupeOpen,
     toggleFaceLoupe,
@@ -35,6 +41,7 @@ export default function App() {
     generateCurrentFolderCache,
     initEngine,
     openFolder,
+    retryCurrentPreview,
     setExportModalOpen,
   } = usePhotoStore();
 
@@ -89,6 +96,18 @@ export default function App() {
               <Cpu className="w-3.5 h-3.5 text-emerald-400" />
               <span className="font-mono text-[11px]">LibRaw {engineInfo.libraw_version}</span>
             </div>
+          )}
+
+          {photos.length > 0 && (
+            <button
+              onClick={() => void undoLast()}
+              disabled={undoStack.length === 0 || writeStatus === 'saving' || isUndoing}
+              className="flex items-center gap-1.5 rounded border border-dark-600 bg-dark-700/60 px-2.5 py-1 text-[11px] text-slate-300 transition-colors hover:bg-dark-600 disabled:cursor-not-allowed disabled:opacity-35"
+              title={undoStack.length > 0 ? `${undoStack[undoStack.length - 1].label} (Cmd/Ctrl+Z)` : '没有可撤销的操作'}
+            >
+              {isUndoing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Undo2 className="h-3.5 w-3.5" />}
+              <span>撤销</span>
+            </button>
           )}
 
           {writeStatus === 'saving' && (
@@ -323,7 +342,15 @@ export default function App() {
             <PixiCanvas
               imageUrl={currentPreviewUrl}
               filename={currentPhoto ? currentPhoto.filename : ''}
+              previewStatus={previewStatus}
+              previewError={previewError}
+              onRetryPreview={() => void retryCurrentPreview()}
             />
+
+            {/* 视口左上方：相机机身、镜头与拍摄参数 HUD */}
+            <div className="absolute top-4 left-4 z-20">
+              <PhotoInfoHud />
+            </div>
 
             {/* 视口上方：AI '可修/不可修' 智能诊断与换脸提示药丸 */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">

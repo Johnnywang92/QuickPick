@@ -104,7 +104,48 @@ pub fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageMetrics, String> {
     }
 }
 
-/// 连拍序列成组识别 (根据文件名连续编号聚类)
+fn parse_photo_timestamp(photo: &PhotoItem) -> Option<i64> {
+    photo.exif.as_ref()
+        .and_then(|e| e.date_time_original.as_deref())
+        .and_then(|dt_str| {
+            chrono::NaiveDateTime::parse_from_str(dt_str, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|dt| dt.and_utc().timestamp())
+        })
+}
+
+fn are_photos_burst_consecutive(
+    p_curr: &PhotoItem,
+    p_prev: &PhotoItem,
+    seq_curr: Option<i64>,
+    seq_prev: Option<i64>,
+) -> bool {
+    let t_curr = parse_photo_timestamp(p_curr);
+    let t_prev = parse_photo_timestamp(p_prev);
+
+    match (t_curr, t_prev) {
+        (Some(tc), Some(tp)) => {
+            let dt = (tc - tp).abs();
+            // 若两个文件均有拍摄时间戳：时间差在 2 秒以内判定为同一连拍组
+            if dt <= 2 {
+                match (seq_curr, seq_prev) {
+                    (Some(sc), Some(sp)) => (sc - sp).abs() <= 5,
+                    _ => true,
+                }
+            } else {
+                // 时间差大于 2 秒，即使编号连续也不属于同一连拍组（如间隔数小时或不同场景）
+                false
+            }
+        }
+        // 若任意一方缺少时间戳，退化至文件名连续编号检测
+        _ => match (seq_curr, seq_prev) {
+            (Some(s), Some(l)) => (s - l).abs() == 1,
+            _ => false,
+        },
+    }
+}
+
+/// 连拍序列成组识别 (基于 EXIF 毫秒时间窗口与文件名编号混合聚类)
 pub fn group_bursts(photos: &mut [PhotoItem]) {
     let mut group_counter = 1;
     let mut current_indices: Vec<usize> = Vec::new();
@@ -112,9 +153,10 @@ pub fn group_bursts(photos: &mut [PhotoItem]) {
 
     for i in 0..photos.len() {
         let seq = extract_seq_num(&photos[i].filename);
-        let consecutive = match (seq, last_seq) {
-            (Some(s), Some(l)) => (s - l).abs() == 1,
-            _ => false,
+        let consecutive = if i > 0 {
+            are_photos_burst_consecutive(&photos[i], &photos[i - 1], seq, last_seq)
+        } else {
+            false
         };
 
         if consecutive {
@@ -281,6 +323,7 @@ mod tests {
                 defect_tags: vec![],
                 burst_group_id: None,
                 faces: vec![],
+                exif: None,
                 xmp_source_hash: None,
             },
             PhotoItem {
@@ -298,6 +341,7 @@ mod tests {
                 defect_tags: vec![],
                 burst_group_id: None,
                 faces: vec![],
+                exif: None,
                 xmp_source_hash: None,
             },
             PhotoItem {
@@ -315,6 +359,7 @@ mod tests {
                 defect_tags: vec![],
                 burst_group_id: None,
                 faces: vec![],
+                exif: None,
                 xmp_source_hash: None,
             },
         ];
@@ -322,6 +367,84 @@ mod tests {
         group_bursts(&mut photos);
         assert!(photos[0].burst_group_id.is_some());
         assert_eq!(photos[0].burst_group_id, photos[1].burst_group_id);
+        assert!(photos[2].burst_group_id.is_none());
+    }
+
+    #[test]
+    fn test_burst_grouping_with_timestamps() {
+        use crate::models::ExifMetadata;
+
+        let mut photos = vec![
+            PhotoItem {
+                id: "1".into(),
+                path: "/p/_DSC0001.ARW".into(),
+                filename: "_DSC0001.ARW".into(),
+                file_size: 1000,
+                is_raw: true,
+                rating: 0,
+                color_label: "".into(),
+                pick_status: "None".into(),
+                thumb_width: None,
+                thumb_height: None,
+                retouch_status: RetouchStatus::Pending,
+                defect_tags: vec![],
+                burst_group_id: None,
+                faces: vec![],
+                exif: Some(ExifMetadata {
+                    date_time_original: Some("2026-08-15 14:30:00".into()),
+                    ..Default::default()
+                }),
+                xmp_source_hash: None,
+            },
+            PhotoItem {
+                id: "2".into(),
+                path: "/p/_DSC0002.ARW".into(),
+                filename: "_DSC0002.ARW".into(),
+                file_size: 1000,
+                is_raw: true,
+                rating: 0,
+                color_label: "".into(),
+                pick_status: "None".into(),
+                thumb_width: None,
+                thumb_height: None,
+                retouch_status: RetouchStatus::Pending,
+                defect_tags: vec![],
+                burst_group_id: None,
+                faces: vec![],
+                exif: Some(ExifMetadata {
+                    date_time_original: Some("2026-08-15 14:30:01".into()),
+                    ..Default::default()
+                }),
+                xmp_source_hash: None,
+            },
+            PhotoItem {
+                id: "3".into(),
+                path: "/p/_DSC0003.ARW".into(),
+                filename: "_DSC0003.ARW".into(),
+                file_size: 1000,
+                is_raw: true,
+                rating: 0,
+                color_label: "".into(),
+                pick_status: "None".into(),
+                thumb_width: None,
+                thumb_height: None,
+                retouch_status: RetouchStatus::Pending,
+                defect_tags: vec![],
+                burst_group_id: None,
+                faces: vec![],
+                exif: Some(ExifMetadata {
+                    date_time_original: Some("2026-08-15 15:30:00".into()), // 1 小时后
+                    ..Default::default()
+                }),
+                xmp_source_hash: None,
+            },
+        ];
+
+        group_bursts(&mut photos);
+        // Photo 1 与 Photo 2 仅差 1 秒，属于同一连拍组
+        assert!(photos[0].burst_group_id.is_some());
+        assert_eq!(photos[0].burst_group_id, photos[1].burst_group_id);
+        // Photo 3 虽编号连续但间隔 1 小时，绝不误成组
         assert!(photos[2].burst_group_id.is_none());
     }
 

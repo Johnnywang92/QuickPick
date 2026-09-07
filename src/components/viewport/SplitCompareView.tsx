@@ -14,6 +14,8 @@ import {
   Sparkles,
   AlertTriangle,
   Wand2,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 
 export const SplitCompareView: React.FC = () => {
@@ -23,6 +25,10 @@ export const SplitCompareView: React.FC = () => {
     compareTargetIndex,
     currentPreviewUrl,
     comparePreviewUrl,
+    previewStatus,
+    previewError,
+    comparePreviewStatus,
+    comparePreviewError,
     syncZoomAndPan,
     toggleSyncZoomAndPan,
     swapComparePhotos,
@@ -33,6 +39,8 @@ export const SplitCompareView: React.FC = () => {
     setPickStatus,
     setComparePhotoRating,
     setComparePhotoPickStatus,
+    retryCurrentPreview,
+    retryComparePreview,
   } = usePhotoStore();
 
   const leftContainerRef = useRef<HTMLDivElement>(null);
@@ -46,6 +54,16 @@ export const SplitCompareView: React.FC = () => {
 
   const [leftZoom, setLeftZoom] = useState<number>(100);
   const [rightZoom, setRightZoom] = useState<number>(100);
+  const [leftReady, setLeftReady] = useState(false);
+  const [rightReady, setRightReady] = useState(false);
+  const [leftRenderStatus, setLeftRenderStatus] = useState<'initializing' | 'loading' | 'loaded' | 'error'>('initializing');
+  const [rightRenderStatus, setRightRenderStatus] = useState<'initializing' | 'loading' | 'loaded' | 'error'>('initializing');
+  const [leftRenderError, setLeftRenderError] = useState<string | null>(null);
+  const [rightRenderError, setRightRenderError] = useState<string | null>(null);
+  const [leftInitAttempt, setLeftInitAttempt] = useState(0);
+  const [rightInitAttempt, setRightInitAttempt] = useState(0);
+  const [leftLoadAttempt, setLeftLoadAttempt] = useState(0);
+  const [rightLoadAttempt, setRightLoadAttempt] = useState(0);
 
   const leftIsPanning = useRef<boolean>(false);
   const rightIsPanning = useRef<boolean>(false);
@@ -61,23 +79,38 @@ export const SplitCompareView: React.FC = () => {
     if (!parent) return;
 
     const app = new Application();
-    app.init({
-      resizeTo: parent,
-      backgroundColor: 0x0a0c10,
-      antialias: true,
-      autoDensity: true,
-      resolution: window.devicePixelRatio || 1,
-    }).then(() => {
-      if (!isMounted) {
-        app.destroy(true);
-        return;
+    setLeftReady(false);
+    setLeftRenderStatus('initializing');
+    setLeftRenderError(null);
+
+    const initialize = async () => {
+      try {
+        await app.init({
+          resizeTo: parent,
+          backgroundColor: 0x0a0c10,
+          antialias: true,
+          autoDensity: true,
+          resolution: window.devicePixelRatio || 1,
+        });
+        if (!isMounted) {
+          app.destroy(true);
+          return;
+        }
+        leftAppRef.current = app;
+        parent.appendChild(app.canvas);
+        const stage = new Container();
+        app.stage.addChild(stage);
+        leftImageContainerRef.current = stage;
+        setLeftReady(true);
+      } catch (error) {
+        if (isMounted) {
+          setLeftRenderStatus('error');
+          setLeftRenderError(`左侧图形渲染器初始化失败：${String(error)}`);
+        }
       }
-      leftAppRef.current = app;
-      parent.appendChild(app.canvas);
-      const stage = new Container();
-      app.stage.addChild(stage);
-      leftImageContainerRef.current = stage;
-    });
+    };
+
+    void initialize();
 
     return () => {
       isMounted = false;
@@ -89,8 +122,9 @@ export const SplitCompareView: React.FC = () => {
         }
         leftAppRef.current = null;
       }
+      leftImageContainerRef.current = null;
     };
-  }, []);
+  }, [leftInitAttempt]);
 
   // 初始化右侧 Pixi Application
   useEffect(() => {
@@ -99,23 +133,38 @@ export const SplitCompareView: React.FC = () => {
     if (!parent) return;
 
     const app = new Application();
-    app.init({
-      resizeTo: parent,
-      backgroundColor: 0x0a0c10,
-      antialias: true,
-      autoDensity: true,
-      resolution: window.devicePixelRatio || 1,
-    }).then(() => {
-      if (!isMounted) {
-        app.destroy(true);
-        return;
+    setRightReady(false);
+    setRightRenderStatus('initializing');
+    setRightRenderError(null);
+
+    const initialize = async () => {
+      try {
+        await app.init({
+          resizeTo: parent,
+          backgroundColor: 0x0a0c10,
+          antialias: true,
+          autoDensity: true,
+          resolution: window.devicePixelRatio || 1,
+        });
+        if (!isMounted) {
+          app.destroy(true);
+          return;
+        }
+        rightAppRef.current = app;
+        parent.appendChild(app.canvas);
+        const stage = new Container();
+        app.stage.addChild(stage);
+        rightImageContainerRef.current = stage;
+        setRightReady(true);
+      } catch (error) {
+        if (isMounted) {
+          setRightRenderStatus('error');
+          setRightRenderError(`右侧图形渲染器初始化失败：${String(error)}`);
+        }
       }
-      rightAppRef.current = app;
-      parent.appendChild(app.canvas);
-      const stage = new Container();
-      app.stage.addChild(stage);
-      rightImageContainerRef.current = stage;
-    });
+    };
+
+    void initialize();
 
     return () => {
       isMounted = false;
@@ -127,72 +176,105 @@ export const SplitCompareView: React.FC = () => {
         }
         rightAppRef.current = null;
       }
+      rightImageContainerRef.current = null;
     };
-  }, []);
+  }, [rightInitAttempt]);
 
   // 加载左图纹理
   useEffect(() => {
-    if (!currentPreviewUrl || !leftAppRef.current || !leftImageContainerRef.current) return;
+    if (!currentPreviewUrl || !leftReady || !leftAppRef.current || !leftImageContainerRef.current) return;
     let isCurrent = true;
+    const existingContainer = leftImageContainerRef.current;
+    existingContainer.children.forEach((child) => child.destroy());
+    existingContainer.removeChildren();
+    setLeftRenderStatus('loading');
+    setLeftRenderError(null);
 
-    Assets.load(currentPreviewUrl).then((texture) => {
-      if (!isCurrent || !leftAppRef.current || !leftImageContainerRef.current) return;
-      const container = leftImageContainerRef.current;
-      container.children.forEach((child) => child.destroy());
-      container.removeChildren();
+    const loadTexture = async () => {
+      try {
+        const texture = await Assets.load(currentPreviewUrl);
+        if (!isCurrent || !leftAppRef.current || !leftImageContainerRef.current) return;
+        const container = leftImageContainerRef.current;
+        container.children.forEach((child) => child.destroy());
+        container.removeChildren();
 
-      const sprite = new Sprite(texture);
-      sprite.anchor.set(0.5);
+        const sprite = new Sprite(texture);
+        sprite.anchor.set(0.5);
 
-      const app = leftAppRef.current;
-      const scaleX = (app.screen.width * 0.9) / texture.width;
-      const scaleY = (app.screen.height * 0.9) / texture.height;
-      const fitScale = Math.min(scaleX, scaleY, 1.0);
+        const app = leftAppRef.current;
+        const scaleX = (app.screen.width * 0.9) / texture.width;
+        const scaleY = (app.screen.height * 0.9) / texture.height;
+        const fitScale = Math.min(scaleX, scaleY, 1.0);
 
-      container.x = app.screen.width / 2;
-      container.y = app.screen.height / 2;
-      container.scale.set(fitScale);
-      container.addChild(sprite);
+        container.x = app.screen.width / 2;
+        container.y = app.screen.height / 2;
+        container.scale.set(fitScale);
+        container.addChild(sprite);
 
-      setLeftZoom(Math.round(fitScale * 100));
-    });
+        setLeftZoom(Math.round(fitScale * 100));
+        setLeftRenderStatus('loaded');
+      } catch (error) {
+        if (isCurrent) {
+          setLeftRenderStatus('error');
+          setLeftRenderError(`左侧预览纹理载入失败：${String(error)}`);
+        }
+      }
+    };
+
+    void loadTexture();
 
     return () => {
       isCurrent = false;
     };
-  }, [currentPreviewUrl]);
+  }, [currentPreviewUrl, leftReady, leftLoadAttempt]);
 
   // 加载右图纹理
   useEffect(() => {
-    if (!comparePreviewUrl || !rightAppRef.current || !rightImageContainerRef.current) return;
+    if (!comparePreviewUrl || !rightReady || !rightAppRef.current || !rightImageContainerRef.current) return;
     let isCurrent = true;
+    const existingContainer = rightImageContainerRef.current;
+    existingContainer.children.forEach((child) => child.destroy());
+    existingContainer.removeChildren();
+    setRightRenderStatus('loading');
+    setRightRenderError(null);
 
-    Assets.load(comparePreviewUrl).then((texture) => {
-      if (!isCurrent || !rightAppRef.current || !rightImageContainerRef.current) return;
-      const container = rightImageContainerRef.current;
-      container.children.forEach((child) => child.destroy());
-      container.removeChildren();
+    const loadTexture = async () => {
+      try {
+        const texture = await Assets.load(comparePreviewUrl);
+        if (!isCurrent || !rightAppRef.current || !rightImageContainerRef.current) return;
+        const container = rightImageContainerRef.current;
+        container.children.forEach((child) => child.destroy());
+        container.removeChildren();
 
-      const sprite = new Sprite(texture);
-      sprite.anchor.set(0.5);
+        const sprite = new Sprite(texture);
+        sprite.anchor.set(0.5);
 
-      const app = rightAppRef.current;
-      const scaleX = (app.screen.width * 0.9) / texture.width;
-      const scaleY = (app.screen.height * 0.9) / texture.height;
-      const fitScale = Math.min(scaleX, scaleY, 1.0);
+        const app = rightAppRef.current;
+        const scaleX = (app.screen.width * 0.9) / texture.width;
+        const scaleY = (app.screen.height * 0.9) / texture.height;
+        const fitScale = Math.min(scaleX, scaleY, 1.0);
 
-      container.x = app.screen.width / 2;
-      container.y = app.screen.height / 2;
-      container.scale.set(fitScale);
-      container.addChild(sprite);
+        container.x = app.screen.width / 2;
+        container.y = app.screen.height / 2;
+        container.scale.set(fitScale);
+        container.addChild(sprite);
 
-      setRightZoom(Math.round(fitScale * 100));
-    });
+        setRightZoom(Math.round(fitScale * 100));
+        setRightRenderStatus('loaded');
+      } catch (error) {
+        if (isCurrent) {
+          setRightRenderStatus('error');
+          setRightRenderError(`右侧预览纹理载入失败：${String(error)}`);
+        }
+      }
+    };
+
+    void loadTexture();
 
     return () => {
       isCurrent = false;
     };
-  }, [comparePreviewUrl]);
+  }, [comparePreviewUrl, rightReady, rightLoadAttempt]);
 
   // 滚轮缩放处理 (支持双画布联动)
   const handleWheel = (e: React.WheelEvent, isLeft: boolean) => {
@@ -316,11 +398,11 @@ export const SplitCompareView: React.FC = () => {
 
           <button
             onClick={zoomBothTo100}
-            title="双图同时放大至 1:1 实际像素比对睫毛与瞳孔合焦"
+            title="双图同时放大至当前内嵌或代理预览的 1:1 像素，不代表完整 RAW 像素"
             className="flex items-center space-x-1 px-2 py-0.5 rounded bg-dark-750 hover:bg-dark-700 border border-dark-600 text-slate-300 transition-colors cursor-pointer"
           >
             <Maximize2 className="w-3 h-3" />
-            <span>双图 1:1 特写</span>
+            <span>双图 1:1 预览</span>
           </button>
         </div>
 
@@ -354,11 +436,46 @@ export const SplitCompareView: React.FC = () => {
           onMouseDown={(e) => handleMouseDown(e, true)}
           className="flex-1 h-full relative border-r border-dark-700 bg-dark-900 cursor-grab active:cursor-grabbing overflow-hidden"
         >
+          {(previewStatus === 'loading' || leftRenderStatus === 'initializing' || leftRenderStatus === 'loading') && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-dark-900/55">
+              <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/90 px-3 py-2 text-xs text-slate-300">
+                <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
+                正在载入左侧预览…
+              </div>
+            </div>
+          )}
+          {(previewStatus === 'error' || leftRenderStatus === 'error') && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-dark-900/90 p-5">
+              <div className="max-w-sm rounded-xl border border-amber-500/35 bg-dark-800 p-4 text-center">
+                <AlertTriangle className="mx-auto h-6 w-6 text-amber-400" />
+                <p className="mt-2 break-words text-xs leading-relaxed text-slate-400">{previewError || leftRenderError}</p>
+                <button
+                  onClick={() => {
+                    if (previewStatus === 'error') void retryCurrentPreview();
+                    else if (!leftReady) setLeftInitAttempt((attempt) => attempt + 1);
+                    else setLeftLoadAttempt((attempt) => attempt + 1);
+                  }}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/15 px-3 py-1.5 text-xs text-brand-200 hover:bg-brand-500/25"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  重试左图
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 左侧信息浮标 */}
           <div className="absolute top-3 left-3 z-20 flex items-center space-x-2 bg-dark-800/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-dark-700 text-xs font-mono">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span className="font-semibold text-emerald-400">主选片 #{currentIndex + 1}</span>
             <span className="text-slate-300">{leftPhoto.filename}</span>
+            {leftPhoto.exif && (leftPhoto.exif.shutter_speed || leftPhoto.exif.aperture) && (
+              <span className="text-amber-300/90 pl-1.5 border-l border-dark-700 text-[11px]">
+                {leftPhoto.exif.focal_length ? `${Math.round(leftPhoto.exif.focal_length)}mm ` : ''}
+                {leftPhoto.exif.aperture ? `f/${leftPhoto.exif.aperture} ` : ''}
+                {leftPhoto.exif.shutter_speed || ''}
+              </span>
+            )}
             <span className="text-slate-500">{leftZoom}%</span>
           </div>
 
@@ -430,11 +547,46 @@ export const SplitCompareView: React.FC = () => {
           onMouseDown={(e) => handleMouseDown(e, false)}
           className="flex-1 h-full relative bg-dark-900 cursor-grab active:cursor-grabbing overflow-hidden"
         >
+          {(comparePreviewStatus === 'loading' || rightRenderStatus === 'initializing' || rightRenderStatus === 'loading') && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-dark-900/55">
+              <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/90 px-3 py-2 text-xs text-slate-300">
+                <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
+                正在载入右侧预览…
+              </div>
+            </div>
+          )}
+          {(comparePreviewStatus === 'error' || rightRenderStatus === 'error') && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-dark-900/90 p-5">
+              <div className="max-w-sm rounded-xl border border-amber-500/35 bg-dark-800 p-4 text-center">
+                <AlertTriangle className="mx-auto h-6 w-6 text-amber-400" />
+                <p className="mt-2 break-words text-xs leading-relaxed text-slate-400">{comparePreviewError || rightRenderError}</p>
+                <button
+                  onClick={() => {
+                    if (comparePreviewStatus === 'error') void retryComparePreview();
+                    else if (!rightReady) setRightInitAttempt((attempt) => attempt + 1);
+                    else setRightLoadAttempt((attempt) => attempt + 1);
+                  }}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/15 px-3 py-1.5 text-xs text-brand-200 hover:bg-brand-500/25"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  重试右图
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 右侧信息浮标与候选前后切换器 */}
           <div className="absolute top-3 left-3 z-20 flex items-center space-x-2 bg-dark-800/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-dark-700 text-xs font-mono">
             <span className="w-2 h-2 rounded-full bg-blue-400" />
             <span className="font-semibold text-blue-400">对比候选 #{compareTargetIndex! + 1}</span>
             <span className="text-slate-300">{rightPhoto.filename}</span>
+            {rightPhoto.exif && (rightPhoto.exif.shutter_speed || rightPhoto.exif.aperture) && (
+              <span className="text-amber-300/90 pl-1.5 border-l border-dark-700 text-[11px]">
+                {rightPhoto.exif.focal_length ? `${Math.round(rightPhoto.exif.focal_length)}mm ` : ''}
+                {rightPhoto.exif.aperture ? `f/${rightPhoto.exif.aperture} ` : ''}
+                {rightPhoto.exif.shutter_speed || ''}
+              </span>
+            )}
             <span className="text-slate-500">{rightZoom}%</span>
 
             <div className="flex items-center space-x-0.5 pl-1.5 border-l border-dark-700">

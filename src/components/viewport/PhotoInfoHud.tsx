@@ -1,0 +1,110 @@
+import React, { useState } from 'react';
+import { usePhotoStore } from '../../store/photoStore';
+import { Camera, Aperture, Timer, Gauge, Calendar, ChevronDown, ChevronUp, Layers } from 'lucide-react';
+
+export const PhotoInfoHud: React.FC = () => {
+  const photos = usePhotoStore((state) => state.photos);
+  const currentIndex = usePhotoStore((state) => state.currentIndex);
+  const [isExpanded, setIsExpanded] = useState<boolean>(true);
+
+  const currentPhoto = photos[currentIndex];
+  if (!currentPhoto) return null;
+
+  const exif = currentPhoto.exif;
+  // 如果完全没有拍摄参数，显示简洁的文件名胶囊
+  if (!exif || (!exif.camera_model && !exif.lens_model && !exif.aperture && !exif.shutter_speed && !exif.iso)) {
+    return (
+      <div className="flex items-center space-x-2 bg-dark-900/80 backdrop-blur border border-dark-700/60 px-2.5 py-1 rounded-lg text-[11px] font-mono text-slate-400 shadow-md">
+        <span>{currentPhoto.filename}</span>
+        {currentPhoto.is_raw && (
+          <span className="text-[10px] bg-brand-600/30 text-brand-300 px-1 py-0.2 rounded font-sans">RAW</span>
+        )}
+      </div>
+    );
+  }
+
+  const cameraDisplay = [exif.camera_make, exif.camera_model].filter(Boolean).join(' ');
+  const lensDisplay = exif.lens_model || exif.lens_make;
+
+  return (
+    <div className="bg-dark-900/85 backdrop-blur border border-dark-700/80 rounded-xl p-2.5 text-xs text-slate-200 shadow-xl transition-all select-none max-w-sm">
+      {/* 顶部机身与镜头标头 */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center space-x-1.5 min-w-0">
+          <Camera className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+          <span className="font-semibold text-slate-100 truncate text-[11px]" title={cameraDisplay || '未知机身'}>
+            {cameraDisplay || '相机型号未记录'}
+          </span>
+          {currentPhoto.is_raw && (
+            <span className="text-[9px] bg-brand-500/20 text-brand-300 border border-brand-500/30 px-1 py-0.2 rounded font-mono font-medium shrink-0">
+              RAW
+            </span>
+          )}
+        </div>
+
+        <button
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="p-0.5 hover:bg-dark-700/70 text-slate-400 hover:text-slate-200 rounded transition-colors"
+          title={isExpanded ? '收起拍摄参数' : '展开拍摄参数'}
+        >
+          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+
+      {/* 镜头型号行 */}
+      {lensDisplay && (
+        <div className="mt-1 flex items-center space-x-1.5 text-[11px] text-slate-300 pl-0.5 truncate" title={lensDisplay}>
+          <Layers className="w-3 h-3 text-sky-400 shrink-0" />
+          <span className="truncate font-medium">{lensDisplay}</span>
+        </div>
+      )}
+
+      {/* 展开状态：曝光三要素与拍摄时间 */}
+      {isExpanded && (
+        <div className="mt-2 pt-2 border-t border-dark-700/60 flex flex-wrap items-center gap-1.5 text-[11px]">
+          {/* 焦段 */}
+          {exif.focal_length != null && !isNaN(exif.focal_length) && isFinite(exif.focal_length) && (
+            <div className="flex items-center space-x-1 bg-dark-800/90 border border-dark-700 px-1.5 py-0.5 rounded font-mono text-slate-200" title="物理焦距">
+              <span>{Math.round(exif.focal_length)}mm</span>
+              {exif.focal_length_35mm && Math.abs(exif.focal_length_35mm - Math.round(exif.focal_length)) > 1 && (
+                <span className="text-slate-400 text-[10px]">({exif.focal_length_35mm}mm等效)</span>
+              )}
+            </div>
+          )}
+
+          {/* 光圈 */}
+          {exif.aperture != null && !isNaN(exif.aperture) && isFinite(exif.aperture) && (
+            <div className="flex items-center space-x-1 bg-dark-800/90 border border-dark-700 px-1.5 py-0.5 rounded font-mono text-amber-300" title="光圈值">
+              <Aperture className="w-3 h-3 text-amber-400" />
+              <span>f/{exif.aperture.toFixed(exif.aperture < 10 && exif.aperture % 1 !== 0 ? 1 : 0)}</span>
+            </div>
+          )}
+
+          {/* 快门 */}
+          {exif.shutter_speed && (
+            <div className="flex items-center space-x-1 bg-dark-800/90 border border-dark-700 px-1.5 py-0.5 rounded font-mono text-blue-300" title="快门曝光速度">
+              <Timer className="w-3 h-3 text-blue-400" />
+              <span>{exif.shutter_speed}</span>
+            </div>
+          )}
+
+          {/* ISO */}
+          {exif.iso != null && (
+            <div className="flex items-center space-x-1 bg-dark-800/90 border border-dark-700 px-1.5 py-0.5 rounded font-mono text-emerald-300" title="感光度 ISO">
+              <Gauge className="w-3 h-3 text-emerald-400" />
+              <span>ISO {exif.iso}</span>
+            </div>
+          )}
+
+          {/* 拍摄时间 */}
+          {exif.date_time_original && (
+            <div className="w-full mt-1 flex items-center space-x-1 text-[10px] text-slate-400 font-mono">
+              <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+              <span className="truncate">{exif.date_time_original}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};

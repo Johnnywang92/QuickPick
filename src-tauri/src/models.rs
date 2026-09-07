@@ -33,6 +33,21 @@ pub struct FaceInfo {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ExifMetadata {
+    pub camera_make: Option<String>,        // 如 "SONY", "Canon", "NIKON"
+    pub camera_model: Option<String>,       // 如 "ILCE-7RM5", "EOS R5"
+    pub lens_model: Option<String>,         // 如 "FE 24-70mm F2.8 GM II"
+    pub lens_make: Option<String>,          // 如 "Sony", "Sigma"
+    pub focal_length: Option<f32>,          // 物理焦距 (mm)，如 50.0
+    pub focal_length_35mm: Option<u32>,     // 35mm 等效焦距 (mm)，如 50
+    pub aperture: Option<f32>,              // 光圈数值，如 2.8 代表 f/2.8
+    pub shutter_speed: Option<String>,      // 格式化快门，如 "1/500s", "0.5s", "2s"
+    pub shutter_speed_value: Option<f32>,   // 快门秒数，如 0.002
+    pub iso: Option<u32>,                   // 感光度，如 100, 3200
+    pub date_time_original: Option<String>, // 拍摄时间，如 "2026-08-15 14:30:00"
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhotoItem {
     pub id: String,
@@ -49,6 +64,7 @@ pub struct PhotoItem {
     pub defect_tags: Vec<DefectTag>,
     pub burst_group_id: Option<String>,
     pub faces: Vec<FaceInfo>,
+    pub exif: Option<ExifMetadata>,
     /// 扫描时完整 XMP 的 SHA-256；写入成功后由前端更新。
     pub xmp_source_hash: Option<String>,
 }

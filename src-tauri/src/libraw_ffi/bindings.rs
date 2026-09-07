@@ -16,6 +16,52 @@ pub struct LibRawProcessedImage {
 pub const LIBRAW_IMAGE_JPEG: u32 = 1;
 pub const LIBRAW_IMAGE_BITMAP: u32 = 2;
 
+/// LibRaw 机身基本参数结构体 (对应 libraw_iparams_t 前部关键字段)
+#[repr(C)]
+pub struct LibRawIparams {
+    pub guard: [c_char; 4],
+    pub make: [c_char; 64],
+    pub model: [c_char; 64],
+    pub software: [c_char; 64],
+    pub normalized_make: [c_char; 64],
+    pub normalized_model: [c_char; 64],
+}
+
+/// LibRaw 厂商私有镜头结构
+#[repr(C)]
+pub struct LibRawMakernotesLens {
+    pub lens_id: u64,
+    pub lens: [c_char; 128],
+}
+
+/// LibRaw 镜头参数结构体 (对应 libraw_lensinfo_t)
+#[repr(C)]
+pub struct LibRawLensInfo {
+    pub min_focal: f32,
+    pub max_focal: f32,
+    pub max_ap_4_min_focal: f32,
+    pub max_ap_4_max_focal: f32,
+    pub exif_max_ap: f32,
+    pub lens_make: [c_char; 128],
+    pub lens: [c_char; 128],
+    pub lens_serial: [c_char; 128],
+    pub internal_lens_serial: [c_char; 128],
+    pub focal_length_in_35mm_format: u16,
+    pub nikon: [u8; 8],
+    pub dng: [u8; 16],
+    pub makernotes: LibRawMakernotesLens,
+}
+
+/// LibRaw 曝光与拍摄信息结构体 (对应 libraw_imgother_t 前部关键字段)
+#[repr(C)]
+pub struct LibRawImgOther {
+    pub iso_speed: f32,
+    pub shutter: f32,
+    pub aperture: f32,
+    pub focal_len: f32,
+    pub timestamp: libc::time_t,
+}
+
 extern "C" {
     /// 初始化 LibRaw 句柄
     pub fn libraw_init(flags: c_uint) -> *mut c_void;
@@ -37,6 +83,15 @@ extern "C" {
 
     /// 释放 LibRaw 内部申请的内存图像缓冲区
     pub fn libraw_dcraw_clear_mem(mem: *mut LibRawProcessedImage);
+
+    /// 获取机身参数指针
+    pub fn libraw_get_iparams(lr: *mut c_void) -> *mut LibRawIparams;
+
+    /// 获取镜头信息指针
+    pub fn libraw_get_lensinfo(lr: *mut c_void) -> *mut LibRawLensInfo;
+
+    /// 获取曝光与其他拍摄信息指针
+    pub fn libraw_get_imgother(lr: *mut c_void) -> *mut LibRawImgOther;
 
     /// 返回当前链接的 LibRaw 库版本号字符串
     pub fn libraw_version() -> *const c_char;

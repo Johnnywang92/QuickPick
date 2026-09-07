@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod exif;
 pub mod export;
 use std::path::Path;
 use std::fs;
@@ -57,7 +58,7 @@ pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> 
                 .as_ref()
                 .and_then(|c| c.items.iter().find(|it| it.filename == filename));
 
-            let (retouch_status, defect_tags, burst_group_id, thumb_width, thumb_height, faces) =
+            let (retouch_status, defect_tags, burst_group_id, thumb_width, thumb_height, faces, exif) =
                 if let Some(cat) = cached_item {
                     let status = if !xmp_meta.retouch_status.is_empty() {
                         match xmp_meta.retouch_status.to_lowercase().as_str() {
@@ -77,6 +78,14 @@ pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> 
                         cat.burst_group_id.clone()
                     };
 
+                    let exif = cat.exif.clone().or_else(|| {
+                        if is_raw {
+                            libraw_ffi::extract_raw_metadata(&path).ok()
+                        } else {
+                            exif::extract_image_file_exif(&path)
+                        }
+                    });
+
                     (
                         status,
                         cat.defect_tags.clone(),
@@ -84,6 +93,7 @@ pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> 
                         cat.thumb_width,
                         cat.thumb_height,
                         cat.faces.clone(),
+                        exif,
                     )
                 } else {
                     let status = match xmp_meta.retouch_status.to_lowercase().as_str() {
@@ -100,7 +110,14 @@ pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> 
                         Some(xmp_meta.burst_group_id)
                     };
 
-                    (status, Vec::new(), bg_id, None, None, Vec::new())
+                    // 实时提取 EXIF/拍摄参数
+                    let parsed_exif = if is_raw {
+                        libraw_ffi::extract_raw_metadata(&path).ok()
+                    } else {
+                        exif::extract_image_file_exif(&path)
+                    };
+
+                    (status, Vec::new(), bg_id, None, None, Vec::new(), parsed_exif)
                 };
 
             items.push(PhotoItem {
@@ -122,6 +139,7 @@ pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> 
                 defect_tags,
                 burst_group_id,
                 faces,
+                exif,
                 xmp_source_hash: if xmp_meta.source_hash.is_empty() {
                     None
                 } else {

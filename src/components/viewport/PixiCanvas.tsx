@@ -6,9 +6,18 @@ import { usePhotoStore } from '../../store/photoStore';
 interface PixiCanvasProps {
   imageUrl: string | null;
   filename: string;
+  previewStatus?: 'idle' | 'loading' | 'loaded' | 'error';
+  previewError?: string | null;
+  onRetryPreview?: () => void;
 }
 
-export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) => {
+export const PixiCanvas: React.FC<PixiCanvasProps> = ({
+  imageUrl,
+  filename,
+  previewStatus = 'loaded',
+  previewError = null,
+  onRetryPreview,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const imageContainerRef = useRef<Container | null>(null);
@@ -240,7 +249,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
         isPanning ? 'cursor-grabbing' : 'cursor-grab'
       }`}
     >
-      {(pixiStatus === 'initializing' || imageStatus === 'loading') && (
+      {(pixiStatus === 'initializing' || previewStatus === 'loading' || imageStatus === 'loading') && (
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-dark-900/55">
           <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/90 px-3 py-2 text-xs text-slate-300 shadow-lg">
             <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
@@ -249,15 +258,17 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
         </div>
       )}
 
-      {(pixiStatus === 'error' || imageStatus === 'error') && (
+      {(pixiStatus === 'error' || previewStatus === 'error' || imageStatus === 'error') && (
         <div className="absolute inset-0 z-[6] flex items-center justify-center bg-dark-900/90 p-6">
           <div className="max-w-md rounded-xl border border-amber-500/35 bg-dark-800 p-5 text-center shadow-xl">
             <AlertTriangle className="mx-auto h-7 w-7 text-amber-400" />
             <h3 className="mt-3 text-sm font-semibold text-slate-100">预览暂时无法显示</h3>
-            <p className="mt-1 break-words text-xs leading-relaxed text-slate-400">{loadError}</p>
+            <p className="mt-1 break-words text-xs leading-relaxed text-slate-400">{previewError || loadError}</p>
             <button
               onClick={() => {
-                if (pixiStatus === 'error') {
+                if (previewStatus === 'error' && onRetryPreview) {
+                  onRetryPreview();
+                } else if (pixiStatus === 'error') {
                   setInitAttempt((attempt) => attempt + 1);
                 } else {
                   setLoadAttempt((attempt) => attempt + 1);

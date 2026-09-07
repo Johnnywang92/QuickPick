@@ -24,6 +24,20 @@ export interface FaceInfo {
   label?: string;
 }
 
+export interface ExifMetadata {
+  camera_make?: string;
+  camera_model?: string;
+  lens_model?: string;
+  lens_make?: string;
+  focal_length?: number;
+  focal_length_35mm?: number;
+  aperture?: number;
+  shutter_speed?: string;
+  shutter_speed_value?: number;
+  iso?: number;
+  date_time_original?: string;
+}
+
 export interface PhotoItem {
   id: string;
   path: string;
@@ -39,6 +53,7 @@ export interface PhotoItem {
   defect_tags: DefectTag[];
   burst_group_id?: string;
   faces: FaceInfo[];
+  exif?: ExifMetadata;
   xmp_source_hash?: string;
 }
 
@@ -144,6 +159,19 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
             label: '新郎主角',
           },
         ],
+        exif: {
+          camera_make: 'SONY',
+          camera_model: 'ILCE-7RM5',
+          lens_model: 'FE 24-70mm F2.8 GM II',
+          lens_make: 'Sony',
+          focal_length: 50.0,
+          focal_length_35mm: 50,
+          aperture: 2.8,
+          shutter_speed: '1/500s',
+          shutter_speed_value: 0.002,
+          iso: 100,
+          date_time_original: '2026-08-15 14:30:12',
+        },
       },
       {
         id: 'mock-2',
@@ -191,6 +219,19 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
             label: '新郎 (闭眼)',
           },
         ],
+        exif: {
+          camera_make: 'SONY',
+          camera_model: 'ILCE-7RM5',
+          lens_model: 'FE 24-70mm F2.8 GM II',
+          lens_make: 'Sony',
+          focal_length: 50.0,
+          focal_length_35mm: 50,
+          aperture: 2.8,
+          shutter_speed: '1/500s',
+          shutter_speed_value: 0.002,
+          iso: 100,
+          date_time_original: '2026-08-15 14:30:13',
+        },
       },
       {
         id: 'mock-3',
@@ -225,6 +266,19 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
             label: '脱焦人物',
           },
         ],
+        exif: {
+          camera_make: 'SONY',
+          camera_model: 'ILCE-7RM5',
+          lens_model: 'FE 85mm F1.4 GM',
+          lens_make: 'Sony',
+          focal_length: 85.0,
+          focal_length_35mm: 85,
+          aperture: 1.4,
+          shutter_speed: '1/160s',
+          shutter_speed_value: 0.00625,
+          iso: 800,
+          date_time_original: '2026-08-15 15:10:05',
+        },
       },
       {
         id: 'mock-4',
@@ -345,6 +399,19 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
             label: '伴郎 C (闭眼)',
           },
         ],
+        exif: {
+          camera_make: 'Canon',
+          camera_model: 'EOS R5',
+          lens_model: 'RF 24-70mm F2.8 L IS USM',
+          lens_make: 'Canon',
+          focal_length: 35.0,
+          focal_length_35mm: 35,
+          aperture: 4.0,
+          shutter_speed: '1/250s',
+          shutter_speed_value: 0.004,
+          iso: 200,
+          date_time_original: '2026-08-15 16:05:40',
+        },
       },
       {
         id: 'mock-5',
@@ -379,6 +446,19 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
             label: '单人特写',
           },
         ],
+        exif: {
+          camera_make: 'Nikon',
+          camera_model: 'Z 8',
+          lens_model: 'NIKKOR Z 50mm f/1.2 S',
+          lens_make: 'Nikon',
+          focal_length: 50.0,
+          focal_length_35mm: 50,
+          aperture: 1.2,
+          shutter_speed: '1/1000s',
+          shutter_speed_value: 0.001,
+          iso: 64,
+          date_time_original: '2026-08-15 16:45:22',
+        },
       },
     ];
   }
