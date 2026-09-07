@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container } from 'pixi.js';
-import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { usePhotoStore } from '../../store/photoStore';
 
 interface PixiCanvasProps {
@@ -18,6 +18,11 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
 
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [pixiStatus, setPixiStatus] = useState<'initializing' | 'ready' | 'error'>('initializing');
+  const [imageStatus, setImageStatus] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [initAttempt, setInitAttempt] = useState(0);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -26,15 +31,25 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
     if (!parent) return;
 
     const app = new Application();
+    setPixiStatus('initializing');
+    setLoadError(null);
 
     const initPixi = async () => {
-      await app.init({
-        resizeTo: parent,
-        backgroundColor: 0x0d0f12,
-        antialias: true,
-        autoDensity: true,
-        resolution: window.devicePixelRatio || 1,
-      });
+      try {
+        await app.init({
+          resizeTo: parent,
+          backgroundColor: 0x0d0f12,
+          antialias: true,
+          autoDensity: true,
+          resolution: window.devicePixelRatio || 1,
+        });
+      } catch (error) {
+        if (isMounted) {
+          setPixiStatus('error');
+          setLoadError(`图形渲染器初始化失败：${String(error)}`);
+        }
+        return;
+      }
 
       if (!isMounted) {
         app.destroy(true);
@@ -47,9 +62,10 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
       const stageContainer = new Container();
       app.stage.addChild(stageContainer);
       imageContainerRef.current = stageContainer;
+      setPixiStatus('ready');
     };
 
-    initPixi();
+    void initPixi();
 
     return () => {
       isMounted = false;
@@ -61,14 +77,27 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
         }
         appRef.current = null;
       }
+      imageContainerRef.current = null;
+      spriteRef.current = null;
     };
-  }, []);
+  }, [initAttempt]);
 
   // 当图片 URL 切换时，更新纹理
   useEffect(() => {
-    if (!imageUrl || !appRef.current || !imageContainerRef.current) return;
+    if (!imageUrl) {
+      setImageStatus('idle');
+      setLoadError(null);
+      return;
+    }
+    if (pixiStatus !== 'ready' || !appRef.current || !imageContainerRef.current) return;
 
     let isCurrent = true;
+    const container = imageContainerRef.current;
+    container.children.forEach((child) => child.destroy());
+    container.removeChildren();
+    spriteRef.current = null;
+    setImageStatus('loading');
+    setLoadError(null);
 
     const loadTexture = async () => {
       try {
@@ -98,17 +127,22 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
         container.addChild(sprite);
         spriteRef.current = sprite;
         setZoomLevel(Math.round(fitScale * 100));
+        setImageStatus('loaded');
       } catch (e) {
         console.error('Failed to render Pixi texture', e);
+        if (isCurrent) {
+          setImageStatus('error');
+          setLoadError(`无法载入当前预览：${String(e)}`);
+        }
       }
     };
 
-    loadTexture();
+    void loadTexture();
 
     return () => {
       isCurrent = false;
     };
-  }, [imageUrl]);
+  }, [imageUrl, pixiStatus, loadAttempt]);
 
   // 当摄影师点击 Face Loupe 人脸特写卡片时，平滑聚焦与居中放大至对应人物
   useEffect(() => {
@@ -206,6 +240,38 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
         isPanning ? 'cursor-grabbing' : 'cursor-grab'
       }`}
     >
+      {(pixiStatus === 'initializing' || imageStatus === 'loading') && (
+        <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-dark-900/55">
+          <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/90 px-3 py-2 text-xs text-slate-300 shadow-lg">
+            <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
+            <span>{pixiStatus === 'initializing' ? '正在初始化图形渲染器…' : '正在载入预览…'}</span>
+          </div>
+        </div>
+      )}
+
+      {(pixiStatus === 'error' || imageStatus === 'error') && (
+        <div className="absolute inset-0 z-[6] flex items-center justify-center bg-dark-900/90 p-6">
+          <div className="max-w-md rounded-xl border border-amber-500/35 bg-dark-800 p-5 text-center shadow-xl">
+            <AlertTriangle className="mx-auto h-7 w-7 text-amber-400" />
+            <h3 className="mt-3 text-sm font-semibold text-slate-100">预览暂时无法显示</h3>
+            <p className="mt-1 break-words text-xs leading-relaxed text-slate-400">{loadError}</p>
+            <button
+              onClick={() => {
+                if (pixiStatus === 'error') {
+                  setInitAttempt((attempt) => attempt + 1);
+                } else {
+                  setLoadAttempt((attempt) => attempt + 1);
+                }
+              }}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/15 px-3 py-1.5 text-xs text-brand-200 hover:bg-brand-500/25"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              重试预览
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 悬浮缩放控制栏 */}
       <div className="absolute top-4 right-4 z-10 flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300 text-xs">
         <span className="font-mono text-slate-400 w-12 text-center">{zoomLevel}%</span>
@@ -219,10 +285,10 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({ imageUrl, filename }) =>
         </button>
         <button
           onClick={zoomTo100}
-          title="1:1 实际像素"
+          title="1:1 显示当前内嵌或代理预览的实际像素，不代表完整 RAW 像素"
           className="px-1.5 py-0.5 hover:bg-dark-700 rounded text-[11px] font-mono transition-colors"
         >
-          1:1
+          1:1 预览
         </button>
         <button
           onClick={() => {

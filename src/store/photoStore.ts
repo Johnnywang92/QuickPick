@@ -27,8 +27,35 @@ const patchPhoto = (photos: PhotoItem[], path: string, patch: Partial<PhotoItem>
 
 export interface XmpConflict {
   localPhoto: PhotoItem;
+  originalPhoto: PhotoItem;
   message: string;
 }
+
+type TriageSnapshot = Pick<
+  PhotoItem,
+  'path' | 'filename' | 'rating' | 'color_label' | 'pick_status' | 'retouch_status' | 'defect_tags' | 'burst_group_id'
+>;
+
+export interface UndoEntry {
+  label: string;
+  snapshots: TriageSnapshot[];
+}
+
+const MAX_UNDO_ENTRIES = 100;
+
+const snapshotTriage = (photo: PhotoItem): TriageSnapshot => ({
+  path: photo.path,
+  filename: photo.filename,
+  rating: photo.rating,
+  color_label: photo.color_label,
+  pick_status: photo.pick_status,
+  retouch_status: photo.retouch_status,
+  defect_tags: photo.defect_tags.map((tag) => ({ ...tag })),
+  burst_group_id: photo.burst_group_id,
+});
+
+const appendUndoEntry = (stack: UndoEntry[], entry: UndoEntry) =>
+  [...stack, entry].slice(-MAX_UNDO_ENTRIES);
 
 const isXmpConflictError = (error: unknown) => String(error).includes('XMP_CONFLICT:');
 
@@ -39,6 +66,7 @@ const makeXmpConflict = (
 ): XmpConflict | null => isXmpConflictError(error)
   ? {
       localPhoto: { ...photo, ...patch },
+      originalPhoto: photo,
       message: String(error).replace(/^.*XMP_CONFLICT:/, ''),
     }
   : null;
@@ -55,9 +83,12 @@ interface PhotoStore {
   writeStatus: 'idle' | 'saving' | 'saved' | 'error';
   writeError: string | null;
   xmpConflict: XmpConflict | null;
+  undoStack: UndoEntry[];
+  isUndoing: boolean;
   clearWriteError: () => void;
   dismissXmpConflict: () => void;
   resolveXmpConflict: (choice: 'reload' | 'overwrite' | 'copy') => Promise<void>;
+  undoLast: () => Promise<void>;
 
   // 环形预加载内存缓存 (path -> base64 data url)
   previewCache: Map<string, string>;
@@ -131,6 +162,8 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   writeStatus: 'idle',
   writeError: null,
   xmpConflict: null,
+  undoStack: [],
+  isUndoing: false,
   previewCache: new Map(),
 
   clearWriteError: () => set({ writeStatus: 'idle', writeError: null }),
@@ -158,6 +191,10 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
           photos: patchPhoto(state.photos, local.path, { ...local, xmp_source_hash: sourceHash }),
           xmpConflict: null,
           writeStatus: 'saved',
+          undoStack: appendUndoEntry(state.undoStack, {
+            label: `撤销 ${local.filename} 的冲突覆盖`,
+            snapshots: [snapshotTriage(conflict.originalPhoto)],
+          }),
         }));
         return;
       }
@@ -190,6 +227,77 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         writeError: `处理 ${local.filename} 的 XMP 冲突失败：${String(error)}`,
       });
     }
+  },
+
+  undoLast: async () => {
+    const { undoStack, writeStatus, isUndoing, photos } = get();
+    if (undoStack.length === 0 || writeStatus === 'saving' || isUndoing) return;
+
+    const entry = undoStack[undoStack.length - 1];
+    const restored = new Map<string, TriageSnapshot & { sourceHash: string }>();
+    const failures: TriageSnapshot[] = [];
+    const errors: string[] = [];
+    let conflict: XmpConflict | null = null;
+
+    set({ isUndoing: true, writeStatus: 'saving', writeError: null, xmpConflict: null });
+
+    for (const snapshot of entry.snapshots) {
+      const current = photos.find((photo) => photo.path === snapshot.path);
+      if (!current) {
+        failures.push(snapshot);
+        errors.push(`${snapshot.filename}: 当前相册中已不存在`);
+        continue;
+      }
+
+      try {
+        const sourceHash = await updatePhotoTriage(
+          snapshot.path,
+          snapshot.rating,
+          snapshot.color_label,
+          snapshot.pick_status,
+          snapshot.retouch_status,
+          snapshot.defect_tags.map((tag) => tag.id).join(','),
+          snapshot.burst_group_id,
+          current.xmp_source_hash,
+        );
+        restored.set(snapshot.path, { ...snapshot, sourceHash });
+      } catch (error) {
+        failures.push(snapshot);
+        errors.push(`${snapshot.filename}: ${String(error)}`);
+        conflict ??= makeXmpConflict(error, current, snapshot);
+      }
+    }
+
+    set((state) => {
+      const baseStack = state.undoStack.slice(0, -1);
+      const nextStack = failures.length > 0
+        ? [...baseStack, { ...entry, snapshots: failures }]
+        : baseStack;
+      return {
+        photos: state.photos.map((photo) => {
+          const snapshot = restored.get(photo.path);
+          return snapshot
+            ? {
+                ...photo,
+                rating: snapshot.rating,
+                color_label: snapshot.color_label,
+                pick_status: snapshot.pick_status,
+                retouch_status: snapshot.retouch_status,
+                defect_tags: snapshot.defect_tags,
+                burst_group_id: snapshot.burst_group_id,
+                xmp_source_hash: snapshot.sourceHash,
+              }
+            : photo;
+        }),
+        undoStack: nextStack,
+        isUndoing: false,
+        writeStatus: errors.length > 0 ? 'error' : 'saved',
+        writeError: errors.length > 0
+          ? `撤销“${entry.label}”时有 ${errors.length} 张写入失败\n${errors.slice(0, 3).join('\n')}`
+          : null,
+        xmpConflict: conflict,
+      };
+    });
   },
 
   // NAS 协同与 2K 代理加速初始状态
@@ -406,6 +514,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     if (compareTargetIndex === null) return;
     const photo = photos[compareTargetIndex];
     if (!photo) return;
+    if (photo.rating === rating) return;
 
     const updated = { ...photo, rating };
     const newPhotos = [...photos];
@@ -423,7 +532,14 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         photo.burst_group_id,
         photo.xmp_source_hash,
       );
-      set((state) => ({ photos: updateSourceHash(state.photos, photo.path, sourceHash), writeStatus: 'saved' }));
+      set((state) => ({
+        photos: updateSourceHash(state.photos, photo.path, sourceHash),
+        writeStatus: 'saved',
+        undoStack: appendUndoEntry(state.undoStack, {
+          label: `撤销 ${photo.filename} 的评分`,
+          snapshots: [snapshotTriage(photo)],
+        }),
+      }));
     } catch (e) {
       console.error('Failed to update compare photo rating', e);
       set((state) => ({
@@ -440,6 +556,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     if (compareTargetIndex === null) return;
     const photo = photos[compareTargetIndex];
     if (!photo) return;
+    if (photo.pick_status === status) return;
 
     const updated = { ...photo, pick_status: status };
     const newPhotos = [...photos];
@@ -457,7 +574,14 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         photo.burst_group_id,
         photo.xmp_source_hash,
       );
-      set((state) => ({ photos: updateSourceHash(state.photos, photo.path, sourceHash), writeStatus: 'saved' }));
+      set((state) => ({
+        photos: updateSourceHash(state.photos, photo.path, sourceHash),
+        writeStatus: 'saved',
+        undoStack: appendUndoEntry(state.undoStack, {
+          label: `撤销 ${photo.filename} 的采纳状态`,
+          snapshots: [snapshotTriage(photo)],
+        }),
+      }));
     } catch (e) {
       console.error('Failed to update compare photo pick status', e);
       set((state) => ({
@@ -489,6 +613,11 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         isLoading: false,
         activeFilter: 'all',
         isProxyAccelerated,
+        undoStack: [],
+        isUndoing: false,
+        writeStatus: 'idle',
+        writeError: null,
+        xmpConflict: null,
       });
 
       if (photos.length > 0) {
