@@ -1,0 +1,33 @@
+# Node / Frontend Dependencies & Builds
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Rust / Tauri Build Outputs
+src-tauri/target/
+target/
+**/*.rs.bk
+
+# QuickPick Dynamic Caches & Temporary Backups
+.quickpick_cache/
+**/.quickpick_cache/
+*.xmp.quickpick-backup
+*.quickpick-local-*.xmp
+*.tmp
+*.log
+
+# OS & Environment Metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE & Editor Configurations
+.idea/
+.vscode/
+*.swp
+*.swo
