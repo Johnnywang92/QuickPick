@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { usePhotoStore } from '../../store/photoStore';
+import { usePhotoStore, isPhotoMatchingFilter } from '../../store/photoStore';
 import { Check, X, Star } from 'lucide-react';
 
 const ITEM_WIDTH = 112; // w-28 = 7rem = 112px
@@ -9,7 +9,7 @@ const CONTAINER_PADDING_X = 16; // px-4 = 16px
 const OVERSCAN = 5; // 前后各缓冲 5 个元素，滑动时平滑无白屏
 
 export const Filmstrip: React.FC = () => {
-  const { photos, currentIndex, activeFilter, selectIndex, previewCache } = usePhotoStore();
+  const { photos, currentIndex, activeFilter, selectedCamera, selectedLens, selectIndex, previewCache } = usePhotoStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [containerWidth, setContainerWidth] = useState(1200);
@@ -87,14 +87,7 @@ export const Filmstrip: React.FC = () => {
       >
         {visiblePhotos.map(({ photo, idx }) => {
           const isCurrent = idx === currentIndex;
-          const matchesFilter =
-            activeFilter === 'all' ||
-            (activeFilter === 'pending' && photo.retouch_status === 'pending') ||
-            (activeFilter === 'failed' && photo.retouch_status === 'failed') ||
-            (activeFilter === 'clean' && photo.retouch_status === 'clean') ||
-            (activeFilter === 'fixable' && photo.retouch_status === 'fixable') ||
-            (activeFilter === 'fatal' && photo.retouch_status === 'fatal') ||
-            (activeFilter === 'picked' && photo.pick_status === 'Pick');
+          const matchesFilter = isPhotoMatchingFilter(photo, activeFilter, selectedCamera, selectedLens);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
 

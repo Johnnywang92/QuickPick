@@ -1,13 +1,29 @@
 import React from 'react';
 import { usePhotoStore, FilterCategory } from '../../store/photoStore';
 import { confirmAction, showAlert } from '../../services/tauriBridge';
-import { Sparkles, Wand2, AlertTriangle, CheckCircle2, Layers, Zap, CircleDashed, RefreshCw } from 'lucide-react';
+import {
+  Sparkles,
+  Wand2,
+  AlertTriangle,
+  CheckCircle2,
+  Layers,
+  Zap,
+  CircleDashed,
+  RefreshCw,
+  Camera,
+  Aperture,
+  X,
+} from 'lucide-react';
 
 export const FilterToolbar: React.FC = () => {
   const {
     photos,
     activeFilter,
     setActiveFilter,
+    selectedCamera,
+    setSelectedCamera,
+    selectedLens,
+    setSelectedLens,
     batchPickClean,
     batchRejectFatal,
     applyAiSuggestions,
@@ -22,6 +38,25 @@ export const FilterToolbar: React.FC = () => {
   const countFixable = photos.filter((p) => p.retouch_status === 'fixable').length;
   const countFatal = photos.filter((p) => p.retouch_status === 'fatal').length;
   const countPicked = photos.filter((p) => p.pick_status === 'Pick').length;
+
+  // 提取所有可用的相机型号与镜头型号选项
+  const cameraOptions = React.useMemo(() => {
+    const set = new Set<string>();
+    photos.forEach((p) => {
+      const cam = [p.exif?.camera_make, p.exif?.camera_model].filter(Boolean).join(' ') || p.exif?.camera_model;
+      if (cam && cam.trim()) set.add(cam.trim());
+    });
+    return Array.from(set).sort();
+  }, [photos]);
+
+  const lensOptions = React.useMemo(() => {
+    const set = new Set<string>();
+    photos.forEach((p) => {
+      const lens = p.exif?.lens_model || p.exif?.lens_make;
+      if (lens && lens.trim()) set.add(lens.trim());
+    });
+    return Array.from(set).sort();
+  }, [photos]);
 
   const confirmAndRun = async (
     message: string,
@@ -90,37 +125,105 @@ export const FilterToolbar: React.FC = () => {
 
   return (
     <div className="h-10 border-b border-dark-700/80 bg-dark-850 flex items-center justify-between px-4 text-xs select-none">
-      {/* 视图分类 Filter Tabs */}
-      <div className="flex items-center space-x-1.5">
-        <span className="text-[11px] text-slate-500 font-mono mr-1">视图过滤:</span>
-        {filterTabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeFilter === tab.id;
+      {/* 左侧：视图分类 Filter Tabs 与 相机/镜头筛选器 */}
+      <div className="flex items-center space-x-2 overflow-x-auto min-w-0 pr-2">
+        <span className="text-[11px] text-slate-500 font-mono mr-0.5 shrink-0">视图过滤:</span>
+        <div className="flex items-center space-x-1.5 shrink-0">
+          {filterTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeFilter === tab.id;
 
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveFilter(tab.id)}
-              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${
-                isActive
-                  ? tab.activeClass
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-dark-800'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                isActive ? 'bg-white/10' : 'bg-dark-750 text-slate-400'
-              }`}>
-                {tab.count}
-              </span>
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveFilter(tab.id)}
+                className={`flex items-center space-x-1.5 px-2 py-1 rounded-md border text-xs font-medium transition-all ${
+                  isActive
+                    ? tab.activeClass
+                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-dark-800'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  isActive ? 'bg-white/10' : 'bg-dark-750 text-slate-400'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 相机机位 & 镜头快捷过滤 */}
+        {(cameraOptions.length > 0 || lensOptions.length > 0) && (
+          <div className="flex items-center space-x-1.5 border-l border-dark-700/80 pl-2 shrink-0">
+            {cameraOptions.length > 0 && (
+              <div className="flex items-center space-x-1 bg-dark-800 border border-dark-700 rounded px-1.5 py-0.5">
+                <Camera className="w-3 h-3 text-slate-400 shrink-0" />
+                <select
+                  value={selectedCamera || ''}
+                  onChange={(e) => setSelectedCamera(e.target.value ? e.target.value : null)}
+                  className="bg-transparent text-slate-200 text-[11px] outline-none cursor-pointer max-w-[130px] truncate"
+                  title="按机身筛选照片"
+                >
+                  <option value="" className="bg-dark-850 text-slate-200">全部机位</option>
+                  {cameraOptions.map((cam) => {
+                    const count = photos.filter((p) => {
+                      const c = [p.exif?.camera_make, p.exif?.camera_model].filter(Boolean).join(' ') || p.exif?.camera_model;
+                      return c === cam;
+                    }).length;
+                    return (
+                      <option key={cam} value={cam} className="bg-dark-850 text-slate-200">
+                        {cam} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
+            {lensOptions.length > 0 && (
+              <div className="flex items-center space-x-1 bg-dark-800 border border-dark-700 rounded px-1.5 py-0.5">
+                <Aperture className="w-3 h-3 text-slate-400 shrink-0" />
+                <select
+                  value={selectedLens || ''}
+                  onChange={(e) => setSelectedLens(e.target.value ? e.target.value : null)}
+                  className="bg-transparent text-slate-200 text-[11px] outline-none cursor-pointer max-w-[150px] truncate"
+                  title="按镜头型号筛选照片"
+                >
+                  <option value="" className="bg-dark-850 text-slate-200">全部镜头</option>
+                  {lensOptions.map((lens) => {
+                    const count = photos.filter((p) => (p.exif?.lens_model || p.exif?.lens_make) === lens).length;
+                    return (
+                      <option key={lens} value={lens} className="bg-dark-850 text-slate-200">
+                        {lens} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
+            {(selectedCamera || selectedLens) && (
+              <button
+                onClick={() => {
+                  setSelectedCamera(null);
+                  setSelectedLens(null);
+                }}
+                className="flex items-center space-x-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] transition-colors"
+                title="清除机身/镜头筛选"
+              >
+                <X className="w-3 h-3" />
+                <span>清除筛选</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 摄影师批量智能操作区 */}
-      <div className="flex items-center space-x-2">
+      <div className="flex items-center space-x-2 shrink-0">
         <button
           onClick={() => void confirmAndRun(
             `将 ${countClean} 张“未见明显问题”的照片标记为采纳，并为未评级照片设置 5 星。是否继续？`,
