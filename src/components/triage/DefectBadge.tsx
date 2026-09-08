@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { usePhotoStore } from '../../store/photoStore';
+import { usePhotoStore, getPhotoUncertainty } from '../../store/photoStore';
 import {
   Sparkles,
   Wand2,
@@ -10,6 +10,7 @@ import {
   Check,
   X,
   RefreshCw,
+  Scale,
 } from 'lucide-react';
 import { RetouchStatus } from '../../services/tauriBridge';
 
@@ -31,6 +32,7 @@ export const DefectBadge: React.FC = () => {
   if (!currentPhoto) return null;
 
   const { retouch_status, defect_tags } = currentPhoto;
+  const uncertainty = getPhotoUncertainty(currentPhoto);
 
   const getStatusConfig = (status: RetouchStatus) => {
     switch (status) {
@@ -88,6 +90,20 @@ export const DefectBadge: React.FC = () => {
           <span>{config.label}</span>
           <span className="text-[10px] opacity-60">▼</span>
         </div>
+
+        {/* 争议待定复核标志 */}
+        {uncertainty.isUncertain && (
+          <div
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-xs font-semibold shadow-sm animate-pulse"
+            title={`争议待裁决理由：${uncertainty.reasons.join(' · ')}`}
+          >
+            <Scale className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+            <span>待定复核</span>
+            <span className="text-[10px] text-indigo-200/80 font-normal">
+              ({uncertainty.reasons.join(' · ')})
+            </span>
+          </div>
+        )}
 
         {retouch_status === 'failed' && (
           <button

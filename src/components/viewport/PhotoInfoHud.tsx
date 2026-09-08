@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { usePhotoStore, getFilteredProgress } from '../../store/photoStore';
+import { usePhotoStore, getFilteredProgress, getPhotoUncertainty } from '../../store/photoStore';
 import { Camera, Aperture, Timer, Gauge, Calendar, ChevronDown, ChevronUp, Layers } from 'lucide-react';
 
 export const PhotoInfoHud: React.FC = () => {
@@ -8,14 +8,19 @@ export const PhotoInfoHud: React.FC = () => {
   const activeFilter = usePhotoStore((state) => state.activeFilter);
   const selectedCamera = usePhotoStore((state) => state.selectedCamera);
   const selectedLens = usePhotoStore((state) => state.selectedLens);
+  const reviewOnlyUnadjudicated = usePhotoStore((state) => state.reviewOnlyUnadjudicated);
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
   const currentPhoto = photos[currentIndex];
   if (!currentPhoto) return null;
 
   const filterProgress = React.useMemo(() => {
-    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens);
-  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens]);
+    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated);
+  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated]);
+
+  const uncertainty = React.useMemo(() => {
+    return currentPhoto ? getPhotoUncertainty(currentPhoto) : null;
+  }, [currentPhoto]);
 
   const burstInfo = React.useMemo(() => {
     if (!currentPhoto?.burst_group_id) return null;
@@ -35,6 +40,14 @@ export const PhotoInfoHud: React.FC = () => {
         <span>{currentPhoto.filename}</span>
         {currentPhoto.is_raw && (
           <span className="text-[10px] bg-brand-600/30 text-brand-300 px-1 py-0.2 rounded font-sans">RAW</span>
+        )}
+        {uncertainty?.isUncertain && (
+          <span
+            className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0.2 rounded font-sans font-medium shrink-0"
+            title={`争议待复核: ${uncertainty.reasons.join(' · ')}`}
+          >
+            待复核 [{uncertainty.reasons[0] || '争议'}]
+          </span>
         )}
         {filterProgress.isFiltered && (
           <span
@@ -68,6 +81,14 @@ export const PhotoInfoHud: React.FC = () => {
           {currentPhoto.is_raw && (
             <span className="text-[9px] bg-brand-500/20 text-brand-300 border border-brand-500/30 px-1 py-0.2 rounded font-mono font-medium shrink-0">
               RAW
+            </span>
+          )}
+          {uncertainty?.isUncertain && (
+            <span
+              className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0.2 rounded font-sans font-medium shrink-0"
+              title={`争议待复核: ${uncertainty.reasons.join(' · ')}`}
+            >
+              待复核 [{uncertainty.reasons[0] || '争议'}]
             </span>
           )}
           {filterProgress.isFiltered && (

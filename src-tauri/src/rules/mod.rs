@@ -208,6 +208,15 @@ pub fn evaluate_photo_retouchability(
             hint: Some("主体边缘锐度极低，光学校验失误，商业客照无法真实还原".to_string()),
         });
         fatal_count += 1;
+    } else if metrics.sharpness < 45.0 {
+        tags.push(DefectTag {
+            id: "review_borderline_sharpness".to_string(),
+            category: "fixable".to_string(),
+            label: "临界合焦".to_string(),
+            confidence: 0.72,
+            hint: Some("锐度处于清晰与脱焦边缘(25~45)，建议100%放大确认眼部焦点或归入争议复核".to_string()),
+        });
+        fixable_count += 1;
     } else if metrics.sharpness < 75.0 {
         tags.push(DefectTag {
             id: "fixable_slight_blur".to_string(),
@@ -474,5 +483,19 @@ mod tests {
         let (status, tags) = evaluate_photo_retouchability(&metrics, None, 0);
         assert_eq!(status, RetouchStatus::Clean);
         assert!(tags.iter().any(|t| t.id == "clean_prime"));
+    }
+
+    #[test]
+    fn test_borderline_sharpness_review_tag() {
+        let metrics = ImageMetrics {
+            sharpness: 35.0, // 处于 25.0 ~ 45.0 临界合焦过渡带
+            mean_luminance: 120.0,
+            highlight_clipped_pct: 0.01,
+            shadow_clipped_pct: 0.01,
+            dynamic_range: 200.0,
+        };
+        let (status, tags) = evaluate_photo_retouchability(&metrics, None, 0);
+        assert_eq!(status, RetouchStatus::Fixable);
+        assert!(tags.iter().any(|t| t.id == "review_borderline_sharpness"));
     }
 }

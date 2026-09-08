@@ -1,5 +1,5 @@
 import React from 'react';
-import { usePhotoStore, FilterCategory, isPhotoMatchingFilter } from '../../store/photoStore';
+import { usePhotoStore, FilterCategory, isPhotoMatchingFilter, getPhotoUncertainty } from '../../store/photoStore';
 import { confirmAction, showAlert } from '../../services/tauriBridge';
 import {
   Sparkles,
@@ -13,6 +13,7 @@ import {
   Camera,
   Aperture,
   X,
+  Scale,
 } from 'lucide-react';
 
 export const FilterToolbar: React.FC = () => {
@@ -24,6 +25,8 @@ export const FilterToolbar: React.FC = () => {
     setSelectedCamera,
     selectedLens,
     setSelectedLens,
+    reviewOnlyUnadjudicated,
+    setReviewOnlyUnadjudicated,
     batchPickClean,
     batchRejectFatal,
     applyAiSuggestions,
@@ -38,12 +41,27 @@ export const FilterToolbar: React.FC = () => {
   const countFixable = photos.filter((p) => p.retouch_status === 'fixable').length;
   const countFatal = photos.filter((p) => p.retouch_status === 'fatal').length;
   const countPicked = photos.filter((p) => p.pick_status === 'Pick').length;
+  const countReview = photos.filter(
+    (p) => getPhotoUncertainty(p).isUncertain && (!reviewOnlyUnadjudicated || p.pick_status === 'None'),
+  ).length;
+
+  const cleanEligible = photos.filter(
+    (p) => p.retouch_status === 'clean' && !getPhotoUncertainty(p).isUncertain,
+  ).length;
+  const cleanProtected = countClean - cleanEligible;
+
+  const fatalEligible = photos.filter(
+    (p) => p.retouch_status === 'fatal' && !getPhotoUncertainty(p).isUncertain,
+  ).length;
+  const fatalProtected = countFatal - fatalEligible;
 
   const isFiltered = activeFilter !== 'all' || selectedCamera !== null || selectedLens !== null;
   const matchingCount = React.useMemo(() => {
     if (!isFiltered) return countAll;
-    return photos.filter((p) => isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens)).length;
-  }, [photos, isFiltered, activeFilter, selectedCamera, selectedLens, countAll]);
+    return photos.filter((p) =>
+      isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated),
+    ).length;
+  }, [photos, isFiltered, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, countAll]);
 
   // 提取所有可用的相机型号与镜头型号选项
   const cameraOptions = React.useMemo(() => {
@@ -98,6 +116,13 @@ export const FilterToolbar: React.FC = () => {
       count: countFailed,
       icon: RefreshCw,
       activeClass: 'bg-orange-600/20 text-orange-300 border-orange-500/50',
+    },
+    {
+      id: 'review',
+      label: '待定复核',
+      count: countReview,
+      icon: Scale,
+      activeClass: 'bg-indigo-600/20 text-indigo-300 border-indigo-500/50 shadow-indigo-500/10 shadow-sm',
     },
     {
       id: 'clean',
@@ -160,6 +185,21 @@ export const FilterToolbar: React.FC = () => {
             );
           })}
         </div>
+
+        {/* 待定复核模式下的仅看未裁决切换 */}
+        {activeFilter === 'review' && (
+          <button
+            onClick={() => setReviewOnlyUnadjudicated(!reviewOnlyUnadjudicated)}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded border text-[11px] font-mono transition-colors shrink-0 ${
+              reviewOnlyUnadjudicated
+                ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200'
+                : 'bg-dark-800 border-dark-700 text-slate-400 hover:text-slate-200'
+            }`}
+            title="点击切换：仅显示尚未标记(Pick/Reject)的待复核照片"
+          >
+            <span>{reviewOnlyUnadjudicated ? '仅看未裁决' : '全部待复核'}</span>
+          </button>
+        )}
 
         {/* 相机机位 & 镜头快捷过滤 */}
         {(cameraOptions.length > 0 || lensOptions.length > 0) && (
@@ -242,10 +282,10 @@ export const FilterToolbar: React.FC = () => {
 
         <button
           onClick={() => void confirmAndRun(
-            `将 ${countClean} 张“未见明显问题”的照片标记为采纳，并为未评级照片设置 5 星。是否继续？`,
+            `将 ${cleanEligible} 张“未见明显问题”的照片标记为采纳，并为未评级照片设置 5 星${cleanProtected > 0 ? `（已安全豁免 ${cleanProtected} 张争议/待复核照片）` : ''}。是否继续？`,
             batchPickClean,
           )}
-          title="批量采纳已完成分析且未发现明显问题的照片"
+          title={`批量采纳已完成分析且未发现明显问题的照片${cleanProtected > 0 ? ` (自动豁免 ${cleanProtected} 张争议待复核照片)` : ''}`}
           className="flex items-center space-x-1 px-2.5 py-1 rounded bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/50 text-[11px] transition-colors"
         >
           <Sparkles className="w-3 h-3 text-emerald-400" />
@@ -254,10 +294,10 @@ export const FilterToolbar: React.FC = () => {
 
         <button
           onClick={() => void confirmAndRun(
-            `将 ${countFatal} 张“不可修硬伤”照片标记为排除。待分析照片不会受影响。是否继续？`,
+            `将 ${fatalEligible} 张“不可修硬伤”照片标记为排除${fatalProtected > 0 ? `（已安全豁免 ${fatalProtected} 张争议/待复核照片）` : ''}。待分析照片不会受影响。是否继续？`,
             batchRejectFatal,
           )}
-          title="将所有检测为'不可修硬伤'的照片批量标记为排除 (Reject)"
+          title={`将所有检测为'不可修硬伤'的照片批量标记为排除 (Reject)${fatalProtected > 0 ? ` (自动豁免 ${fatalProtected} 张争议待复核照片)` : ''}`}
           className="flex items-center space-x-1 px-2.5 py-1 rounded bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-700/50 text-[11px] transition-colors"
         >
           <AlertTriangle className="w-3 h-3 text-rose-400" />
@@ -268,10 +308,10 @@ export const FilterToolbar: React.FC = () => {
 
         <button
           onClick={() => void confirmAndRun(
-            `应用规则建议：采纳 ${countClean} 张低风险片、排除 ${countFatal} 张硬伤片；${countPending} 张待分析和 ${countFailed} 张分析失败照片保持不变。是否继续？`,
+            `应用规则建议：采纳 ${cleanEligible} 张低风险片、排除 ${fatalEligible} 张硬伤片${(cleanProtected + fatalProtected) > 0 ? `（安全保护 ${cleanProtected + fatalProtected} 张争议片留待人工裁决）` : ''}；${countPending} 张待分析和 ${countFailed} 张分析失败照片保持不变。是否继续？`,
             applyAiSuggestions,
           )}
-          title="一键应用 AI 筛选建议：采纳完美片，排除硬伤片，保留可修片待人工确认"
+          title="一键应用 AI 筛选建议：采纳完美片，排除硬伤片，保留争议片与可修片待人工确认"
           className="flex items-center space-x-1 px-2.5 py-1 rounded bg-brand-600/30 hover:bg-brand-500/40 text-brand-300 border border-brand-500/40 text-[11px] font-medium transition-colors"
         >
           <Zap className="w-3 h-3 text-amber-300" />

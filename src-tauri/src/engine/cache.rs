@@ -223,6 +223,11 @@ pub fn build_folder_cache<P: AsRef<Path>>(
             Vec::new()
         };
 
+        let mut defect_tags = photo.defect_tags.clone();
+        if let Some(conflict_tag) = crate::rules::face::evaluate_group_eye_conflict(&faces) {
+            defect_tags.push(conflict_tag);
+        }
+
         catalog_items.push(CatalogItem {
             filename: photo.filename.clone(),
             file_size: photo.file_size,
@@ -231,7 +236,7 @@ pub fn build_folder_cache<P: AsRef<Path>>(
             thumb_width: final_w,
             thumb_height: final_h,
             retouch_status: photo.retouch_status.clone(),
-            defect_tags: photo.defect_tags.clone(),
+            defect_tags,
             burst_group_id: photo.burst_group_id.clone(),
             faces,
             exif: photo.exif.clone(),

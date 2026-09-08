@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { usePhotoStore, isPhotoMatchingFilter } from '../../store/photoStore';
-import { Check, X, Star } from 'lucide-react';
+import { usePhotoStore, isPhotoMatchingFilter, getPhotoUncertainty } from '../../store/photoStore';
+import { Check, X, Star, Scale } from 'lucide-react';
 
 const ITEM_WIDTH = 112; // w-28 = 7rem = 112px
 const ITEM_GAP = 8; // space-x-2 = 0.5rem = 8px
@@ -15,6 +15,7 @@ export const Filmstrip: React.FC = () => {
     activeFilter,
     selectedCamera,
     selectedLens,
+    reviewOnlyUnadjudicated,
     selectIndex,
     previewCache,
     isCompareMode,
@@ -50,13 +51,13 @@ export const Filmstrip: React.FC = () => {
     const map = new Map<string, number>();
     let count = 0;
     photos.forEach((p) => {
-      if (isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens)) {
+      if (isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated)) {
         count++;
         map.set(p.path, count);
       }
     });
     return map;
-  }, [photos, activeFilter, selectedCamera, selectedLens]);
+  }, [photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated]);
 
   // 自动平滑居中当前选中的缩略图卡片
   useEffect(() => {
@@ -111,7 +112,14 @@ export const Filmstrip: React.FC = () => {
         {visiblePhotos.map(({ photo, idx }) => {
           const isCurrent = idx === currentIndex;
           const isCompare = isCompareMode && idx === compareTargetIndex;
-          const matchesFilter = isPhotoMatchingFilter(photo, activeFilter, selectedCamera, selectedLens);
+          const matchesFilter = isPhotoMatchingFilter(
+            photo,
+            activeFilter,
+            selectedCamera,
+            selectedLens,
+            reviewOnlyUnadjudicated,
+          );
+          const uncertainty = getPhotoUncertainty(photo);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
 
@@ -189,6 +197,15 @@ export const Filmstrip: React.FC = () => {
                     {photo.burst_group_id && (
                       <span className="text-[8px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono">
                         连拍
+                      </span>
+                    )}
+                    {uncertainty.isUncertain && (
+                      <span
+                        title={`待定复核: ${uncertainty.reasons.join(' · ')}`}
+                        className="text-[8px] px-0.5 py-0.2 rounded bg-indigo-500/30 text-indigo-200 font-mono flex items-center"
+                      >
+                        <Scale className="w-2 h-2 mr-0.5 shrink-0" />
+                        复核
                       </span>
                     )}
                     {isCompareMode && isCurrent && (

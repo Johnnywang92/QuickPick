@@ -116,6 +116,30 @@ pub fn evaluate_group_eyes(all_faces: &[FaceInfo]) -> Option<DefectTag> {
     })
 }
 
+/// 评估多人合影或双人合照中的睁闭眼分歧冲突 (不确定性优先队列核心判定)
+pub fn evaluate_group_eye_conflict(all_faces: &[FaceInfo]) -> Option<DefectTag> {
+    if all_faces.len() < 2 {
+        return None;
+    }
+    let closed_count = all_faces.iter().filter(|f| f.eye_open_score < 0.35).count();
+    let open_count = all_faces.iter().filter(|f| f.eye_open_score >= 0.70).count();
+
+    if closed_count > 0 && open_count > 0 {
+        Some(DefectTag {
+            id: "review_group_blink_conflict".to_string(),
+            category: "fixable".to_string(),
+            label: format!("合影闭眼分歧 ({}闭/{}睁)", closed_count, open_count),
+            confidence: 0.88,
+            hint: Some(format!(
+                "合影中 {} 人闭眼但 {} 人神态极佳，属于典型争议片，建议人工裁决或通过连拍换脸拯救",
+                closed_count, open_count
+            )),
+        })
+    } else {
+        None
+    }
+}
+
 /// 轻量化人脸特征区域提取（基于 YCbCr 肤色聚类与眼部高反差区域）
 /// 无需外部庞大网络权重，100% 离线、跨平台且毫秒级响应
 pub fn detect_faces_heuristic(img: &DynamicImage) -> Vec<FaceInfo> {
@@ -402,5 +426,29 @@ mod tests {
         assert!(next_faces[1].is_pinned, "Closest face in next burst frame should inherit pinned state");
         assert_eq!(next_faces[1].label.as_deref(), Some("新娘主角"));
         assert!(!next_faces[0].is_pinned, "Unrelated face should remain unpinned");
+    }
+
+    #[test]
+    fn test_group_eye_conflict_evaluation() {
+        let faces = vec![
+            FaceInfo {
+                id: "f1".to_string(),
+                x: 0.2, y: 0.3, width: 0.1, height: 0.1,
+                eye_open_score: 0.95, // 极佳睁眼
+                sharpness: 90.0, is_pinned: false, priority: 1.0, label: None,
+            },
+            FaceInfo {
+                id: "f2".to_string(),
+                x: 0.5, y: 0.3, width: 0.1, height: 0.1,
+                eye_open_score: 0.15, // 闭眼
+                sharpness: 88.0, is_pinned: false, priority: 1.0, label: None,
+            },
+        ];
+
+        let tag = evaluate_group_eye_conflict(&faces);
+        assert!(tag.is_some());
+        let t = tag.unwrap();
+        assert_eq!(t.id, "review_group_blink_conflict");
+        assert!(t.label.contains("合影闭眼分歧"));
     }
 }
