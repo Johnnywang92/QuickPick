@@ -20,6 +20,7 @@ export const Filmstrip: React.FC = () => {
     previewCache,
     isCompareMode,
     compareTargetIndex,
+    activeWorkflowScene,
   } = usePhotoStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -51,13 +52,13 @@ export const Filmstrip: React.FC = () => {
     const map = new Map<string, number>();
     let count = 0;
     photos.forEach((p) => {
-      if (isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated)) {
+      if (isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
         count++;
         map.set(p.path, count);
       }
     });
     return map;
-  }, [photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated]);
+  }, [photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene]);
 
   // 自动平滑居中当前选中的缩略图卡片
   useEffect(() => {
@@ -118,8 +119,9 @@ export const Filmstrip: React.FC = () => {
             selectedCamera,
             selectedLens,
             reviewOnlyUnadjudicated,
+            activeWorkflowScene,
           );
-          const uncertainty = getPhotoUncertainty(photo);
+          const uncertainty = getPhotoUncertainty(photo, activeWorkflowScene);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
 

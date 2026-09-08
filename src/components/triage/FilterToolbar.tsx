@@ -1,5 +1,11 @@
 import React from 'react';
-import { usePhotoStore, FilterCategory, isPhotoMatchingFilter, getPhotoUncertainty } from '../../store/photoStore';
+import {
+  usePhotoStore,
+  FilterCategory,
+  WorkflowScene,
+  isPhotoMatchingFilter,
+  getPhotoUncertainty,
+} from '../../store/photoStore';
 import { confirmAction, showAlert } from '../../services/tauriBridge';
 import {
   Sparkles,
@@ -14,7 +20,61 @@ import {
   Aperture,
   X,
   Scale,
+  Mic2,
+  Briefcase,
+  Heart,
+  ChevronDown,
 } from 'lucide-react';
+
+const sceneOptions: {
+  id: WorkflowScene;
+  label: string;
+  shortLabel: string;
+  icon: React.FC<any>;
+  desc: string;
+  activeClass: string;
+}[] = [
+  {
+    id: 'general',
+    label: '通用人像 / 旅拍客照',
+    shortLabel: '通用人像',
+    icon: Camera,
+    desc: '标准人像合焦、曝光与面部睁闭眼综合评估',
+    activeClass: 'bg-dark-700 text-slate-100 border-slate-600',
+  },
+  {
+    id: 'concert',
+    label: '演唱会 / 舞台演出 / 音乐节',
+    shortLabel: '演唱会/舞台',
+    icon: Mic2,
+    desc: '深情闭眼直接放行免杀，重点排查舞台爆闪死白与麦克风遮挡',
+    activeClass: 'bg-purple-600/20 text-purple-300 border-purple-500/50 shadow-purple-500/10 shadow-sm',
+  },
+  {
+    id: 'cosplay',
+    label: '二次元 / 漫展 / Cosplay',
+    shortLabel: '二次元Cos',
+    icon: Sparkles,
+    desc: '假毛睫毛与美瞳合焦超严苛质检，连拍动作张力峰值选优',
+    activeClass: 'bg-pink-600/20 text-pink-300 border-pink-500/50 shadow-pink-500/10 shadow-sm',
+  },
+  {
+    id: 'conference',
+    label: '商业活动 / 公关会议 / 图片直播',
+    shortLabel: '商业会议',
+    icon: Briefcase,
+    desc: '大合影全员睁眼严格一票否决，主讲人发言表情强过滤',
+    activeClass: 'bg-blue-600/20 text-blue-300 border-blue-500/50 shadow-blue-500/10 shadow-sm',
+  },
+  {
+    id: 'wedding',
+    label: '婚礼纪实 / 情感抓拍',
+    shortLabel: '婚礼纪实',
+    icon: Heart,
+    desc: '真情流露大哭大笑表情宽容，大合影连拍换脸拯救',
+    activeClass: 'bg-rose-600/20 text-rose-300 border-rose-500/50 shadow-rose-500/10 shadow-sm',
+  },
+];
 
 export const FilterToolbar: React.FC = () => {
   const {
@@ -27,12 +87,34 @@ export const FilterToolbar: React.FC = () => {
     setSelectedLens,
     reviewOnlyUnadjudicated,
     setReviewOnlyUnadjudicated,
+    activeWorkflowScene,
+    setWorkflowScene,
     batchPickClean,
     batchRejectFatal,
     applyAiSuggestions,
   } = usePhotoStore();
 
+  const [showSceneDropdown, setShowSceneDropdown] = React.useState(false);
+  const sceneDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (sceneDropdownRef.current && !sceneDropdownRef.current.contains(e.target as Node)) {
+        setShowSceneDropdown(false);
+      }
+    };
+    if (showSceneDropdown) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [showSceneDropdown]);
+
   if (photos.length === 0) return null;
+
+  const currentScene = sceneOptions.find((s) => s.id === activeWorkflowScene) || sceneOptions[0];
+  const CurrentSceneIcon = currentScene.icon;
 
   const countAll = photos.length;
   const countPending = photos.filter((p) => p.retouch_status === 'pending').length;
@@ -42,16 +124,18 @@ export const FilterToolbar: React.FC = () => {
   const countFatal = photos.filter((p) => p.retouch_status === 'fatal').length;
   const countPicked = photos.filter((p) => p.pick_status === 'Pick').length;
   const countReview = photos.filter(
-    (p) => getPhotoUncertainty(p).isUncertain && (!reviewOnlyUnadjudicated || p.pick_status === 'None'),
+    (p) =>
+      getPhotoUncertainty(p, activeWorkflowScene).isUncertain &&
+      (!reviewOnlyUnadjudicated || p.pick_status === 'None'),
   ).length;
 
   const cleanEligible = photos.filter(
-    (p) => p.retouch_status === 'clean' && !getPhotoUncertainty(p).isUncertain,
+    (p) => p.retouch_status === 'clean' && !getPhotoUncertainty(p, activeWorkflowScene).isUncertain,
   ).length;
   const cleanProtected = countClean - cleanEligible;
 
   const fatalEligible = photos.filter(
-    (p) => p.retouch_status === 'fatal' && !getPhotoUncertainty(p).isUncertain,
+    (p) => p.retouch_status === 'fatal' && !getPhotoUncertainty(p, activeWorkflowScene).isUncertain,
   ).length;
   const fatalProtected = countFatal - fatalEligible;
 
@@ -59,9 +143,25 @@ export const FilterToolbar: React.FC = () => {
   const matchingCount = React.useMemo(() => {
     if (!isFiltered) return countAll;
     return photos.filter((p) =>
-      isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated),
+      isPhotoMatchingFilter(
+        p,
+        activeFilter,
+        selectedCamera,
+        selectedLens,
+        reviewOnlyUnadjudicated,
+        activeWorkflowScene,
+      ),
     ).length;
-  }, [photos, isFiltered, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, countAll]);
+  }, [
+    photos,
+    isFiltered,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
+    reviewOnlyUnadjudicated,
+    activeWorkflowScene,
+    countAll,
+  ]);
 
   // 提取所有可用的相机型号与镜头型号选项
   const cameraOptions = React.useMemo(() => {
@@ -156,8 +256,58 @@ export const FilterToolbar: React.FC = () => {
 
   return (
     <div className="h-10 border-b border-dark-700/80 bg-dark-850 flex items-center justify-between px-4 text-xs select-none">
-      {/* 左侧：视图分类 Filter Tabs 与 相机/镜头筛选器 */}
+      {/* 左侧：工作流场景预设、视图分类 Filter Tabs 与 相机/镜头筛选器 */}
       <div className="flex items-center space-x-2 overflow-x-auto min-w-0 pr-2">
+        {/* 场景工作流预设下拉选择器 */}
+        <div className="relative shrink-0" ref={sceneDropdownRef}>
+          <button
+            onClick={() => setShowSceneDropdown(!showSceneDropdown)}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${currentScene.activeClass}`}
+            title={`当前摄影场景模式：${currentScene.label}\n${currentScene.desc}\n(点击切换并定制 AI 评判标准)`}
+          >
+            <CurrentSceneIcon className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-semibold">{currentScene.shortLabel}</span>
+            <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+          </button>
+
+          {showSceneDropdown && (
+            <div className="absolute top-9 left-0 z-50 bg-dark-800 border border-dark-700 rounded-xl shadow-2xl p-1.5 w-72 flex flex-col space-y-1 text-xs animate-in fade-in zoom-in-95">
+              <div className="px-2 py-1 text-[10px] text-slate-400 border-b border-dark-700/80 font-mono">
+                选择拍摄题材（实时适配 AI 判定规则）
+              </div>
+              {sceneOptions.map((opt) => {
+                const OptIcon = opt.icon;
+                const isCurrent = activeWorkflowScene === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => {
+                      setWorkflowScene(opt.id);
+                      setShowSceneDropdown(false);
+                    }}
+                    className={`flex flex-col items-start px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+                      isCurrent
+                        ? 'bg-brand-600/30 text-brand-200 border border-brand-500/30'
+                        : 'hover:bg-dark-700 text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-1.5 font-medium">
+                      <OptIcon className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+                      <span>{opt.label}</span>
+                      {isCurrent && <span className="text-[10px] text-brand-300 ml-auto font-mono">生效中</span>}
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                      {opt.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="w-[1px] h-3.5 bg-dark-700 shrink-0" />
+
         <span className="text-[11px] text-slate-500 font-mono mr-0.5 shrink-0">视图过滤:</span>
         <div className="flex items-center space-x-1.5 shrink-0">
           {filterTabs.map((tab) => {

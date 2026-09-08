@@ -69,6 +69,14 @@
 
 ### P2：差异化能力（P0/P1 稳定后推进）
 
+- [x] **P2.0 场景预设模式引擎 (Scene Workflow Engine)**：
+  - [x] 5 大摄影专业场景引擎：`general` (通用人像), `concert` (演唱会/舞台演出), `cosplay` (二次元/Cosplay/漫展), `conference` (商业活动/会议公关/图片直播), `wedding` (婚礼纪实)
+  - [x] 场景专属差异化 AI 规则库与动态阈值：
+    - 演唱会舞台模式 (`concert`)：歌手单人沉浸表演闭眼识别并豁免为非缺陷；舞台爆闪高光严重死白严格预警 (`highlight > 0.14`)；放宽舞台烟雾/追光临界合焦
+    - 二次元/Cosplay 模式 (`cosplay`)：最严苛美瞳、假毛与眼妆合焦锐度质检 (`sharpness < 35` 致命, `< 55` 临界复核)；神态与张力优先
+    - 商务会议模式 (`conference`)：大合影全员睁眼严格判定 (`confidence: 0.98`)；领导致辞嘴型崩坏防雷
+    - 婚礼纪实模式 (`wedding`)：新人感动流泪/大笑情绪抓拍高容忍度；连拍换脸/换眼跨帧拯救深度提示
+  - [x] 前端响应式体验：`FilterToolbar` 场景切换下拉框与 `localStorage` 持久化，视口 HUD 与诊断卡片实时展示场景模式徽标与豁免标签，免重新解码 RAW 即时响应 (<1ms)
 - [x] **P2.1 不确定性优先队列（争议片集中裁决）**：
   - [x] 后端规则冲突与临界判定：合影闭眼分歧 (`review_group_blink_conflict`)、合焦边缘临界度 (`review_borderline_sharpness`) 与连拍换脸候选检测
   - [x] 前端集中裁决队列：`FilterCategory` 增加 `'review'`，顶部工具栏设独立 `待定复核` Tab 与 `[仅看未裁决]` 快捷过滤

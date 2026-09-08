@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
-import { usePhotoStore, getFilteredProgress, getPhotoUncertainty } from '../../store/photoStore';
+import { usePhotoStore, getFilteredProgress, getPhotoUncertainty, WorkflowScene } from '../../store/photoStore';
 import { Camera, Aperture, Timer, Gauge, Calendar, ChevronDown, ChevronUp, Layers } from 'lucide-react';
+
+const sceneBadges: Record<WorkflowScene, { label: string; tagClass: string }> = {
+  general: { label: '通用', tagClass: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  concert: { label: '🎤 演出', tagClass: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
+  cosplay: { label: '🎀 Cos', tagClass: 'bg-pink-500/20 text-pink-300 border-pink-500/40' },
+  conference: { label: '🏢 会议', tagClass: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
+  wedding: { label: '💍 婚礼', tagClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
+};
 
 export const PhotoInfoHud: React.FC = () => {
   const photos = usePhotoStore((state) => state.photos);
@@ -9,18 +17,19 @@ export const PhotoInfoHud: React.FC = () => {
   const selectedCamera = usePhotoStore((state) => state.selectedCamera);
   const selectedLens = usePhotoStore((state) => state.selectedLens);
   const reviewOnlyUnadjudicated = usePhotoStore((state) => state.reviewOnlyUnadjudicated);
+  const activeWorkflowScene = usePhotoStore((state) => state.activeWorkflowScene);
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
   const currentPhoto = photos[currentIndex];
   if (!currentPhoto) return null;
 
   const filterProgress = React.useMemo(() => {
-    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated);
-  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated]);
+    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene);
+  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene]);
 
   const uncertainty = React.useMemo(() => {
-    return currentPhoto ? getPhotoUncertainty(currentPhoto) : null;
-  }, [currentPhoto]);
+    return currentPhoto ? getPhotoUncertainty(currentPhoto, activeWorkflowScene) : null;
+  }, [currentPhoto, activeWorkflowScene]);
 
   const burstInfo = React.useMemo(() => {
     if (!currentPhoto?.burst_group_id) return null;
@@ -40,6 +49,14 @@ export const PhotoInfoHud: React.FC = () => {
         <span>{currentPhoto.filename}</span>
         {currentPhoto.is_raw && (
           <span className="text-[10px] bg-brand-600/30 text-brand-300 px-1 py-0.2 rounded font-sans">RAW</span>
+        )}
+        {activeWorkflowScene !== 'general' && (
+          <span
+            className={`text-[9px] px-1 py-0.2 rounded border font-sans font-medium shrink-0 ${sceneBadges[activeWorkflowScene].tagClass}`}
+            title={`当前场景模式：${sceneBadges[activeWorkflowScene].label}`}
+          >
+            {sceneBadges[activeWorkflowScene].label}
+          </span>
         )}
         {uncertainty?.isUncertain && (
           <span
@@ -81,6 +98,14 @@ export const PhotoInfoHud: React.FC = () => {
           {currentPhoto.is_raw && (
             <span className="text-[9px] bg-brand-500/20 text-brand-300 border border-brand-500/30 px-1 py-0.2 rounded font-mono font-medium shrink-0">
               RAW
+            </span>
+          )}
+          {activeWorkflowScene !== 'general' && (
+            <span
+              className={`text-[9px] px-1 py-0.2 rounded border font-sans font-medium shrink-0 ${sceneBadges[activeWorkflowScene].tagClass}`}
+              title={`当前场景模式：${sceneBadges[activeWorkflowScene].label}`}
+            >
+              {sceneBadges[activeWorkflowScene].label}
             </span>
           )}
           {uncertainty?.isUncertain && (

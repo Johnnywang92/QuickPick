@@ -10,6 +10,18 @@ pub enum RetouchStatus {
     Failed,   // 解码或分析失败，可重试
 }
 
+/// 专业摄影工作流场景预设模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowScene {
+    #[default]
+    General,    // 通用人像 / 旅拍客照
+    Concert,    // 演唱会 / 舞台演出 / 音乐节
+    Cosplay,    // 二次元 / 漫展 / Cosplay / JK / 汉服
+    Conference, // 商业活动 / 会议公关 / 图片直播
+    Wedding,    // 婚礼纪实 / 情感抓拍
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefectTag {
     pub id: String,           // 如 "burst_face_swap", "severe_blur", "photobomber"

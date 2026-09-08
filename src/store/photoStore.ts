@@ -17,13 +17,18 @@ import {
 export type FilterCategory = 'all' | 'pending' | 'failed' | 'review' | 'clean' | 'fixable' | 'fatal' | 'picked';
 export type ScenePreset = 'group' | 'candid' | 'portrait';
 
+export type WorkflowScene = 'general' | 'concert' | 'cosplay' | 'conference' | 'wedding';
+
 export interface PhotoUncertainty {
   isUncertain: boolean;
   score: number;
   reasons: string[];
 }
 
-export const getPhotoUncertainty = (photo: PhotoItem): PhotoUncertainty => {
+export const getPhotoUncertainty = (
+  photo: PhotoItem,
+  scene: WorkflowScene = 'general',
+): PhotoUncertainty => {
   if (photo.retouch_status === 'pending' || photo.retouch_status === 'failed') {
     return { isUncertain: false, score: 0, reasons: [] };
   }
@@ -31,44 +36,85 @@ export const getPhotoUncertainty = (photo: PhotoItem): PhotoUncertainty => {
   const reasons: string[] = [];
   let score = 0;
 
-  // 1. 明确的争议/复核标签 (来自后端规则)
-  if (photo.defect_tags.some((t) => t.id === 'review_group_blink_conflict')) {
-    reasons.push('合影闭眼分歧');
-    score = Math.max(score, 0.88);
+  // 1. 场景专属定制规则判定
+  if (scene === 'concert') {
+    // 演唱会模式：舞台爆闪严重死白
+    if (photo.defect_tags.some((t) => t.id === 'fatal_blown_highlights' || t.label.includes('舞台爆闪'))) {
+      reasons.push('舞台爆闪严重死白');
+      score = Math.max(score, 0.92);
+    }
+  } else if (scene === 'cosplay') {
+    // 二次元/Cosplay 模式：极致追求假毛/美瞳与眼部合焦
+    if (photo.defect_tags.some((t) => t.id === 'review_borderline_sharpness' || t.label.includes('Cosplay美瞳'))) {
+      reasons.push('Cosplay美瞳/眼妆需核验');
+      score = Math.max(score, 0.88);
+    }
+    if (photo.faces && photo.faces.length > 0) {
+      const pinned = photo.faces.find((f) => f.is_pinned) || photo.faces[0];
+      if (pinned && pinned.sharpness < 58.0 && !reasons.includes('Cosplay美瞳/眼妆需核验')) {
+        reasons.push('Cosplay主角眼部微软');
+        score = Math.max(score, 0.82);
+      }
+    }
+  } else if (scene === 'conference') {
+    // 商业会议模式：大合影全员睁眼严格判定
+    if (photo.faces && photo.faces.length >= 3) {
+      const closed = photo.faces.filter((f) => f.eye_open_score < 0.35).length;
+      if (closed > 0) {
+        reasons.push(`商务大合影闭眼 (${closed}人)`);
+        score = Math.max(score, 0.96);
+      }
+    }
   }
-  if (photo.defect_tags.some((t) => t.id === 'review_borderline_sharpness')) {
-    reasons.push('临界合焦边缘');
+
+  // 2. 明确的争议/复核标签 (来自后端规则)
+  if (photo.defect_tags.some((t) => t.id === 'review_group_blink_conflict')) {
+    // 演唱会单人特写即便打上分歧也直接豁免，多人乐队演出才提示
+    if (scene === 'concert' && (!photo.faces || photo.faces.length <= 2)) {
+      // 豁免
+    } else {
+      reasons.push('合影闭眼分歧');
+      score = Math.max(score, 0.88);
+    }
+  }
+  if (photo.defect_tags.some((t) => t.id === 'review_borderline_sharpness') && !reasons.includes('Cosplay美瞳/眼妆需核验')) {
+    reasons.push(scene === 'concert' ? '舞台微反差边缘' : '临界合焦边缘');
     score = Math.max(score, 0.75);
   }
 
-  // 2. 连拍换脸可拯救候选
+  // 3. 连拍换脸可拯救候选
   if (photo.defect_tags.some((t) => t.id === 'fixable_burst_swap')) {
     reasons.push('连拍换脸待裁决');
     score = Math.max(score, 0.85);
   }
 
-  // 3. 人脸特征冲突检测
+  // 4. 人脸特征冲突与睁闭眼检测
   if (photo.faces && photo.faces.length > 0) {
-    const closedCount = photo.faces.filter((f) => f.eye_open_score < 0.35).length;
-    const openCount = photo.faces.filter((f) => f.eye_open_score >= 0.70).length;
-    if (closedCount > 0 && openCount > 0 && !reasons.includes('合影闭眼分歧')) {
-      reasons.push(`合影表情分歧 (${closedCount}闭/${openCount}睁)`);
-      score = Math.max(score, 0.85);
-    }
+    // 演唱会模式：单人闭眼为深情演唱投入表情，不作为争议
+    const isConcertSolo = scene === 'concert' && photo.faces.length <= 2;
 
-    const pinnedFace = photo.faces.find((f) => f.is_pinned);
-    if (pinnedFace) {
-      if (pinnedFace.eye_open_score < 0.50) {
-        reasons.push('主角闭眼');
-        score = Math.max(score, 0.90);
-      } else if (pinnedFace.sharpness < 50.0) {
-        reasons.push('主角微脱焦');
-        score = Math.max(score, 0.70);
+    if (!isConcertSolo) {
+      const closedCount = photo.faces.filter((f) => f.eye_open_score < 0.35).length;
+      const openCount = photo.faces.filter((f) => f.eye_open_score >= 0.70).length;
+      if (closedCount > 0 && openCount > 0 && !reasons.includes('合影闭眼分歧')) {
+        reasons.push(`合影表情分歧 (${closedCount}闭/${openCount}睁)`);
+        score = Math.max(score, 0.85);
+      }
+
+      const pinnedFace = photo.faces.find((f) => f.is_pinned);
+      if (pinnedFace) {
+        if (pinnedFace.eye_open_score < 0.50) {
+          reasons.push(scene === 'wedding' ? '新人闭眼' : '主角闭眼');
+          score = Math.max(score, 0.90);
+        } else if (pinnedFace.sharpness < 50.0 && !reasons.includes('Cosplay主角眼部微软')) {
+          reasons.push('主角微脱焦');
+          score = Math.max(score, 0.70);
+        }
       }
     }
   }
 
-  // 4. 临界置信度标签 (0.60 <= confidence < 0.85 且非 clean)
+  // 5. 临界置信度标签 (0.60 <= confidence < 0.85 且非 clean)
   const borderlineTags = photo.defect_tags.filter(
     (t) => t.category !== 'clean' && t.confidence >= 0.60 && t.confidence < 0.85 && !t.id.startsWith('review_')
   );
@@ -78,8 +124,12 @@ export const getPhotoUncertainty = (photo: PhotoItem): PhotoUncertainty => {
     score = Math.max(score, 0.65);
   }
 
-  // 5. 焦点微软
-  if (photo.defect_tags.some((t) => t.id === 'fixable_slight_blur') && !reasons.includes('临界合焦边缘')) {
+  // 6. 焦点微软
+  if (
+    photo.defect_tags.some((t) => t.id === 'fixable_slight_blur') &&
+    !reasons.includes('临界合焦边缘') &&
+    !reasons.includes('Cosplay美瞳/眼妆需核验')
+  ) {
     reasons.push('焦点微软');
     score = Math.max(score, 0.60);
   }
@@ -97,8 +147,9 @@ export const isPhotoMatchingFilter = (
   camera: string | null = null,
   lens: string | null = null,
   reviewOnlyUnadjudicated: boolean = false,
+  scene: WorkflowScene = 'general',
 ): boolean => {
-  const uncertainty = getPhotoUncertainty(photo);
+  const uncertainty = getPhotoUncertainty(photo, scene);
   const matchesCategory =
     filter === 'all' ||
     (filter === 'clean' && photo.retouch_status === 'clean') ||
@@ -135,8 +186,9 @@ export const getFilteredPhotos = (
   camera: string | null = null,
   lens: string | null = null,
   reviewOnlyUnadjudicated: boolean = false,
+  scene: WorkflowScene = 'general',
 ): PhotoItem[] => {
-  return photos.filter((p) => isPhotoMatchingFilter(p, filter, camera, lens, reviewOnlyUnadjudicated));
+  return photos.filter((p) => isPhotoMatchingFilter(p, filter, camera, lens, reviewOnlyUnadjudicated, scene));
 };
 
 export const getFilteredProgress = (
@@ -146,6 +198,7 @@ export const getFilteredProgress = (
   camera: string | null = null,
   lens: string | null = null,
   reviewOnlyUnadjudicated: boolean = false,
+  scene: WorkflowScene = 'general',
 ): { filteredIndex: number; filteredTotal: number; isFiltered: boolean } => {
   const isFiltered = filter !== 'all' || camera !== null || lens !== null;
   if (!isFiltered) {
@@ -155,7 +208,7 @@ export const getFilteredProgress = (
   let filteredTotal = 0;
   const current = photos[currentIndex];
   for (let i = 0; i < photos.length; i++) {
-    if (isPhotoMatchingFilter(photos[i], filter, camera, lens, reviewOnlyUnadjudicated)) {
+    if (isPhotoMatchingFilter(photos[i], filter, camera, lens, reviewOnlyUnadjudicated, scene)) {
       if (current && photos[i].path === current.path) {
         filteredIndex = filteredTotal;
       }
@@ -317,6 +370,10 @@ interface PhotoStore {
   setExportModalOpen: (open: boolean) => void;
   toggleAutoAdvance: () => void;
 
+  // 场景工作流预设模式 (演唱会/舞台、二次元Cos、商业会议、婚礼纪实、通用人像)
+  activeWorkflowScene: WorkflowScene;
+  setWorkflowScene: (scene: WorkflowScene) => void;
+
   // NAS 协同与 2K 代理加速状态
   isProxyAccelerated: boolean;
   isGeneratingCache: boolean;
@@ -331,6 +388,16 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   selectedCamera: null,
   selectedLens: null,
   reviewOnlyUnadjudicated: false,
+  activeWorkflowScene:
+    (typeof window !== 'undefined' &&
+      (localStorage.getItem('quickpick_workflow_scene') as WorkflowScene)) ||
+    'general',
+  setWorkflowScene: (scene: WorkflowScene) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('quickpick_workflow_scene', scene);
+    }
+    set({ activeWorkflowScene: scene });
+  },
   autoAdvance: true,
   isLoading: false,
   isExportModalOpen: false,
@@ -1057,11 +1124,11 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setActiveFilter: (filter: FilterCategory) => {
     set({ activeFilter: filter });
-    const { photos, selectedCamera, selectedLens, reviewOnlyUnadjudicated } = get();
+    const { photos, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene } = get();
     const current = photos[get().currentIndex];
-    if (current && !isPhotoMatchingFilter(current, filter, selectedCamera, selectedLens, reviewOnlyUnadjudicated)) {
+    if (current && !isPhotoMatchingFilter(current, filter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
       const firstMatchIdx = photos.findIndex((p) =>
-        isPhotoMatchingFilter(p, filter, selectedCamera, selectedLens, reviewOnlyUnadjudicated),
+        isPhotoMatchingFilter(p, filter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene),
       );
       if (firstMatchIdx !== -1) {
         get().selectIndex(firstMatchIdx);
@@ -1071,11 +1138,11 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setSelectedCamera: (camera: string | null) => {
     set({ selectedCamera: camera });
-    const { photos, activeFilter, selectedLens, reviewOnlyUnadjudicated } = get();
+    const { photos, activeFilter, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene } = get();
     const current = photos[get().currentIndex];
-    if (current && !isPhotoMatchingFilter(current, activeFilter, camera, selectedLens, reviewOnlyUnadjudicated)) {
+    if (current && !isPhotoMatchingFilter(current, activeFilter, camera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
       const firstMatchIdx = photos.findIndex((p) =>
-        isPhotoMatchingFilter(p, activeFilter, camera, selectedLens, reviewOnlyUnadjudicated),
+        isPhotoMatchingFilter(p, activeFilter, camera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene),
       );
       if (firstMatchIdx !== -1) {
         get().selectIndex(firstMatchIdx);
@@ -1085,11 +1152,11 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setSelectedLens: (lens: string | null) => {
     set({ selectedLens: lens });
-    const { photos, activeFilter, selectedCamera, reviewOnlyUnadjudicated } = get();
+    const { photos, activeFilter, selectedCamera, reviewOnlyUnadjudicated, activeWorkflowScene } = get();
     const current = photos[get().currentIndex];
-    if (current && !isPhotoMatchingFilter(current, activeFilter, selectedCamera, lens, reviewOnlyUnadjudicated)) {
+    if (current && !isPhotoMatchingFilter(current, activeFilter, selectedCamera, lens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
       const firstMatchIdx = photos.findIndex((p) =>
-        isPhotoMatchingFilter(p, activeFilter, selectedCamera, lens, reviewOnlyUnadjudicated),
+        isPhotoMatchingFilter(p, activeFilter, selectedCamera, lens, reviewOnlyUnadjudicated, activeWorkflowScene),
       );
       if (firstMatchIdx !== -1) {
         get().selectIndex(firstMatchIdx);
@@ -1187,11 +1254,11 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   nextPhoto: () => {
-    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, selectIndex } = get();
+    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
     if (photos.length === 0) return;
 
     for (let i = currentIndex + 1; i < photos.length; i++) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated)) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
         selectIndex(i);
         break;
       }
@@ -1199,11 +1266,11 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   prevPhoto: () => {
-    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, selectIndex } = get();
+    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
     if (photos.length === 0) return;
 
     for (let i = currentIndex - 1; i >= 0; i--) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated)) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
         selectIndex(i);
         break;
       }
@@ -1211,9 +1278,9 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   jumpToFirstMatching: () => {
-    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, selectIndex } = get();
+    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
     for (let i = 0; i < photos.length; i++) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated)) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
         selectIndex(i);
         break;
       }
@@ -1221,9 +1288,9 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   jumpToLastMatching: () => {
-    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, selectIndex } = get();
+    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
     for (let i = photos.length - 1; i >= 0; i--) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated)) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
         selectIndex(i);
         break;
       }
@@ -1468,12 +1535,12 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   batchPickClean: async () => {
-    const { photos } = get();
+    const { photos, activeWorkflowScene } = get();
     set({ writeStatus: 'saving', writeError: null });
     const updates = new Map<string, { rating: number; pick_status: string; sourceHash: string }>();
     const errors: string[] = [];
     let conflict: XmpConflict | null = null;
-    for (const photo of photos.filter((item) => item.retouch_status === 'clean' && !getPhotoUncertainty(item).isUncertain)) {
+    for (const photo of photos.filter((item) => item.retouch_status === 'clean' && !getPhotoUncertainty(item, activeWorkflowScene).isUncertain)) {
       const rating = photo.rating > 0 ? photo.rating : 5;
       try {
         const sourceHash = await updatePhotoTriage(
@@ -1515,12 +1582,12 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   batchRejectFatal: async () => {
-    const { photos } = get();
+    const { photos, activeWorkflowScene } = get();
     set({ writeStatus: 'saving', writeError: null });
     const updates = new Map<string, string>();
     const errors: string[] = [];
     let conflict: XmpConflict | null = null;
-    for (const photo of photos.filter((item) => item.retouch_status === 'fatal' && !getPhotoUncertainty(item).isUncertain)) {
+    for (const photo of photos.filter((item) => item.retouch_status === 'fatal' && !getPhotoUncertainty(item, activeWorkflowScene).isUncertain)) {
       try {
         const sourceHash = await updatePhotoTriage(
           photo.path,
@@ -1559,12 +1626,12 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   applyAiSuggestions: async () => {
-    const { photos } = get();
+    const { photos, activeWorkflowScene } = get();
     set({ writeStatus: 'saving', writeError: null });
     const updates = new Map<string, { rating: number; pick_status: string; sourceHash: string }>();
     const errors: string[] = [];
     let conflict: XmpConflict | null = null;
-    for (const photo of photos.filter((item) => (item.retouch_status === 'clean' || item.retouch_status === 'fatal') && !getPhotoUncertainty(item).isUncertain)) {
+    for (const photo of photos.filter((item) => (item.retouch_status === 'clean' || item.retouch_status === 'fatal') && !getPhotoUncertainty(item, activeWorkflowScene).isUncertain)) {
       const rating = photo.retouch_status === 'clean' && photo.rating === 0 ? 5 : photo.rating;
       const pickStatus = photo.retouch_status === 'clean' ? 'Pick' : 'Reject';
       try {

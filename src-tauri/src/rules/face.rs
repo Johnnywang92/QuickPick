@@ -1,4 +1,4 @@
-use crate::models::{DefectTag, FaceInfo};
+use crate::models::{DefectTag, FaceInfo, WorkflowScene};
 use image::{DynamicImage, GenericImageView};
 
 /// 计算人脸的严格归一化优先级
@@ -91,9 +91,14 @@ pub fn inherit_pinned_faces(current_faces: &mut [FaceInfo], previous_pinned_face
     }
 }
 
-/// 大合影全员睁眼一票否决检测
+/// 大合影全员睁眼一票否决检测（场景感知版本）
 /// 若存在任何人（包括 Top 6 或背景未上榜人物）眼睛开合度 < 0.35，生成诊断警告
-pub fn evaluate_group_eyes(all_faces: &[FaceInfo]) -> Option<DefectTag> {
+pub fn evaluate_group_eyes_with_scene(all_faces: &[FaceInfo], scene: WorkflowScene) -> Option<DefectTag> {
+    // 演唱会模式下，单人或双人特写允许闭眼深情演唱，不视为大合影闭眼缺陷
+    if scene == WorkflowScene::Concert && all_faces.len() <= 2 {
+        return None;
+    }
+
     let closed_faces: Vec<&FaceInfo> = all_faces
         .iter()
         .filter(|f| f.eye_open_score < 0.35)
@@ -107,17 +112,33 @@ pub fn evaluate_group_eyes(all_faces: &[FaceInfo]) -> Option<DefectTag> {
     let first_face = closed_faces[0];
     let label_str = first_face.label.clone().unwrap_or_else(|| format!("人物 #{}", first_face.id));
 
+    let (label_prefix, confidence) = match scene {
+        WorkflowScene::Conference => ("商务大合影闭眼警告", 0.98),
+        WorkflowScene::Wedding => ("大合影闭眼待拯救", 0.92),
+        _ => ("大合影闭眼", 0.92),
+    };
+
     Some(DefectTag {
         id: "group_photo_blink".to_string(),
         category: "fixable".to_string(), // 大合影闭眼通常可通过连拍同位置换脸拯救
-        label: format!("大合影闭眼 ({}人)", count),
-        confidence: 0.92,
+        label: format!("{} ({}人)", label_prefix, count),
+        confidence,
         hint: Some(format!("检测到 [{}] 等 {} 位人物闭眼，建议调出同组连拍使用 Face Loupe 进行眼神替换", label_str, count)),
     })
 }
 
-/// 评估多人合影或双人合照中的睁闭眼分歧冲突 (不确定性优先队列核心判定)
-pub fn evaluate_group_eye_conflict(all_faces: &[FaceInfo]) -> Option<DefectTag> {
+/// 保持向后兼容的标准大合影闭眼判定
+pub fn evaluate_group_eyes(all_faces: &[FaceInfo]) -> Option<DefectTag> {
+    evaluate_group_eyes_with_scene(all_faces, WorkflowScene::General)
+}
+
+/// 评估多人合影或双人合照中的睁闭眼分歧冲突（场景感知版本）
+pub fn evaluate_group_eye_conflict_with_scene(all_faces: &[FaceInfo], scene: WorkflowScene) -> Option<DefectTag> {
+    // 演唱会模式下，单人或双人特写允许闭眼投入演出，不属于合影分歧
+    if scene == WorkflowScene::Concert && all_faces.len() <= 2 {
+        return None;
+    }
+
     if all_faces.len() < 2 {
         return None;
     }
@@ -125,11 +146,17 @@ pub fn evaluate_group_eye_conflict(all_faces: &[FaceInfo]) -> Option<DefectTag> 
     let open_count = all_faces.iter().filter(|f| f.eye_open_score >= 0.70).count();
 
     if closed_count > 0 && open_count > 0 {
+        let confidence = match scene {
+            WorkflowScene::Conference => 0.95,
+            WorkflowScene::Concert => 0.65,
+            _ => 0.88,
+        };
+
         Some(DefectTag {
             id: "review_group_blink_conflict".to_string(),
             category: "fixable".to_string(),
             label: format!("合影闭眼分歧 ({}闭/{}睁)", closed_count, open_count),
-            confidence: 0.88,
+            confidence,
             hint: Some(format!(
                 "合影中 {} 人闭眼但 {} 人神态极佳，属于典型争议片，建议人工裁决或通过连拍换脸拯救",
                 closed_count, open_count
@@ -138,6 +165,11 @@ pub fn evaluate_group_eye_conflict(all_faces: &[FaceInfo]) -> Option<DefectTag> 
     } else {
         None
     }
+}
+
+/// 保持向后兼容的标准分歧判定
+pub fn evaluate_group_eye_conflict(all_faces: &[FaceInfo]) -> Option<DefectTag> {
+    evaluate_group_eye_conflict_with_scene(all_faces, WorkflowScene::General)
 }
 
 /// 轻量化人脸特征区域提取（基于 YCbCr 肤色聚类与眼部高反差区域）
@@ -450,5 +482,40 @@ mod tests {
         let t = tag.unwrap();
         assert_eq!(t.id, "review_group_blink_conflict");
         assert!(t.label.contains("合影闭眼分歧"));
+    }
+
+    #[test]
+    fn test_scene_aware_eye_evaluations() {
+        let solo_singer = vec![FaceInfo {
+            id: "singer".to_string(),
+            x: 0.4, y: 0.3, width: 0.2, height: 0.2,
+            eye_open_score: 0.10, // 深情闭眼
+            sharpness: 90.0, is_pinned: true, priority: 10.0, label: Some("主唱".to_string()),
+        }];
+
+        // 演唱会模式：单人闭眼应被放行，不报警大合影闭眼
+        let concert_tag = evaluate_group_eyes_with_scene(&solo_singer, WorkflowScene::Concert);
+        assert!(concert_tag.is_none(), "Concert solo singer closed eyes should be allowed");
+
+        // 商业会议模式：大合影闭眼应有极高置信度警告
+        let conf_faces = vec![
+            FaceInfo {
+                id: "vip1".to_string(), x: 0.2, y: 0.3, width: 0.1, height: 0.1,
+                eye_open_score: 0.95, sharpness: 90.0, is_pinned: false, priority: 1.0, label: None,
+            },
+            FaceInfo {
+                id: "vip2".to_string(), x: 0.5, y: 0.3, width: 0.1, height: 0.1,
+                eye_open_score: 0.20, sharpness: 88.0, is_pinned: false, priority: 1.0, label: None,
+            },
+            FaceInfo {
+                id: "vip3".to_string(), x: 0.8, y: 0.3, width: 0.1, height: 0.1,
+                eye_open_score: 0.90, sharpness: 91.0, is_pinned: false, priority: 1.0, label: None,
+            },
+        ];
+        let conf_tag = evaluate_group_eyes_with_scene(&conf_faces, WorkflowScene::Conference);
+        assert!(conf_tag.is_some());
+        let t = conf_tag.unwrap();
+        assert!(t.label.contains("商务大合影"));
+        assert_eq!(t.confidence, 0.98);
     }
 }

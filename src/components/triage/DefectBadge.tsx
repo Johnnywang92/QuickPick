@@ -24,6 +24,7 @@ export const DefectBadge: React.FC = () => {
     overrideRetouchStatus,
     setPickStatus,
     retryCurrentAnalysis,
+    activeWorkflowScene,
   } = usePhotoStore();
 
   const [showOverrideMenu, setShowOverrideMenu] = useState(false);
@@ -32,7 +33,7 @@ export const DefectBadge: React.FC = () => {
   if (!currentPhoto) return null;
 
   const { retouch_status, defect_tags } = currentPhoto;
-  const uncertainty = getPhotoUncertainty(currentPhoto);
+  const uncertainty = getPhotoUncertainty(currentPhoto, activeWorkflowScene);
 
   const getStatusConfig = (status: RetouchStatus) => {
     switch (status) {
@@ -103,6 +104,31 @@ export const DefectBadge: React.FC = () => {
               ({uncertainty.reasons.join(' · ')})
             </span>
           </div>
+        )}
+
+        {/* 场景专属豁免与质检提示 */}
+        {activeWorkflowScene === 'concert' &&
+          currentPhoto.faces &&
+          currentPhoto.faces.length === 1 &&
+          currentPhoto.faces[0].eye_open_score < 0.35 && (
+            <div
+              className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[11px] font-medium"
+              title="演唱会舞台模式：单人沉浸演出闭眼已豁免为非硬伤"
+            >
+              <span>🎤 舞台投入 (闭眼豁免)</span>
+            </div>
+        )}
+
+        {activeWorkflowScene === 'cosplay' &&
+          currentPhoto.faces &&
+          currentPhoto.faces.length > 0 &&
+          currentPhoto.faces.some((f) => f.sharpness < 58) && (
+            <div
+              className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-pink-500/20 border border-pink-500/40 text-pink-300 text-[11px] font-medium"
+              title="Cosplay模式：美瞳/眼妆细节严苛锐度检测"
+            >
+              <span>🎀 美瞳严苛锐度</span>
+            </div>
         )}
 
         {retouch_status === 'failed' && (

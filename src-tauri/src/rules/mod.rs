@@ -1,5 +1,5 @@
 pub mod face;
-use crate::models::{DefectTag, PhotoItem, RetouchStatus};
+use crate::models::{DefectTag, PhotoItem, RetouchStatus, WorkflowScene};
 
 /// 图像指标分析结果
 #[derive(Debug, Clone, Default)]
@@ -188,18 +188,28 @@ fn extract_seq_num(filename: &str) -> Option<i64> {
     digits.parse::<i64>().ok()
 }
 
-/// 综合评估照片的“可修 / 不可修”状态并生成诊断标签
-pub fn evaluate_photo_retouchability(
+/// 综合评估照片的“可修 / 不可修”状态并生成诊断标签（支持场景工作流模式定制）
+pub fn evaluate_photo_retouchability_with_scene(
     metrics: &ImageMetrics,
     burst_group_photos: Option<&[PhotoItem]>,
     current_photo_idx: usize,
+    scene: WorkflowScene,
 ) -> (RetouchStatus, Vec<DefectTag>) {
     let mut tags = Vec::new();
     let mut fatal_count = 0;
     let mut fixable_count = 0;
 
+    // 确定各场景的锐度阈值
+    let (fatal_blur_thresh, borderline_blur_thresh, slight_blur_thresh) = match scene {
+        WorkflowScene::Concert => (18.0, 38.0, 65.0),  // 舞台暗光与烟雾动态，适度宽容
+        WorkflowScene::Cosplay => (35.0, 55.0, 80.0),  // 二次元/Cosplay 极致看重美瞳与睫毛锐度，阈值加严
+        WorkflowScene::Conference => (25.0, 45.0, 75.0),
+        WorkflowScene::Wedding => (22.0, 45.0, 75.0),  // 婚礼大笑大哭抓拍适度容差
+        WorkflowScene::General => (25.0, 45.0, 75.0),
+    };
+
     // 1. 致命硬伤检测：严重脱焦 / 剧烈运动模糊
-    if metrics.sharpness < 25.0 {
+    if metrics.sharpness < fatal_blur_thresh {
         tags.push(DefectTag {
             id: "fatal_severe_blur".to_string(),
             category: "fatal".to_string(),
@@ -208,16 +218,30 @@ pub fn evaluate_photo_retouchability(
             hint: Some("主体边缘锐度极低，光学校验失误，商业客照无法真实还原".to_string()),
         });
         fatal_count += 1;
-    } else if metrics.sharpness < 45.0 {
+    } else if metrics.sharpness < borderline_blur_thresh {
+        let (label, hint) = match scene {
+            WorkflowScene::Cosplay => (
+                "Cosplay美瞳/眼部微软待审".to_string(),
+                "二次元正片对眼部美瞳与假睫毛锐度极度严苛，当前处于临界边缘，建议100%放大确认".to_string(),
+            ),
+            WorkflowScene::Concert => (
+                "舞台边缘合焦/烟雾光晕".to_string(),
+                "舞台光效或烟雾导致局部反差稍弱，建议核实歌手眼部焦点".to_string(),
+            ),
+            _ => (
+                "临界合焦".to_string(),
+                "锐度处于清晰与脱焦边缘，建议100%放大确认眼部焦点或归入争议复核".to_string(),
+            ),
+        };
         tags.push(DefectTag {
             id: "review_borderline_sharpness".to_string(),
             category: "fixable".to_string(),
-            label: "临界合焦".to_string(),
-            confidence: 0.72,
-            hint: Some("锐度处于清晰与脱焦边缘(25~45)，建议100%放大确认眼部焦点或归入争议复核".to_string()),
+            label,
+            confidence: 0.75,
+            hint: Some(hint),
         });
         fixable_count += 1;
-    } else if metrics.sharpness < 75.0 {
+    } else if metrics.sharpness < slight_blur_thresh {
         tags.push(DefectTag {
             id: "fixable_slight_blur".to_string(),
             category: "fixable".to_string(),
@@ -228,14 +252,25 @@ pub fn evaluate_photo_retouchability(
         fixable_count += 1;
     }
 
-    // 2. 致命硬伤检测：高光严重死白 (大面积无细节)
-    if metrics.highlight_clipped_pct > 0.18 {
+    // 2. 致命硬伤检测：高光死白
+    let fatal_hl_thresh = match scene {
+        WorkflowScene::Concert => 0.14, // 演唱会舞台爆闪导致面部过曝是常见硬伤
+        WorkflowScene::Cosplay => 0.16,
+        _ => 0.18,
+    };
+
+    if metrics.highlight_clipped_pct > fatal_hl_thresh {
+        let label = if scene == WorkflowScene::Concert {
+            "舞台爆闪严重死白".to_string()
+        } else {
+            "高光严重死白".to_string()
+        };
         tags.push(DefectTag {
             id: "fatal_blown_highlights".to_string(),
             category: "fatal".to_string(),
-            label: "高光严重死白".to_string(),
-            confidence: 0.89,
-            hint: Some("大面积全通道截断，RAW 像素饱和溢出，肤色/婚纱细节不可恢复".to_string()),
+            label,
+            confidence: 0.90,
+            hint: Some("大面积全通道截断，RAW 像素饱和溢出，肤色细节不可恢复".to_string()),
         });
         fatal_count += 1;
     } else if metrics.highlight_clipped_pct > 0.05 {
@@ -250,11 +285,16 @@ pub fn evaluate_photo_retouchability(
     }
 
     // 3. 可修项：曝光偏暗
-    if metrics.mean_luminance < 75.0 && metrics.sharpness >= 75.0 {
+    if metrics.mean_luminance < 75.0 && metrics.sharpness >= fatal_blur_thresh {
+        let label = if scene == WorkflowScene::Concert {
+            "舞台暗部氛围可提亮".to_string()
+        } else {
+            "曝光偏暗".to_string()
+        };
         tags.push(DefectTag {
             id: "fixable_underexposed".to_string(),
             category: "fixable".to_string(),
-            label: "曝光偏暗".to_string(),
+            label,
             confidence: 0.86,
             hint: Some("主体合焦清晰但欠曝，暗部噪点可控，后期提亮阴影 +1.5EV 即可还原".to_string()),
         });
@@ -282,7 +322,7 @@ pub fn evaluate_photo_retouchability(
                         hint: Some(format!("同组连拍底片 [{}] 合焦极佳，推荐作为脸部/眼神替换源", candidate)),
                     });
                     // 如果只是因表情或局部原因被标记，连拍素材可挽救该张
-                    if fatal_count > 0 && metrics.sharpness >= 25.0 {
+                    if fatal_count > 0 && metrics.sharpness >= fatal_blur_thresh {
                         fatal_count -= 1;
                     }
                     fixable_count += 1;
@@ -308,6 +348,20 @@ pub fn evaluate_photo_retouchability(
     };
 
     (status, tags)
+}
+
+/// 综合评估照片的“可修 / 不可修”状态（通用默认模式）
+pub fn evaluate_photo_retouchability(
+    metrics: &ImageMetrics,
+    burst_group_photos: Option<&[PhotoItem]>,
+    current_photo_idx: usize,
+) -> (RetouchStatus, Vec<DefectTag>) {
+    evaluate_photo_retouchability_with_scene(
+        metrics,
+        burst_group_photos,
+        current_photo_idx,
+        WorkflowScene::General,
+    )
 }
 
 #[cfg(test)]
@@ -497,5 +551,46 @@ mod tests {
         let (status, tags) = evaluate_photo_retouchability(&metrics, None, 0);
         assert_eq!(status, RetouchStatus::Fixable);
         assert!(tags.iter().any(|t| t.id == "review_borderline_sharpness"));
+    }
+
+    #[test]
+    fn test_scene_aware_retouchability_evaluation() {
+        // 1. 测试演唱会模式对舞台暗光微动模糊的适度容差
+        let stage_metrics = ImageMetrics {
+            sharpness: 20.0, // 在通用模式下 < 25 会被判定为 Fatal
+            mean_luminance: 90.0,
+            highlight_clipped_pct: 0.02,
+            shadow_clipped_pct: 0.05,
+            dynamic_range: 200.0,
+        };
+        let (general_status, _) = evaluate_photo_retouchability_with_scene(&stage_metrics, None, 0, WorkflowScene::General);
+        assert_eq!(general_status, RetouchStatus::Fatal, "General mode should flag sharpness 20 as fatal");
+
+        let (concert_status, concert_tags) = evaluate_photo_retouchability_with_scene(&stage_metrics, None, 0, WorkflowScene::Concert);
+        assert_eq!(concert_status, RetouchStatus::Fixable, "Concert mode should be lenient with sharpness 20");
+        assert!(concert_tags.iter().any(|t| t.id == "review_borderline_sharpness"));
+
+        // 2. 测试演唱会对舞台爆闪高光过曝的严格拦截
+        let stage_flash_metrics = ImageMetrics {
+            sharpness: 90.0,
+            mean_luminance: 150.0,
+            highlight_clipped_pct: 0.15, // 0.15 > 0.14
+            shadow_clipped_pct: 0.0,
+            dynamic_range: 255.0,
+        };
+        let (flash_status, flash_tags) = evaluate_photo_retouchability_with_scene(&stage_flash_metrics, None, 0, WorkflowScene::Concert);
+        assert_eq!(flash_status, RetouchStatus::Fatal);
+        assert!(flash_tags.iter().any(|t| t.label.contains("舞台爆闪严重死白")));
+
+        // 3. 测试 Cosplay 模式对美瞳眼妆锐度的严格审核
+        let cosplay_metrics = ImageMetrics {
+            sharpness: 48.0, // < 55.0
+            mean_luminance: 120.0,
+            highlight_clipped_pct: 0.01,
+            shadow_clipped_pct: 0.01,
+            dynamic_range: 200.0,
+        };
+        let (_, cosplay_tags) = evaluate_photo_retouchability_with_scene(&cosplay_metrics, None, 0, WorkflowScene::Cosplay);
+        assert!(cosplay_tags.iter().any(|t| t.label.contains("Cosplay美瞳/眼部微软")));
     }
 }
