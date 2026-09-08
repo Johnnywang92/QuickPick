@@ -1,6 +1,6 @@
 # QuickPick（极选）研发任务全景 Checklist
 
-> 最后更新时间: 2026-09-07  
+> 最后更新时间: 2026-09-08  
 > 对照基准文档: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md) (V3.1 锁定版)
 
 ---
@@ -9,9 +9,9 @@
 
 | 研发阶段 | 核心目标 | 完成度 | 状态 |
 | :--- | :--- | :---: | :---: |
-| **阶段 0：前置技术验真** | LibRaw 动态链接、环境配置、真实底片矩阵 | **75%** | 🟢 基础闭环 |
-| **阶段 1：MVP 极速选片引擎** | 60fps 渲染画布、XMP 哨兵锁、盲打状态机、选片导出器、双图分屏比对 | **98%** | 🟢 闭环可用 |
-| **阶段 2：AI 规则与智能打标签** | “可修/不可修”分类、连拍换脸匹配、多脸特写窗格 (Face Loupe)、场景预设 | **90%** | 🟢 高度完备 |
+| **阶段 0：前置技术验真** | LibRaw 动态链接、环境配置、真实底片矩阵 | **85%** | 🟢 基础闭环 |
+| **阶段 1：MVP 极速选片引擎** | 60fps 渲染画布、XMP 哨兵锁、盲打状态机、选片导出器、双图分屏比对、工程门禁与分发 | **100%** | 🟢 完备闭环 |
+| **阶段 2：AI 规则与智能打标签** | “可修/不可修”分类、连拍选优、多脸特写窗格 (Face Loupe)、场景预设 | **95%** | 🟢 高度完备 |
 | **阶段 3：NAS 协同与工作室生产力** | Docker 后台服务、2K 代理缓存规范、零 RAW 传输加速 | **90%** | 🟢 架构闭环 |
 
 ---
@@ -85,7 +85,7 @@
 
 - [x] **0.1 LibRaw LGPL 动态链接**：搭建 Rust FFI 基础脚手架，支持 `pkg-config` 动态探测与 macOS Homebrew rpath 注入 (`build.rs`)
 - [x] **0.1 动态库探活测试**：完成 `test_libraw_version` 单元测试，成功动态链接 LibRaw 0.22.2 (`lib.rs`)
-- [x] **0.1 工具链架构适配**：配置 `src-tauri/.cargo/config.toml` 默认 target 为 `aarch64-apple-darwin`，消除 Apple Silicon 链接架构冲突
+- [x] **0.1 工具链架构适配**：移除固定 Apple Silicon 限制，支持宿主机架构自适应与跨平台构建 (`src-tauri/.cargo/config.toml`)
 - [x] **0.1 应用图标资源生成**：生成完整标准 Tauri 图标集 (`src-tauri/icons/`)，解决 `tauri::generate_context!()` 构建报错
 - [x] **0.2 真实底片端到端测试**：集成测试真实样例照片 (`test_fixtures/`) 扫描、指标计算与打标 (`test_scan_directory_and_rules`)
 - [ ] **0.2 多机型预览矩阵报告**：获取 Sony A7M4/A7R5、Canon R5/R6、Nikon Z8/Z9 真实 RAW 样本进行内嵌预览提取延迟与分辨率统计
@@ -133,10 +133,15 @@
 - [x] **主备互换与候选遍历**：一键快捷键 `[S]` 互换；右侧候选遍历自动越过左侧主选底片，杜绝死锁卡顿
 - [x] **连拍换脸一键调起比对**：在 AI 诊断药丸中点击连拍换脸供体直接进入分屏比对模式 *(本次完成)*
 - [x] **独立定夺工具条与快捷键**：左右视口各自独立支持采纳 [P]、排除 [X] 及 0-5 星评级，支持 `C` 键进入/退出、`Esc` 退出 *(本次完成)*
+- [x] **连拍组深度选优工作流 (Burst Selection Workflow)**：支持组内限定比对 (`compareScope: 'burst'`)、长按 `[B]` 瞬时闪烁比对、一键定优（`[W]` 设为 5 星 Pick 并自动将同组其余设为 Reject）、单次 `Cmd+Z` 完整撤销与 XMP 事务安全落盘
+- [x] **筛选进度感知与序号提示增强**：视口 HUD 相对序号徽章 (`筛选 [3/45]`)、胶片条 `[Seq] #Num` 双显、筛选工具栏实时匹配胶囊、`Home`/`End` 快速首尾跳转
+- [x] **开源许可与合规交互弹窗 (About & Licenses)**：顶部栏 LibRaw 徽标交互调起 `AboutModal`，支持内嵌查阅协议全文与动态库自由替换指南
 
 ### 1.3 跨端运行时与工程化
 - [x] **Tauri v2 IPC 桥接**：打通前端与 Rust 原生底层交互 (`tauriBridge.ts`)
 - [x] **Web 纯浏览器降级模式**：提供包含真实业务场景与模拟导出的 Mock 数据
+- [x] **跨平台 LibRaw 动态分发 (P1.4)**：自适应构建目标架构，构建动态库搜寻引入 `@executable_path/../Frameworks` 优先 RPATH，同捆 LGPL 2.1 协议与替换指南
+- [x] **全链路工程质量门禁 (P1.6)**：建立 GitHub Actions CI 流水线 (`.github/workflows/ci.yml`)，Clippy 零容忍静态分析，制定性能红线与自动化校验脚本 (`npm run gate`)
 - [ ] **macOS 自动化公证**：配置 Apple Developer ID 证书与 `notarytool` / `stapler` CI 流水线
 - [ ] **Windows 代码签名**：引入 Azure Trusted Signing 或 EV Authenticode 代码签名
 
