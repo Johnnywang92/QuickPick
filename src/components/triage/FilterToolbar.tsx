@@ -24,6 +24,7 @@ import {
   Briefcase,
   Heart,
   ChevronDown,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 const sceneOptions: {
@@ -89,6 +90,10 @@ export const FilterToolbar: React.FC = () => {
     setReviewOnlyUnadjudicated,
     activeWorkflowScene,
     setWorkflowScene,
+    chapters,
+    selectedChapterId,
+    setSelectedChapter,
+    setChaptersModalOpen,
     batchPickClean,
     batchRejectFatal,
     applyAiSuggestions,
@@ -139,10 +144,14 @@ export const FilterToolbar: React.FC = () => {
   ).length;
   const fatalProtected = countFatal - fatalEligible;
 
-  const isFiltered = activeFilter !== 'all' || selectedCamera !== null || selectedLens !== null;
+  const isFiltered =
+    activeFilter !== 'all' ||
+    selectedCamera !== null ||
+    selectedLens !== null ||
+    selectedChapterId !== null;
   const matchingCount = React.useMemo(() => {
     if (!isFiltered) return countAll;
-    return photos.filter((p) =>
+    return photos.filter((p, i) =>
       isPhotoMatchingFilter(
         p,
         activeFilter,
@@ -150,6 +159,9 @@ export const FilterToolbar: React.FC = () => {
         selectedLens,
         reviewOnlyUnadjudicated,
         activeWorkflowScene,
+        selectedChapterId,
+        chapters,
+        i,
       ),
     ).length;
   }, [
@@ -160,6 +172,8 @@ export const FilterToolbar: React.FC = () => {
     selectedLens,
     reviewOnlyUnadjudicated,
     activeWorkflowScene,
+    selectedChapterId,
+    chapters,
     countAll,
   ]);
 
@@ -349,6 +363,51 @@ export const FilterToolbar: React.FC = () => {
           >
             <span>{reviewOnlyUnadjudicated ? '仅看未裁决' : '全部待复核'}</span>
           </button>
+        )}
+
+        {/* 流程分章快捷过滤与看板 */}
+        {chapters.length > 0 && (
+          <div className="flex items-center space-x-1.5 border-l border-dark-700/80 pl-2 shrink-0">
+            <div className="flex items-center space-x-1 bg-dark-800 border border-dark-700 rounded px-1.5 py-0.5">
+              <Layers className="w-3 h-3 text-brand-400 shrink-0" />
+              <select
+                value={selectedChapterId || ''}
+                onChange={(e) => setSelectedChapter(e.target.value ? e.target.value : null)}
+                className="bg-transparent text-slate-200 text-[11px] outline-none cursor-pointer max-w-[150px] truncate"
+                title="按拍摄流程环节过滤视图"
+              >
+                <option value="" className="bg-dark-850 text-slate-200">全部环节 ({chapters.length})</option>
+                {chapters.map((c, idx) => {
+                  const picked = photos.slice(c.startIndex, c.endIndex + 1).filter((p) => p.pick_status === 'Pick').length;
+                  const warning = picked === 0 && c.photoCount > 0 ? ' ⚠️' : '';
+                  return (
+                    <option key={c.id} value={c.id} className="bg-dark-850 text-slate-200">
+                      {String(idx + 1).padStart(2, '0')}. {c.name} ({picked}/{c.targetQuota}{warning})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {selectedChapterId && (
+              <button
+                onClick={() => setSelectedChapter(null)}
+                className="flex items-center space-x-0.5 px-1.5 py-0.5 rounded bg-brand-500/15 hover:bg-brand-500/25 text-brand-300 text-[10px] transition-colors"
+                title="取消环节过滤"
+              >
+                <X className="w-3 h-3" />
+                <span>所有环节</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setChaptersModalOpen(true)}
+              className="p-1 hover:bg-dark-750 text-slate-400 hover:text-brand-300 rounded transition-colors"
+              title="打开流程分章与交付配额看板"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+          </div>
         )}
 
         {/* 相机机位 & 镜头快捷过滤 */}

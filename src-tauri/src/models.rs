@@ -88,3 +88,5 @@ pub struct TriageUpdate {
     pub color_label: Option<String>,
     pub pick_status: Option<String>,
 }
+
+pub use crate::rules::timeline::TimelineChapter;

@@ -21,6 +21,8 @@ export const Filmstrip: React.FC = () => {
     isCompareMode,
     compareTargetIndex,
     activeWorkflowScene,
+    chapters,
+    selectedChapterId,
   } = usePhotoStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -47,18 +49,43 @@ export const Filmstrip: React.FC = () => {
 
   // 预计算筛选匹配项的相对序号映射表（仅当存在活动筛选时计算）
   const filteredIndexMap = React.useMemo(() => {
-    const isFiltered = activeFilter !== 'all' || selectedCamera !== null || selectedLens !== null;
+    const isFiltered =
+      activeFilter !== 'all' ||
+      selectedCamera !== null ||
+      selectedLens !== null ||
+      selectedChapterId !== null;
     if (!isFiltered) return null;
     const map = new Map<string, number>();
     let count = 0;
-    photos.forEach((p) => {
-      if (isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
+    photos.forEach((p, i) => {
+      if (
+        isPhotoMatchingFilter(
+          p,
+          activeFilter,
+          selectedCamera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        )
+      ) {
         count++;
         map.set(p.path, count);
       }
     });
     return map;
-  }, [photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene]);
+  }, [
+    photos,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
+    reviewOnlyUnadjudicated,
+    activeWorkflowScene,
+    selectedChapterId,
+    chapters,
+  ]);
 
   // 自动平滑居中当前选中的缩略图卡片
   useEffect(() => {
@@ -120,8 +147,12 @@ export const Filmstrip: React.FC = () => {
             selectedLens,
             reviewOnlyUnadjudicated,
             activeWorkflowScene,
+            selectedChapterId,
+            chapters,
+            idx,
           );
           const uncertainty = getPhotoUncertainty(photo, activeWorkflowScene);
+          const chapterStart = chapters.find((c) => c.startIndex === idx);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
 
@@ -135,6 +166,8 @@ export const Filmstrip: React.FC = () => {
                 top: '8px',
                 width: `${ITEM_WIDTH}px`,
                 height: '64px',
+                borderLeftColor: chapterStart ? chapterStart.color : undefined,
+                borderLeftWidth: chapterStart ? '3px' : undefined,
               }}
               className={`group cursor-pointer rounded-md border overflow-hidden transition-all duration-150 ${
                 isCurrent
@@ -171,6 +204,15 @@ export const Filmstrip: React.FC = () => {
                     <span className="text-[9px] font-mono text-slate-400">
                       #{idx + 1}
                     </span>
+                    {chapterStart && (
+                      <span
+                        className="text-[8px] px-1 py-0.2 rounded font-sans font-bold truncate max-w-[50px]"
+                        style={{ backgroundColor: `${chapterStart.color}30`, color: chapterStart.color }}
+                        title={`流程环节起始：${chapterStart.name}`}
+                      >
+                        {chapterStart.name}
+                      </span>
+                    )}
                     {/* 智能诊断状态指示点 */}
                     <span
                       title={`AI 诊断: ${

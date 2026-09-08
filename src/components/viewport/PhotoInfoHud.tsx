@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { usePhotoStore, getFilteredProgress, getPhotoUncertainty, WorkflowScene } from '../../store/photoStore';
+import {
+  usePhotoStore,
+  getFilteredProgress,
+  getPhotoUncertainty,
+  WorkflowScene,
+  getCurrentPhotoChapter,
+  getChapterStats,
+} from '../../store/photoStore';
 import { Camera, Aperture, Timer, Gauge, Calendar, ChevronDown, ChevronUp, Layers } from 'lucide-react';
 
 const sceneBadges: Record<WorkflowScene, { label: string; tagClass: string }> = {
@@ -18,18 +25,49 @@ export const PhotoInfoHud: React.FC = () => {
   const selectedLens = usePhotoStore((state) => state.selectedLens);
   const reviewOnlyUnadjudicated = usePhotoStore((state) => state.reviewOnlyUnadjudicated);
   const activeWorkflowScene = usePhotoStore((state) => state.activeWorkflowScene);
+  const chapters = usePhotoStore((state) => state.chapters);
+  const selectedChapterId = usePhotoStore((state) => state.selectedChapterId);
+  const setChaptersModalOpen = usePhotoStore((state) => state.setChaptersModalOpen);
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
   const currentPhoto = photos[currentIndex];
   if (!currentPhoto) return null;
 
   const filterProgress = React.useMemo(() => {
-    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene);
-  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene]);
+    return getFilteredProgress(
+      photos,
+      currentIndex,
+      activeFilter,
+      selectedCamera,
+      selectedLens,
+      reviewOnlyUnadjudicated,
+      activeWorkflowScene,
+      selectedChapterId,
+      chapters,
+    );
+  }, [
+    photos,
+    currentIndex,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
+    reviewOnlyUnadjudicated,
+    activeWorkflowScene,
+    selectedChapterId,
+    chapters,
+  ]);
 
   const uncertainty = React.useMemo(() => {
     return currentPhoto ? getPhotoUncertainty(currentPhoto, activeWorkflowScene) : null;
   }, [currentPhoto, activeWorkflowScene]);
+
+  const currentChapter = React.useMemo(() => {
+    return getCurrentPhotoChapter(photos, currentIndex, chapters);
+  }, [photos, currentIndex, chapters]);
+
+  const chapterStats = React.useMemo(() => {
+    return currentChapter ? getChapterStats(currentChapter, photos, activeWorkflowScene) : null;
+  }, [currentChapter, photos, activeWorkflowScene]);
 
   const burstInfo = React.useMemo(() => {
     if (!currentPhoto?.burst_group_id) return null;
@@ -57,6 +95,21 @@ export const PhotoInfoHud: React.FC = () => {
           >
             {sceneBadges[activeWorkflowScene].label}
           </span>
+        )}
+        {currentChapter && (
+          <button
+            onClick={() => setChaptersModalOpen(true)}
+            className={`text-[9px] px-1 py-0.2 rounded border font-sans font-medium shrink-0 flex items-center space-x-0.5 cursor-pointer hover:opacity-80 transition-opacity ${
+              chapterStats?.status === 'met'
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                : chapterStats?.status === 'empty_warning'
+                ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+            }`}
+            title={`当前环节：${currentChapter.name} (已选 ${chapterStats?.pickedCount || 0}/${currentChapter.targetQuota} 张) - 点击打开交付配额看板`}
+          >
+            <span>📖 {currentChapter.name} [{chapterStats?.pickedCount || 0}/{currentChapter.targetQuota}]</span>
+          </button>
         )}
         {uncertainty?.isUncertain && (
           <span
@@ -107,6 +160,21 @@ export const PhotoInfoHud: React.FC = () => {
             >
               {sceneBadges[activeWorkflowScene].label}
             </span>
+          )}
+          {currentChapter && (
+            <button
+              onClick={() => setChaptersModalOpen(true)}
+              className={`text-[9px] px-1 py-0.2 rounded border font-sans font-medium shrink-0 flex items-center space-x-0.5 cursor-pointer hover:opacity-80 transition-opacity ${
+                chapterStats?.status === 'met'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  : chapterStats?.status === 'empty_warning'
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                  : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+              }`}
+              title={`当前环节：${currentChapter.name} (已选 ${chapterStats?.pickedCount || 0}/${currentChapter.targetQuota} 张) - 点击打开交付配额看板`}
+            >
+              <span>📖 {currentChapter.name} [{chapterStats?.pickedCount || 0}/{currentChapter.targetQuota}]</span>
+            </button>
           )}
           {uncertainty?.isUncertain && (
             <span

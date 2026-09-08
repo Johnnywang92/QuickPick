@@ -19,6 +19,209 @@ export type ScenePreset = 'group' | 'candid' | 'portrait';
 
 export type WorkflowScene = 'general' | 'concert' | 'cosplay' | 'conference' | 'wedding';
 
+export interface TimelineChapter {
+  id: string;
+  name: string;
+  startIndex: number;
+  endIndex: number;
+  startPath: string;
+  endPath: string;
+  startTime?: string;
+  endTime?: string;
+  photoCount: number;
+  targetQuota: number;
+  color: string;
+}
+
+export interface ChapterStats {
+  totalPhotos: number;
+  pickedCount: number;
+  rejectedCount: number;
+  unadjudicatedCount: number;
+  targetQuota: number;
+  completionPct: number;
+  status: 'met' | 'in_progress' | 'empty_warning';
+  fiveStarCount: number;
+  reviewCount: number;
+}
+
+export const CHAPTER_COLORS = [
+  '#3b82f6', // blue
+  '#8b5cf6', // purple
+  '#ec4899', // pink
+  '#f59e0b', // amber
+  '#10b981', // emerald
+  '#06b6d4', // cyan
+  '#6366f1', // indigo
+  '#14b8a6', // teal
+];
+
+export const SCENE_CHAPTER_TEMPLATES: Record<WorkflowScene, Array<{ name: string; quota: number }>> = {
+  wedding: [
+    { name: '新娘早妆与晨袍', quota: 15 },
+    { name: '新郎迎亲与堵门', quota: 15 },
+    { name: '敬茶改口与合影', quota: 10 },
+    { name: '外景采风与特写', quota: 15 },
+    { name: '婚礼主仪式宣誓', quota: 20 },
+    { name: '晚宴敬酒与派对', quota: 15 },
+  ],
+  concert: [
+    { name: '开场演出与首发', quota: 15 },
+    { name: '热力唱跳与主打', quota: 20 },
+    { name: '慢歌抒情与特写', quota: 15 },
+    { name: '中场互动与嘉宾', quota: 10 },
+    { name: '高潮曲目与合唱', quota: 20 },
+    { name: '安可返场与谢幕', quota: 15 },
+  ],
+  conference: [
+    { name: '嘉宾签到与留念', quota: 10 },
+    { name: '领导致辞与主旨演讲', quota: 20 },
+    { name: '高峰圆桌与对话', quota: 15 },
+    { name: '商务茶歇与交流', quota: 10 },
+    { name: 'VIP 全体大合影', quota: 10 },
+    { name: '闭幕颁奖与成果发布', quota: 15 },
+  ],
+  cosplay: [
+    { name: '角色正片第一造型', quota: 15 },
+    { name: '角色正片第二造型', quota: 15 },
+    { name: '动作抓拍与剧情特写', quota: 20 },
+    { name: '场馆巡游与同好互动', quota: 15 },
+    { name: '幕后花絮与谢幕', quota: 10 },
+  ],
+  general: [
+    { name: '环节 1', quota: 15 },
+    { name: '环节 2', quota: 15 },
+    { name: '环节 3', quota: 15 },
+    { name: '环节 4', quota: 15 },
+    { name: '环节 5', quota: 15 },
+  ],
+};
+
+const parseTimestamp = (photo: PhotoItem): number | null => {
+  const dtStr = photo.exif?.date_time_original;
+  if (!dtStr) return null;
+  const normalized = dtStr.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(/-/g, '/');
+  const ts = Date.parse(normalized);
+  return isNaN(ts) ? null : ts / 1000;
+};
+
+export const generateTimelineChapters = (
+  photos: PhotoItem[],
+  minGapMinutes: number = 10,
+  scene: WorkflowScene = 'general',
+): TimelineChapter[] => {
+  if (photos.length === 0) return [];
+
+  const minGapSeconds = Math.max(60, minGapMinutes * 60);
+  const presets = SCENE_CHAPTER_TEMPLATES[scene] || SCENE_CHAPTER_TEMPLATES.general;
+  const splitIndices: number[] = [0];
+
+  let lastTs = parseTimestamp(photos[0]);
+
+  for (let i = 1; i < photos.length; i++) {
+    const currTs = parseTimestamp(photos[i]);
+    if (lastTs !== null && currTs !== null) {
+      const diff = currTs - lastTs;
+      if (diff >= minGapSeconds) {
+        splitIndices.push(i);
+      }
+    }
+    if (currTs !== null) {
+      lastTs = currTs;
+    }
+  }
+
+  const chapters: TimelineChapter[] = [];
+  const numSplits = splitIndices.length;
+
+  for (let idx = 0; idx < numSplits; idx++) {
+    const startIdx = splitIndices[idx];
+    const endIdx = idx + 1 < numSplits ? splitIndices[idx + 1] - 1 : photos.length - 1;
+    const count = endIdx - startIdx + 1;
+    const color = CHAPTER_COLORS[idx % CHAPTER_COLORS.length];
+
+    const preset = idx < presets.length ? presets[idx] : null;
+    const name = preset ? preset.name : `环节 ${idx + 1}`;
+    const defaultQuota = preset ? preset.quota : 15;
+
+    chapters.push({
+      id: `chapter-${idx + 1}-${Date.now()}`,
+      name,
+      startIndex: startIdx,
+      endIndex: endIdx,
+      startPath: photos[startIdx].path,
+      endPath: photos[endIdx].path,
+      startTime: photos[startIdx].exif?.date_time_original,
+      endTime: photos[endIdx].exif?.date_time_original,
+      photoCount: count,
+      targetQuota: Math.min(defaultQuota, count),
+      color,
+    });
+  }
+
+  return chapters;
+};
+
+export const getChapterStats = (
+  chapter: TimelineChapter,
+  photos: PhotoItem[],
+  scene: WorkflowScene = 'general',
+): ChapterStats => {
+  const start = Math.max(0, chapter.startIndex);
+  const end = Math.min(photos.length - 1, chapter.endIndex);
+  const slice = photos.slice(start, end + 1);
+
+  const totalPhotos = slice.length;
+  let pickedCount = 0;
+  let rejectedCount = 0;
+  let unadjudicatedCount = 0;
+  let fiveStarCount = 0;
+  let reviewCount = 0;
+
+  for (const p of slice) {
+    if (p.pick_status === 'Pick') pickedCount++;
+    else if (p.pick_status === 'Reject') rejectedCount++;
+    else unadjudicatedCount++;
+
+    if (p.rating === 5) fiveStarCount++;
+    if (getPhotoUncertainty(p, scene).isUncertain) reviewCount++;
+  }
+
+  const targetQuota = chapter.targetQuota || 0;
+  const completionPct =
+    targetQuota > 0 ? Math.min(100, Math.round((pickedCount / targetQuota) * 100)) : 100;
+
+  let status: 'met' | 'in_progress' | 'empty_warning' = 'in_progress';
+  if (targetQuota > 0 && pickedCount >= targetQuota) {
+    status = 'met';
+  } else if (pickedCount === 0 && totalPhotos > 0) {
+    status = 'empty_warning';
+  }
+
+  return {
+    totalPhotos,
+    pickedCount,
+    rejectedCount,
+    unadjudicatedCount,
+    targetQuota,
+    completionPct,
+    status,
+    fiveStarCount,
+    reviewCount,
+  };
+};
+
+export const getCurrentPhotoChapter = (
+  photos: PhotoItem[],
+  currentIndex: number,
+  chapters: TimelineChapter[],
+): TimelineChapter | null => {
+  if (!chapters || chapters.length === 0 || currentIndex < 0 || currentIndex >= photos.length) {
+    return null;
+  }
+  return chapters.find((c) => currentIndex >= c.startIndex && currentIndex <= c.endIndex) || null;
+};
+
 export interface PhotoUncertainty {
   isUncertain: boolean;
   score: number;
@@ -148,7 +351,21 @@ export const isPhotoMatchingFilter = (
   lens: string | null = null,
   reviewOnlyUnadjudicated: boolean = false,
   scene: WorkflowScene = 'general',
+  chapterId: string | null = null,
+  chapters: TimelineChapter[] = [],
+  photoIndex?: number,
 ): boolean => {
+  if (chapterId && chapters.length > 0) {
+    const chapter = chapters.find((c) => c.id === chapterId);
+    if (chapter) {
+      if (photoIndex !== undefined && photoIndex >= 0) {
+        if (photoIndex < chapter.startIndex || photoIndex > chapter.endIndex) {
+          return false;
+        }
+      }
+    }
+  }
+
   const uncertainty = getPhotoUncertainty(photo, scene);
   const matchesCategory =
     filter === 'all' ||
@@ -187,8 +404,12 @@ export const getFilteredPhotos = (
   lens: string | null = null,
   reviewOnlyUnadjudicated: boolean = false,
   scene: WorkflowScene = 'general',
+  chapterId: string | null = null,
+  chapters: TimelineChapter[] = [],
 ): PhotoItem[] => {
-  return photos.filter((p) => isPhotoMatchingFilter(p, filter, camera, lens, reviewOnlyUnadjudicated, scene));
+  return photos.filter((p, i) =>
+    isPhotoMatchingFilter(p, filter, camera, lens, reviewOnlyUnadjudicated, scene, chapterId, chapters, i),
+  );
 };
 
 export const getFilteredProgress = (
@@ -199,8 +420,10 @@ export const getFilteredProgress = (
   lens: string | null = null,
   reviewOnlyUnadjudicated: boolean = false,
   scene: WorkflowScene = 'general',
+  chapterId: string | null = null,
+  chapters: TimelineChapter[] = [],
 ): { filteredIndex: number; filteredTotal: number; isFiltered: boolean } => {
-  const isFiltered = filter !== 'all' || camera !== null || lens !== null;
+  const isFiltered = filter !== 'all' || camera !== null || lens !== null || chapterId !== null;
   if (!isFiltered) {
     return { filteredIndex: currentIndex, filteredTotal: photos.length, isFiltered: false };
   }
@@ -208,7 +431,19 @@ export const getFilteredProgress = (
   let filteredTotal = 0;
   const current = photos[currentIndex];
   for (let i = 0; i < photos.length; i++) {
-    if (isPhotoMatchingFilter(photos[i], filter, camera, lens, reviewOnlyUnadjudicated, scene)) {
+    if (
+      isPhotoMatchingFilter(
+        photos[i],
+        filter,
+        camera,
+        lens,
+        reviewOnlyUnadjudicated,
+        scene,
+        chapterId,
+        chapters,
+        i,
+      )
+    ) {
       if (current && photos[i].path === current.path) {
         filteredIndex = filteredTotal;
       }
@@ -370,6 +605,22 @@ interface PhotoStore {
   setExportModalOpen: (open: boolean) => void;
   toggleAutoAdvance: () => void;
 
+  // 流程分章与交付配额看板
+  chapters: TimelineChapter[];
+  selectedChapterId: string | null;
+  isChaptersModalOpen: boolean;
+  chapterGapMinutes: number;
+
+  setChapters: (chapters: TimelineChapter[]) => void;
+  updateChapter: (id: string, patch: Partial<TimelineChapter>) => void;
+  setSelectedChapter: (id: string | null) => void;
+  setChaptersModalOpen: (open: boolean) => void;
+  setChapterGapMinutes: (minutes: number) => void;
+  reclusterChapters: (gapMinutes?: number) => void;
+  splitChapterAt: (photoIndex: number) => void;
+  mergeChapterWithPrevious: (chapterId: string) => void;
+  applySceneChapterPreset: (scene: WorkflowScene) => void;
+
   // 场景工作流预设模式 (演唱会/舞台、二次元Cos、商业会议、婚礼纪实、通用人像)
   activeWorkflowScene: WorkflowScene;
   setWorkflowScene: (scene: WorkflowScene) => void;
@@ -388,6 +639,10 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   selectedCamera: null,
   selectedLens: null,
   reviewOnlyUnadjudicated: false,
+  chapters: [],
+  selectedChapterId: null,
+  isChaptersModalOpen: false,
+  chapterGapMinutes: 10,
   activeWorkflowScene:
     (typeof window !== 'undefined' &&
       (localStorage.getItem('quickpick_workflow_scene') as WorkflowScene)) ||
@@ -668,7 +923,166 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
       selectedCamera: null,
       selectedLens: null,
       reviewOnlyUnadjudicated: false,
+      selectedChapterId: null,
     });
+  },
+
+  setChapters: (chapters: TimelineChapter[]) => {
+    const { folderPath } = get();
+    if (folderPath && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`quickpick_chapters_${folderPath}`, JSON.stringify(chapters));
+      } catch (e) {
+        console.warn('Failed to save chapters', e);
+      }
+    }
+    set({ chapters });
+  },
+
+  updateChapter: (id: string, patch: Partial<TimelineChapter>) => {
+    const { chapters, folderPath } = get();
+    const updated = chapters.map((c) => (c.id === id ? { ...c, ...patch } : c));
+    if (folderPath && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`quickpick_chapters_${folderPath}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to save chapters', e);
+      }
+    }
+    set({ chapters: updated });
+  },
+
+  setSelectedChapter: (id: string | null) => {
+    set({ selectedChapterId: id });
+    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, chapters } = get();
+    const current = photos[get().currentIndex];
+    if (
+      current &&
+      !isPhotoMatchingFilter(
+        current,
+        activeFilter,
+        selectedCamera,
+        selectedLens,
+        reviewOnlyUnadjudicated,
+        activeWorkflowScene,
+        id,
+        chapters,
+        get().currentIndex,
+      )
+    ) {
+      const firstMatchIdx = photos.findIndex((p, i) =>
+        isPhotoMatchingFilter(
+          p,
+          activeFilter,
+          selectedCamera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          id,
+          chapters,
+          i,
+        ),
+      );
+      if (firstMatchIdx !== -1) {
+        get().selectIndex(firstMatchIdx);
+      }
+    }
+  },
+
+  setChaptersModalOpen: (open: boolean) => {
+    set({ isChaptersModalOpen: open });
+  },
+
+  setChapterGapMinutes: (minutes: number) => {
+    set({ chapterGapMinutes: minutes });
+  },
+
+  reclusterChapters: (gapMinutes?: number) => {
+    const { photos, activeWorkflowScene, chapterGapMinutes } = get();
+    const gap = gapMinutes !== undefined ? gapMinutes : chapterGapMinutes;
+    const newChapters = generateTimelineChapters(photos, gap, activeWorkflowScene);
+    get().setChapters(newChapters);
+    if (gapMinutes !== undefined) {
+      set({ chapterGapMinutes: gapMinutes });
+    }
+  },
+
+  splitChapterAt: (photoIndex: number) => {
+    const { chapters, photos } = get();
+    const targetChapterIdx = chapters.findIndex(
+      (c) => photoIndex > c.startIndex && photoIndex <= c.endIndex,
+    );
+    if (targetChapterIdx === -1) return;
+
+    const old = chapters[targetChapterIdx];
+    const chapterA: TimelineChapter = {
+      ...old,
+      endIndex: photoIndex - 1,
+      endPath: photos[photoIndex - 1].path,
+      endTime: photos[photoIndex - 1].exif?.date_time_original,
+      photoCount: photoIndex - old.startIndex,
+      targetQuota: Math.max(1, Math.round(old.targetQuota / 2)),
+    };
+
+    const chapterB: TimelineChapter = {
+      id: `chapter-${Date.now()}`,
+      name: `${old.name} (后段)`,
+      startIndex: photoIndex,
+      endIndex: old.endIndex,
+      startPath: photos[photoIndex].path,
+      endPath: old.endPath,
+      startTime: photos[photoIndex].exif?.date_time_original,
+      endTime: old.endTime,
+      photoCount: old.endIndex - photoIndex + 1,
+      targetQuota: Math.max(1, old.targetQuota - chapterA.targetQuota),
+      color: CHAPTER_COLORS[(targetChapterIdx + 1) % CHAPTER_COLORS.length],
+    };
+
+    const updated = [
+      ...chapters.slice(0, targetChapterIdx),
+      chapterA,
+      chapterB,
+      ...chapters.slice(targetChapterIdx + 1),
+    ];
+    get().setChapters(updated);
+  },
+
+  mergeChapterWithPrevious: (chapterId: string) => {
+    const { chapters } = get();
+    const idx = chapters.findIndex((c) => c.id === chapterId);
+    if (idx <= 0) return;
+
+    const prev = chapters[idx - 1];
+    const curr = chapters[idx];
+    const merged: TimelineChapter = {
+      ...prev,
+      endIndex: curr.endIndex,
+      endPath: curr.endPath,
+      endTime: curr.endTime || prev.endTime,
+      photoCount: prev.photoCount + curr.photoCount,
+      targetQuota: prev.targetQuota + curr.targetQuota,
+    };
+
+    const updated = [
+      ...chapters.slice(0, idx - 1),
+      merged,
+      ...chapters.slice(idx + 1),
+    ];
+    get().setChapters(updated);
+  },
+
+  applySceneChapterPreset: (scene: WorkflowScene) => {
+    const { chapters } = get();
+    const presets = SCENE_CHAPTER_TEMPLATES[scene] || SCENE_CHAPTER_TEMPLATES.general;
+    const updated = chapters.map((c, idx) => {
+      const preset = idx < presets.length ? presets[idx] : null;
+      return {
+        ...c,
+        name: preset ? preset.name : `环节 ${idx + 1}`,
+        targetQuota: preset ? Math.min(preset.quota, c.photoCount) : c.targetQuota,
+      };
+    });
+    get().setChapters(updated);
   },
 
   enterCompareMode: (candidateIndex?: number) => {
@@ -1092,8 +1506,26 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     try {
       const photos = await scanFolder(path);
       const isProxyAccelerated = photos.some((p) => p.thumb_width !== undefined && p.thumb_width !== null);
+
+      let chapters: TimelineChapter[] = [];
+      if (typeof window !== 'undefined') {
+        try {
+          const saved = localStorage.getItem(`quickpick_chapters_${path}`);
+          if (saved) {
+            chapters = JSON.parse(saved);
+          }
+        } catch (e) {
+          console.warn('Failed to parse saved chapters', e);
+        }
+      }
+      if (!chapters || chapters.length === 0) {
+        chapters = generateTimelineChapters(photos, get().chapterGapMinutes, get().activeWorkflowScene);
+      }
+
       set({
         photos,
+        chapters,
+        selectedChapterId: null,
         currentIndex: 0,
         isLoading: false,
         activeFilter: 'all',
@@ -1124,11 +1556,34 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setActiveFilter: (filter: FilterCategory) => {
     set({ activeFilter: filter });
-    const { photos, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene } = get();
+    const { photos, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectedChapterId, chapters } = get();
     const current = photos[get().currentIndex];
-    if (current && !isPhotoMatchingFilter(current, filter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
-      const firstMatchIdx = photos.findIndex((p) =>
-        isPhotoMatchingFilter(p, filter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene),
+    if (
+      current &&
+      !isPhotoMatchingFilter(
+        current,
+        filter,
+        selectedCamera,
+        selectedLens,
+        reviewOnlyUnadjudicated,
+        activeWorkflowScene,
+        selectedChapterId,
+        chapters,
+        get().currentIndex,
+      )
+    ) {
+      const firstMatchIdx = photos.findIndex((p, i) =>
+        isPhotoMatchingFilter(
+          p,
+          filter,
+          selectedCamera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        ),
       );
       if (firstMatchIdx !== -1) {
         get().selectIndex(firstMatchIdx);
@@ -1138,11 +1593,34 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setSelectedCamera: (camera: string | null) => {
     set({ selectedCamera: camera });
-    const { photos, activeFilter, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene } = get();
+    const { photos, activeFilter, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectedChapterId, chapters } = get();
     const current = photos[get().currentIndex];
-    if (current && !isPhotoMatchingFilter(current, activeFilter, camera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
-      const firstMatchIdx = photos.findIndex((p) =>
-        isPhotoMatchingFilter(p, activeFilter, camera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene),
+    if (
+      current &&
+      !isPhotoMatchingFilter(
+        current,
+        activeFilter,
+        camera,
+        selectedLens,
+        reviewOnlyUnadjudicated,
+        activeWorkflowScene,
+        selectedChapterId,
+        chapters,
+        get().currentIndex,
+      )
+    ) {
+      const firstMatchIdx = photos.findIndex((p, i) =>
+        isPhotoMatchingFilter(
+          p,
+          activeFilter,
+          camera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        ),
       );
       if (firstMatchIdx !== -1) {
         get().selectIndex(firstMatchIdx);
@@ -1152,11 +1630,34 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setSelectedLens: (lens: string | null) => {
     set({ selectedLens: lens });
-    const { photos, activeFilter, selectedCamera, reviewOnlyUnadjudicated, activeWorkflowScene } = get();
+    const { photos, activeFilter, selectedCamera, reviewOnlyUnadjudicated, activeWorkflowScene, selectedChapterId, chapters } = get();
     const current = photos[get().currentIndex];
-    if (current && !isPhotoMatchingFilter(current, activeFilter, selectedCamera, lens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
-      const firstMatchIdx = photos.findIndex((p) =>
-        isPhotoMatchingFilter(p, activeFilter, selectedCamera, lens, reviewOnlyUnadjudicated, activeWorkflowScene),
+    if (
+      current &&
+      !isPhotoMatchingFilter(
+        current,
+        activeFilter,
+        selectedCamera,
+        lens,
+        reviewOnlyUnadjudicated,
+        activeWorkflowScene,
+        selectedChapterId,
+        chapters,
+        get().currentIndex,
+      )
+    ) {
+      const firstMatchIdx = photos.findIndex((p, i) =>
+        isPhotoMatchingFilter(
+          p,
+          activeFilter,
+          selectedCamera,
+          lens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        ),
       );
       if (firstMatchIdx !== -1) {
         get().selectIndex(firstMatchIdx);
@@ -1254,11 +1755,23 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   nextPhoto: () => {
-    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
+    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectedChapterId, chapters, selectIndex } = get();
     if (photos.length === 0) return;
 
     for (let i = currentIndex + 1; i < photos.length; i++) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
+      if (
+        isPhotoMatchingFilter(
+          photos[i],
+          activeFilter,
+          selectedCamera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        )
+      ) {
         selectIndex(i);
         break;
       }
@@ -1266,11 +1779,23 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   prevPhoto: () => {
-    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
+    const { currentIndex, photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectedChapterId, chapters, selectIndex } = get();
     if (photos.length === 0) return;
 
     for (let i = currentIndex - 1; i >= 0; i--) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
+      if (
+        isPhotoMatchingFilter(
+          photos[i],
+          activeFilter,
+          selectedCamera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        )
+      ) {
         selectIndex(i);
         break;
       }
@@ -1278,9 +1803,21 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   jumpToFirstMatching: () => {
-    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
+    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectedChapterId, chapters, selectIndex } = get();
     for (let i = 0; i < photos.length; i++) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
+      if (
+        isPhotoMatchingFilter(
+          photos[i],
+          activeFilter,
+          selectedCamera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        )
+      ) {
         selectIndex(i);
         break;
       }
@@ -1288,9 +1825,21 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   jumpToLastMatching: () => {
-    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectIndex } = get();
+    const { photos, activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene, selectedChapterId, chapters, selectIndex } = get();
     for (let i = photos.length - 1; i >= 0; i--) {
-      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens, reviewOnlyUnadjudicated, activeWorkflowScene)) {
+      if (
+        isPhotoMatchingFilter(
+          photos[i],
+          activeFilter,
+          selectedCamera,
+          selectedLens,
+          reviewOnlyUnadjudicated,
+          activeWorkflowScene,
+          selectedChapterId,
+          chapters,
+          i,
+        )
+      ) {
         selectIndex(i);
         break;
       }

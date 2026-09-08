@@ -1,4 +1,6 @@
 pub mod face;
+pub mod timeline;
+pub use timeline::{cluster_photos_by_timeline, TimelineChapter};
 use crate::models::{DefectTag, PhotoItem, RetouchStatus, WorkflowScene};
 
 /// 图像指标分析结果

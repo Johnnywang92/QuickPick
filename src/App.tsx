@@ -10,9 +10,10 @@ import { FaceLoupe } from './components/loupe/FaceLoupe';
 import { PhotoInfoHud } from './components/viewport/PhotoInfoHud';
 import { ExportModal } from './components/export/ExportModal';
 import { AboutModal } from './components/modal/AboutModal';
+import { TimelineQuotasModal } from './components/timeline/TimelineQuotasModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { selectFolder } from './services/tauriBridge';
-import { FolderOpen, FolderOutput, Cpu, Sparkles, Image as ImageIcon, ArrowRightLeft, Users, Zap, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Copy, ShieldAlert, Undo2 } from 'lucide-react';
+import { FolderOpen, FolderOutput, Cpu, Sparkles, Image as ImageIcon, ArrowRightLeft, Users, Zap, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Copy, ShieldAlert, Undo2, Layers } from 'lucide-react';
 
 export default function App() {
   const {
@@ -48,13 +49,36 @@ export default function App() {
     selectedCamera,
     selectedLens,
     resetFilter,
+    chapters,
+    selectedChapterId,
+    setChaptersModalOpen,
+    activeWorkflowScene,
   } = usePhotoStore();
 
   useKeyboardShortcuts();
 
   const filterProgress = useMemo(() => {
-    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens);
-  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens]);
+    return getFilteredProgress(
+      photos,
+      currentIndex,
+      activeFilter,
+      selectedCamera,
+      selectedLens,
+      false,
+      activeWorkflowScene,
+      selectedChapterId,
+      chapters,
+    );
+  }, [
+    photos,
+    currentIndex,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
+    activeWorkflowScene,
+    selectedChapterId,
+    chapters,
+  ]);
 
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
 
@@ -209,6 +233,27 @@ export default function App() {
               <span>特写 ({currentPhoto.faces.length})</span>
               {currentPhoto.faces.some((f) => f.eye_open_score < 0.35) && (
                 <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              )}
+            </button>
+          )}
+
+          {photos.length > 0 && chapters.length > 0 && (
+            <button
+              onClick={() => setChaptersModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-dark-750 hover:bg-dark-700 text-slate-300 border-dark-600 transition-all cursor-pointer"
+              title="打开活动/演出流程分章与交付配额看板"
+            >
+              <Layers className="w-3.5 h-3.5 text-brand-400" />
+              <span>流程配额</span>
+              {chapters.some((c) => {
+                const picked = photos.slice(c.startIndex, c.endIndex + 1).filter((p) => p.pick_status === 'Pick').length;
+                return picked === 0 && c.photoCount > 0;
+              }) ? (
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" title="存在未选片环节空缺预警" />
+              ) : (
+                <span className="text-[10px] font-mono text-slate-400">
+                  {photos.filter((p) => p.pick_status === 'Pick').length}/{chapters.reduce((a, b) => a + b.targetQuota, 0)}
+                </span>
               )}
             </button>
           )}
@@ -425,6 +470,9 @@ export default function App() {
         onClose={() => setIsAboutOpen(false)}
         librawVersion={engineInfo?.libraw_version}
       />
+
+      {/* 活动/演出流程时间轴分章与交付配额看板 */}
+      <TimelineQuotasModal />
     </div>
   );
 }
