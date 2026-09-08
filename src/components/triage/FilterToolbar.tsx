@@ -1,5 +1,5 @@
 import React from 'react';
-import { usePhotoStore, FilterCategory } from '../../store/photoStore';
+import { usePhotoStore, FilterCategory, isPhotoMatchingFilter } from '../../store/photoStore';
 import { confirmAction, showAlert } from '../../services/tauriBridge';
 import {
   Sparkles,
@@ -38,6 +38,12 @@ export const FilterToolbar: React.FC = () => {
   const countFixable = photos.filter((p) => p.retouch_status === 'fixable').length;
   const countFatal = photos.filter((p) => p.retouch_status === 'fatal').length;
   const countPicked = photos.filter((p) => p.pick_status === 'Pick').length;
+
+  const isFiltered = activeFilter !== 'all' || selectedCamera !== null || selectedLens !== null;
+  const matchingCount = React.useMemo(() => {
+    if (!isFiltered) return countAll;
+    return photos.filter((p) => isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens)).length;
+  }, [photos, isFiltered, activeFilter, selectedCamera, selectedLens, countAll]);
 
   // 提取所有可用的相机型号与镜头型号选项
   const cameraOptions = React.useMemo(() => {
@@ -224,6 +230,16 @@ export const FilterToolbar: React.FC = () => {
 
       {/* 摄影师批量智能操作区 */}
       <div className="flex items-center space-x-2 shrink-0">
+        {isFiltered && (
+          <div
+            className="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[11px] font-mono text-amber-300 mr-1 shadow-sm"
+            title="当前筛选条件下匹配的照片数 / 总照片数"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>匹配: <strong className="text-amber-200 font-semibold">{matchingCount}</strong> / {countAll}</span>
+          </div>
+        )}
+
         <button
           onClick={() => void confirmAndRun(
             `将 ${countClean} 张“未见明显问题”的照片标记为采纳，并为未评级照片设置 5 星。是否继续？`,

@@ -43,6 +43,21 @@ export const Filmstrip: React.FC = () => {
     setScrollLeft(e.currentTarget.scrollLeft);
   };
 
+  // 预计算筛选匹配项的相对序号映射表（仅当存在活动筛选时计算）
+  const filteredIndexMap = React.useMemo(() => {
+    const isFiltered = activeFilter !== 'all' || selectedCamera !== null || selectedLens !== null;
+    if (!isFiltered) return null;
+    const map = new Map<string, number>();
+    let count = 0;
+    photos.forEach((p) => {
+      if (isPhotoMatchingFilter(p, activeFilter, selectedCamera, selectedLens)) {
+        count++;
+        map.set(p.path, count);
+      }
+    });
+    return map;
+  }, [photos, activeFilter, selectedCamera, selectedLens]);
+
   // 自动平滑居中当前选中的缩略图卡片
   useEffect(() => {
     if (!containerRef.current || photos.length === 0) return;
@@ -135,7 +150,15 @@ export const Filmstrip: React.FC = () => {
               <div className="relative z-10 w-full h-full flex flex-col justify-between p-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1">
-                    <span className="text-[10px] font-mono text-slate-400">
+                    {filteredIndexMap?.has(photo.path) && (
+                      <span
+                        className="text-[10px] font-mono text-amber-300 font-semibold"
+                        title={`当前筛选序号: 第 ${filteredIndexMap.get(photo.path)} 张`}
+                      >
+                        [{filteredIndexMap.get(photo.path)}]
+                      </span>
+                    )}
+                    <span className="text-[9px] font-mono text-slate-400">
                       #{idx + 1}
                     </span>
                     {/* 智能诊断状态指示点 */}

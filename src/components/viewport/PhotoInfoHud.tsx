@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
-import { usePhotoStore } from '../../store/photoStore';
+import { usePhotoStore, getFilteredProgress } from '../../store/photoStore';
 import { Camera, Aperture, Timer, Gauge, Calendar, ChevronDown, ChevronUp, Layers } from 'lucide-react';
 
 export const PhotoInfoHud: React.FC = () => {
   const photos = usePhotoStore((state) => state.photos);
   const currentIndex = usePhotoStore((state) => state.currentIndex);
+  const activeFilter = usePhotoStore((state) => state.activeFilter);
+  const selectedCamera = usePhotoStore((state) => state.selectedCamera);
+  const selectedLens = usePhotoStore((state) => state.selectedLens);
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
   const currentPhoto = photos[currentIndex];
   if (!currentPhoto) return null;
+
+  const filterProgress = React.useMemo(() => {
+    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens);
+  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens]);
 
   const burstInfo = React.useMemo(() => {
     if (!currentPhoto?.burst_group_id) return null;
@@ -28,6 +35,14 @@ export const PhotoInfoHud: React.FC = () => {
         <span>{currentPhoto.filename}</span>
         {currentPhoto.is_raw && (
           <span className="text-[10px] bg-brand-600/30 text-brand-300 px-1 py-0.2 rounded font-sans">RAW</span>
+        )}
+        {filterProgress.isFiltered && (
+          <span
+            className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.2 rounded font-mono font-medium shrink-0"
+            title="当前筛选条件下的相对序号与匹配总数"
+          >
+            筛选 [{filterProgress.filteredIndex >= 0 ? filterProgress.filteredIndex + 1 : '-'}/{filterProgress.filteredTotal}]
+          </span>
         )}
         {burstInfo && burstInfo.total > 1 && (
           <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1 py-0.2 rounded font-mono font-medium">
@@ -53,6 +68,14 @@ export const PhotoInfoHud: React.FC = () => {
           {currentPhoto.is_raw && (
             <span className="text-[9px] bg-brand-500/20 text-brand-300 border border-brand-500/30 px-1 py-0.2 rounded font-mono font-medium shrink-0">
               RAW
+            </span>
+          )}
+          {filterProgress.isFiltered && (
+            <span
+              className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.2 rounded font-mono font-medium shrink-0"
+              title="当前筛选条件下的相对序号与匹配总数"
+            >
+              筛选 [{filterProgress.filteredIndex >= 0 ? filterProgress.filteredIndex + 1 : '-'}/{filterProgress.filteredTotal}]
             </span>
           )}
           {burstInfo && burstInfo.total > 1 && (

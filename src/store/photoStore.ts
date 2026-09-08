@@ -227,6 +227,8 @@ interface PhotoStore {
   setComparePhotoPickStatus: (status: 'Pick' | 'Reject' | 'None') => Promise<void>;
   pickBurstWinner: (winnerIndex?: number) => Promise<void>;
   resetFilter: () => void;
+  jumpToFirstMatching: () => void;
+  jumpToLastMatching: () => void;
 
   isExportModalOpen: boolean;
   setExportModalOpen: (open: boolean) => void;
@@ -1114,6 +1116,26 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     if (photos.length === 0) return;
 
     for (let i = currentIndex - 1; i >= 0; i--) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens)) {
+        selectIndex(i);
+        break;
+      }
+    }
+  },
+
+  jumpToFirstMatching: () => {
+    const { photos, activeFilter, selectedCamera, selectedLens, selectIndex } = get();
+    for (let i = 0; i < photos.length; i++) {
+      if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens)) {
+        selectIndex(i);
+        break;
+      }
+    }
+  },
+
+  jumpToLastMatching: () => {
+    const { photos, activeFilter, selectedCamera, selectedLens, selectIndex } = get();
+    for (let i = photos.length - 1; i >= 0; i--) {
       if (isPhotoMatchingFilter(photos[i], activeFilter, selectedCamera, selectedLens)) {
         selectIndex(i);
         break;

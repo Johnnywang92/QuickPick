@@ -20,6 +20,8 @@ export function useKeyboardShortcuts() {
     undoLast,
     pickBurstWinner,
     resetFilter,
+    jumpToFirstMatching,
+    jumpToLastMatching,
     activeFilter,
     selectedCamera,
     selectedLens,
@@ -83,6 +85,17 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             resetFilter();
           }
+          break;
+
+        // 快速跳转至首张/末张匹配照片 [Home / End]
+        case 'Home':
+          e.preventDefault();
+          jumpToFirstMatching();
+          break;
+
+        case 'End':
+          e.preventDefault();
+          jumpToLastMatching();
           break;
 
         // 翻页导航 (对比模式下微调候选片，单图模式下常规翻页)
@@ -186,6 +199,8 @@ export function useKeyboardShortcuts() {
     undoLast,
     pickBurstWinner,
     resetFilter,
+    jumpToFirstMatching,
+    jumpToLastMatching,
     activeFilter,
     selectedCamera,
     selectedLens,

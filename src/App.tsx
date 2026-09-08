@@ -90,7 +90,10 @@ export default function App() {
               </span>
               {filterProgress.isFiltered ? (
                 <div className="flex items-center space-x-1.5 font-mono text-[11px]">
-                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded flex items-center space-x-1">
+                  <span
+                    className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded flex items-center space-x-1"
+                    title="当前筛选进度 (快捷键 Home 跳转首张，End 跳转末张)"
+                  >
                     <span className="text-[10px] text-amber-400/80 font-sans">筛选:</span>
                     <span className="font-semibold">{filterProgress.filteredIndex >= 0 ? filterProgress.filteredIndex + 1 : '-'}</span>
                     <span className="text-amber-400/60">/</span>
