@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePhotoStore, getFilteredProgress } from './store/photoStore';
 import { PixiCanvas } from './components/viewport/PixiCanvas';
 import { SplitCompareView } from './components/viewport/SplitCompareView';
@@ -9,6 +9,7 @@ import { DefectBadge } from './components/triage/DefectBadge';
 import { FaceLoupe } from './components/loupe/FaceLoupe';
 import { PhotoInfoHud } from './components/viewport/PhotoInfoHud';
 import { ExportModal } from './components/export/ExportModal';
+import { AboutModal } from './components/modal/AboutModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { selectFolder } from './services/tauriBridge';
 import { FolderOpen, FolderOutput, Cpu, Sparkles, Image as ImageIcon, ArrowRightLeft, Users, Zap, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Copy, ShieldAlert, Undo2 } from 'lucide-react';
@@ -54,6 +55,8 @@ export default function App() {
   const filterProgress = useMemo(() => {
     return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens);
   }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens]);
+
+  const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
 
   useEffect(() => {
     initEngine();
@@ -124,10 +127,14 @@ export default function App() {
         {/* 右侧操作按钮 */}
         <div className="flex items-center space-x-3">
           {engineInfo && (
-            <div className="flex items-center space-x-1.5 text-xs px-2.5 py-1 rounded bg-dark-700/60 border border-dark-600 text-slate-300">
+            <button
+              onClick={() => setIsAboutOpen(true)}
+              className="flex items-center space-x-1.5 text-xs px-2.5 py-1 rounded bg-dark-700/60 hover:bg-dark-700 border border-dark-600 hover:border-dark-500 text-slate-300 transition-colors cursor-pointer"
+              title="关于 QuickPick、LibRaw 引擎与开源合规许可"
+            >
               <Cpu className="w-3.5 h-3.5 text-emerald-400" />
               <span className="font-mono text-[11px]">LibRaw {engineInfo.libraw_version}</span>
-            </div>
+            </button>
           )}
 
           {photos.length > 0 && (
@@ -411,6 +418,13 @@ export default function App() {
 
       {/* 选片结果批量导出弹窗 */}
       <ExportModal />
+
+      {/* 关于 QuickPick 与开源合规弹窗 */}
+      <AboutModal
+        isOpen={isAboutOpen}
+        onClose={() => setIsAboutOpen(false)}
+        librawVersion={engineInfo?.libraw_version}
+      />
     </div>
   );
 }

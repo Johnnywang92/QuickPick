@@ -138,7 +138,7 @@ fn c_chars_to_string(slice: &[std::ffi::c_char]) -> Option<String> {
 }
 
 /// 从已经打开的 LibRaw 上下文中提取 EXIF 拍摄参数
-pub fn extract_raw_metadata_from_ctx(ctx_ptr: *mut std::ffi::c_void) -> Option<crate::models::ExifMetadata> {
+pub(crate) unsafe fn extract_raw_metadata_from_ctx(ctx_ptr: *mut std::ffi::c_void) -> Option<crate::models::ExifMetadata> {
     if ctx_ptr.is_null() {
         return None;
     }
@@ -249,5 +249,5 @@ pub fn extract_raw_metadata<P: AsRef<Path>>(path: P) -> Result<crate::models::Ex
         return Err(LibRawError::OpenFileFailed(ret));
     }
 
-    extract_raw_metadata_from_ctx(ctx.as_ptr()).ok_or(LibRawError::EmptyData)
+    unsafe { extract_raw_metadata_from_ctx(ctx.as_ptr()) }.ok_or(LibRawError::EmptyData)
 }

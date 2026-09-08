@@ -53,11 +53,19 @@
   - [x] 修复 Pixi 异步初始化/首图加载竞态，预览提取与纹理加载失败均有占位和重试
   - [x] “1:1”明确标注为当前内嵌/代理预览像素，不冒充完整 RAW 像素
   - [ ] 使用真实 RAW 与快速连续翻页场景完成回归和性能验收
-- [ ] **P1.4 跨平台 LibRaw 分发**：移除固定 Apple Silicon target 和 Homebrew 绝对依赖，安装包携带动态库、LGPL 文本及可替换说明
+- [x] **P1.4 跨平台 LibRaw 分发**：移除固定 Apple Silicon target 和 Homebrew 绝对依赖，安装包携带动态库、LGPL 文本及可替换说明
+  - [x] 移除 `src-tauri/.cargo/config.toml` 中强行锁死的 `aarch64-apple-darwin`，自适应宿主机架构与交叉编译
+  - [x] `src-tauri/build.rs` 引入 `@executable_path/../Frameworks` 优先 RPATH 与 `LIBRAW_DIR` 环境变量支持，杜绝普通用户无 Homebrew 运行崩溃
+  - [x] 补充 `LICENSES/LGPL-2.1.txt`、`LICENSES/LIBRAW_LICENSE.txt` 以及完整替换指南 `docs/LIBRAW_REPLACEMENT.md`
+  - [x] 前端集成“关于 QuickPick 与开源合规 (`AboutModal`)" 交互弹窗，支持协议与替换指南内嵌查阅
 - [x] **P1.5 导出/双图比对体验**：
   - [x] **双图对比候选导航跳过主选片**：`nextCompareCandidate`/`prevCompareCandidate` 遇到当前主选片 `currentIndex` 时自动越过，彻底消除死锁卡顿
   - [x] **连拍组内限定比对与筛选相对序号**：支持 `compareScope: 'burst'` 组内环形比对与候选 `[X/N]` 显示；顶部与 HUD 清晰呈现 `筛选: 3/45 (全局 #48/1200)`
-- [ ] **P1.6 工程门禁**：前端 build、Rust test、Clippy、XMP 兼容样本和导出故障注入进入 CI；建立首屏、翻页、峰值内存基准
+- [x] **P1.6 工程门禁**：前端 build、Rust test、Clippy、XMP 兼容样本和导出故障注入进入 CI；建立首屏、翻页、峰值内存基准
+  - [x] 修复全量 Clippy 警告与指针解引用错误，实现 `cargo clippy --all-targets -- -D warnings` 零警告零容忍通过
+  - [x] 建立 GitHub Actions CI 流水线 (`.github/workflows/ci.yml`)，覆盖 TypeScript、生产构建、Clippy、27 项测试与体积/基准
+  - [x] 制定性能红线与质量基准规范 (`docs/PERFORMANCE_BASELINES.md`) 与自动化基准核验脚本 (`scripts/check_baselines.js`)
+  - [x] `package.json` 整合 `npm run gate` 一键全量工程门禁校验（集成前端构建、Clippy、Rust 测试与 Baseline）
 
 ### P2：差异化能力（P0/P1 稳定后推进）
 

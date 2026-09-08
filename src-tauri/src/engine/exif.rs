@@ -250,7 +250,7 @@ pub fn parse_tiff_bytes(tiff_data: &[u8]) -> Option<ExifMetadata> {
                 0x8827 => {
                     // PhotographicSensitivity / ISOSpeedRatings (SHORT)
                     if type_id == 3 {
-                        iso = Some(val_or_offset as u32);
+                        iso = Some(val_or_offset);
                     }
                 }
                 0x9003 | 0x9004 => {
@@ -275,7 +275,7 @@ pub fn parse_tiff_bytes(tiff_data: &[u8]) -> Option<ExifMetadata> {
                 0xA405 => {
                     // FocalLengthIn35mmFilm (SHORT)
                     if type_id == 3 && val_or_offset > 0 {
-                        focal_length_35mm = Some(val_or_offset as u32);
+                        focal_length_35mm = Some(val_or_offset);
                     }
                 }
                 0xA433 => {

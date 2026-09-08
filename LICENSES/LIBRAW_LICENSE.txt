@@ -1,0 +1,31 @@
+LibRaw Software License and Compliance Notice
+=============================================
+
+This software utilizes LibRaw (http://www.libraw.org/), an open-source library
+for reading RAW files from digital photo cameras.
+
+LibRaw is copyrighted by LibRaw LLC (info@libraw.org).
+
+Licensing
+---------
+LibRaw is licensed under either of the following licenses:
+1. GNU Lesser General Public License (LGPL), version 2.1 (or, at your option, any later version).
+2. COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) Version 1.0.
+
+QuickPick Distribution and LGPL 2.1 / 3.0 Compliance
+----------------------------------------------------
+QuickPick links dynamically to LibRaw (as a shared library: libraw.dylib on macOS,
+libraw.dll on Windows, and libraw.so on Linux).
+
+In accordance with Section 6 of the LGPL 2.1 and Section 4 of the LGPL 3.0:
+1. QuickPick is distributed under terms that permit user modification of the work
+   for the customer's own use and reverse engineering for debugging such modifications.
+2. QuickPick uses a dynamic linking mechanism to link to LibRaw.
+3. Users are explicitly permitted and able to replace the dynamically linked LibRaw library
+   with a compatible version (e.g., custom compiled, patched, or updated version) without
+   recompiling QuickPick.
+4. Complete instructions on how to inspect, recompile, and replace the LibRaw library in your
+   QuickPick installation are provided in the accompanying documentation:
+   `docs/LIBRAW_REPLACEMENT.md` (or in the application via the "About & Licenses" dialog).
+5. The full text of the GNU Lesser General Public License v2.1 is provided in:
+   `LICENSES/LGPL-2.1.txt`.

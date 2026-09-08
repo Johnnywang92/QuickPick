@@ -28,6 +28,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "resources": [
+      "../LICENSES/*",
+      "../docs/LIBRAW_REPLACEMENT.md"
+    ]
   }
 }
