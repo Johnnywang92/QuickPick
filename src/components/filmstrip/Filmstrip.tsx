@@ -9,7 +9,17 @@ const CONTAINER_PADDING_X = 16; // px-4 = 16px
 const OVERSCAN = 5; // 前后各缓冲 5 个元素，滑动时平滑无白屏
 
 export const Filmstrip: React.FC = () => {
-  const { photos, currentIndex, activeFilter, selectedCamera, selectedLens, selectIndex, previewCache } = usePhotoStore();
+  const {
+    photos,
+    currentIndex,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
+    selectIndex,
+    previewCache,
+    isCompareMode,
+    compareTargetIndex,
+  } = usePhotoStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [containerWidth, setContainerWidth] = useState(1200);
@@ -28,6 +38,10 @@ export const Filmstrip: React.FC = () => {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setScrollLeft(e.currentTarget.scrollLeft);
+  };
 
   // 自动平滑居中当前选中的缩略图卡片
   useEffect(() => {
@@ -66,27 +80,22 @@ export const Filmstrip: React.FC = () => {
 
   const visiblePhotos: { photo: (typeof photos)[0]; idx: number }[] = [];
   for (let i = startIdx; i <= endIdx; i++) {
-    if (photos[i]) {
-      visiblePhotos.push({ photo: photos[i], idx: i });
-    }
+    visiblePhotos.push({ photo: photos[i], idx: i });
   }
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    setScrollLeft(e.currentTarget.scrollLeft);
-  };
 
   return (
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="relative w-full h-full overflow-x-auto overflow-y-hidden no-scrollbar select-none"
+      className="h-20 border-t border-dark-700/80 bg-dark-850 overflow-x-auto overflow-y-hidden select-none relative scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-transparent"
     >
-      {/* 虚拟滚动长容器 (撑满实际宽度) */}
+      {/* 虚拟占位画布宽度 */}
       <div
         style={{ width: `${totalWidth}px`, height: '100%', position: 'relative' }}
       >
         {visiblePhotos.map(({ photo, idx }) => {
           const isCurrent = idx === currentIndex;
+          const isCompare = isCompareMode && idx === compareTargetIndex;
           const matchesFilter = isPhotoMatchingFilter(photo, activeFilter, selectedCamera, selectedLens);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
@@ -105,6 +114,8 @@ export const Filmstrip: React.FC = () => {
               className={`group cursor-pointer rounded-md border overflow-hidden transition-all duration-150 ${
                 isCurrent
                   ? 'border-brand-500 ring-2 ring-brand-500/40 bg-dark-700 z-10'
+                  : isCompare
+                  ? 'border-blue-500 ring-2 ring-blue-500/40 bg-dark-700 z-10'
                   : matchesFilter
                   ? 'border-dark-700/80 hover:border-slate-500 bg-dark-800'
                   : 'border-dark-800/40 bg-dark-900/50 opacity-40 hover:opacity-80'
@@ -155,6 +166,16 @@ export const Filmstrip: React.FC = () => {
                     {photo.burst_group_id && (
                       <span className="text-[8px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono">
                         连拍
+                      </span>
+                    )}
+                    {isCompareMode && isCurrent && (
+                      <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/30 text-emerald-300 font-mono font-semibold">
+                        主
+                      </span>
+                    )}
+                    {isCompareMode && isCompare && (
+                      <span className="text-[8px] px-1 py-0.2 rounded bg-blue-500/30 text-blue-300 font-mono font-semibold">
+                        候
                       </span>
                     )}
                   </div>

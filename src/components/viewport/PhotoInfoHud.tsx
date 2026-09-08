@@ -10,6 +10,16 @@ export const PhotoInfoHud: React.FC = () => {
   const currentPhoto = photos[currentIndex];
   if (!currentPhoto) return null;
 
+  const burstInfo = React.useMemo(() => {
+    if (!currentPhoto?.burst_group_id) return null;
+    const burstPhotos = photos.filter((p) => p.burst_group_id === currentPhoto.burst_group_id);
+    const idx = burstPhotos.findIndex((p) => p.path === currentPhoto.path);
+    return {
+      index: idx >= 0 ? idx + 1 : 1,
+      total: burstPhotos.length,
+    };
+  }, [photos, currentPhoto?.path, currentPhoto?.burst_group_id]);
+
   const exif = currentPhoto.exif;
   // 如果完全没有拍摄参数，显示简洁的文件名胶囊
   if (!exif || (!exif.camera_model && !exif.lens_model && !exif.aperture && !exif.shutter_speed && !exif.iso)) {
@@ -18,6 +28,11 @@ export const PhotoInfoHud: React.FC = () => {
         <span>{currentPhoto.filename}</span>
         {currentPhoto.is_raw && (
           <span className="text-[10px] bg-brand-600/30 text-brand-300 px-1 py-0.2 rounded font-sans">RAW</span>
+        )}
+        {burstInfo && burstInfo.total > 1 && (
+          <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1 py-0.2 rounded font-mono font-medium">
+            连拍 [{burstInfo.index}/{burstInfo.total}]
+          </span>
         )}
       </div>
     );
@@ -40,11 +55,19 @@ export const PhotoInfoHud: React.FC = () => {
               RAW
             </span>
           )}
+          {burstInfo && burstInfo.total > 1 && (
+            <span
+              className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1 py-0.2 rounded font-mono font-medium shrink-0"
+              title="连拍组内位置与总张数"
+            >
+              连拍 [{burstInfo.index}/{burstInfo.total}]
+            </span>
+          )}
         </div>
 
         <button
           onClick={() => setIsExpanded((prev) => !prev)}
-          className="p-0.5 hover:bg-dark-700/70 text-slate-400 hover:text-slate-200 rounded transition-colors"
+          className="p-0.5 hover:bg-dark-700/70 text-slate-400 hover:text-slate-200 rounded transition-colors cursor-pointer"
           title={isExpanded ? '收起拍摄参数' : '展开拍摄参数'}
         >
           {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}

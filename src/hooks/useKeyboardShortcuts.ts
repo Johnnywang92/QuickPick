@@ -4,6 +4,7 @@ import { usePhotoStore } from '../store/photoStore';
 export function useKeyboardShortcuts() {
   const {
     photos,
+    currentIndex,
     nextPhoto,
     prevPhoto,
     setRating,
@@ -17,6 +18,11 @@ export function useKeyboardShortcuts() {
     prevCompareCandidate,
     toggleFaceLoupe,
     undoLast,
+    pickBurstWinner,
+    resetFilter,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
   } = usePhotoStore();
 
   useEffect(() => {
@@ -38,6 +44,13 @@ export function useKeyboardShortcuts() {
       if (photos.length === 0) return;
 
       switch (e.key) {
+        // 连拍定优 [W]：定为连拍最佳胜出并排除同组其余照片
+        case 'w':
+        case 'W':
+          e.preventDefault();
+          void pickBurstWinner(currentIndex);
+          break;
+
         // 多脸联动特写抽屉切换 [F]
         case 'f':
         case 'F':
@@ -61,11 +74,14 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // 退出对比模式 [Escape]
+        // 退出对比模式 或 重置筛选 [Escape]
         case 'Escape':
           if (isCompareMode) {
             e.preventDefault();
             exitCompareMode();
+          } else if (activeFilter !== 'all' || selectedCamera !== null || selectedLens !== null) {
+            e.preventDefault();
+            resetFilter();
           }
           break;
 
@@ -154,6 +170,7 @@ export function useKeyboardShortcuts() {
     };
   }, [
     photos.length,
+    currentIndex,
     nextPhoto,
     prevPhoto,
     setRating,
@@ -167,5 +184,10 @@ export function useKeyboardShortcuts() {
     prevCompareCandidate,
     toggleFaceLoupe,
     undoLast,
+    pickBurstWinner,
+    resetFilter,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
   ]);
 }

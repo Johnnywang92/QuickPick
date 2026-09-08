@@ -50,6 +50,40 @@ export const isPhotoMatchingFilter = (
   return true;
 };
 
+export const getFilteredPhotos = (
+  photos: PhotoItem[],
+  filter: FilterCategory,
+  camera: string | null = null,
+  lens: string | null = null,
+): PhotoItem[] => {
+  return photos.filter((p) => isPhotoMatchingFilter(p, filter, camera, lens));
+};
+
+export const getFilteredProgress = (
+  photos: PhotoItem[],
+  currentIndex: number,
+  filter: FilterCategory,
+  camera: string | null = null,
+  lens: string | null = null,
+): { filteredIndex: number; filteredTotal: number; isFiltered: boolean } => {
+  const isFiltered = filter !== 'all' || camera !== null || lens !== null;
+  if (!isFiltered) {
+    return { filteredIndex: currentIndex, filteredTotal: photos.length, isFiltered: false };
+  }
+  let filteredIndex = -1;
+  let filteredTotal = 0;
+  const current = photos[currentIndex];
+  for (let i = 0; i < photos.length; i++) {
+    if (isPhotoMatchingFilter(photos[i], filter, camera, lens)) {
+      if (current && photos[i].path === current.path) {
+        filteredIndex = filteredTotal;
+      }
+      filteredTotal++;
+    }
+  }
+  return { filteredIndex, filteredTotal, isFiltered: true };
+};
+
 const updateSourceHash = (photos: PhotoItem[], path: string, sourceHash: string) =>
   photos.map((photo) =>
     photo.path === path ? { ...photo, xmp_source_hash: sourceHash } : photo,
@@ -172,12 +206,14 @@ interface PhotoStore {
   applyAiSuggestions: () => Promise<void>;
   // 对比模式状态
   isCompareMode: boolean;
+  compareScope: 'all' | 'burst';
   compareTargetIndex: number | null;
   comparePreviewUrl: string | null;
   comparePreviewStatus: 'idle' | 'loading' | 'loaded' | 'error';
   comparePreviewError: string | null;
   syncZoomAndPan: boolean;
 
+  setCompareScope: (scope: 'all' | 'burst') => void;
   enterCompareMode: (candidateIndex?: number) => void;
   exitCompareMode: () => void;
   toggleCompareMode: () => void;
@@ -189,6 +225,8 @@ interface PhotoStore {
   toggleSyncZoomAndPan: () => void;
   setComparePhotoRating: (rating: number) => Promise<void>;
   setComparePhotoPickStatus: (status: 'Pick' | 'Reject' | 'None') => Promise<void>;
+  pickBurstWinner: (winnerIndex?: number) => Promise<void>;
+  resetFilter: () => void;
 
   isExportModalOpen: boolean;
   setExportModalOpen: (open: boolean) => void;
@@ -211,6 +249,7 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   isLoading: false,
   isExportModalOpen: false,
   isCompareMode: false,
+  compareScope: 'burst',
   compareTargetIndex: null,
   comparePreviewUrl: null,
   comparePreviewStatus: 'idle',
@@ -466,13 +505,51 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
   setExportModalOpen: (open: boolean) => set({ isExportModalOpen: open }),
 
+  setCompareScope: (scope: 'all' | 'burst') => set({ compareScope: scope }),
+
+  resetFilter: () => {
+    set({
+      activeFilter: 'all',
+      selectedCamera: null,
+      selectedLens: null,
+    });
+  },
+
   enterCompareMode: (candidateIndex?: number) => {
     const { photos, currentIndex, previewCache } = get();
     if (photos.length < 2) return;
 
+    const currentPhoto = photos[currentIndex];
+    const burstId = currentPhoto?.burst_group_id;
+
     let targetIdx: number;
-    if (typeof candidateIndex === 'number' && candidateIndex >= 0 && candidateIndex < photos.length && candidateIndex !== currentIndex) {
+    let initialScope: 'all' | 'burst' = 'all';
+
+    if (
+      typeof candidateIndex === 'number' &&
+      candidateIndex >= 0 &&
+      candidateIndex < photos.length &&
+      candidateIndex !== currentIndex
+    ) {
       targetIdx = candidateIndex;
+      if (burstId && photos[targetIdx]?.burst_group_id === burstId) {
+        initialScope = 'burst';
+      }
+    } else if (burstId) {
+      // 优先在当前连拍组中寻找候选片
+      const burstIndices = photos
+        .map((p, idx) => ({ p, idx }))
+        .filter(({ p, idx }) => p.burst_group_id === burstId && idx !== currentIndex)
+        .map(({ idx }) => idx);
+
+      if (burstIndices.length > 0) {
+        targetIdx = burstIndices[0];
+        initialScope = 'burst';
+      } else if (currentIndex < photos.length - 1) {
+        targetIdx = currentIndex + 1;
+      } else {
+        targetIdx = Math.max(0, currentIndex - 1);
+      }
     } else if (currentIndex < photos.length - 1) {
       targetIdx = currentIndex + 1;
     } else {
@@ -484,24 +561,27 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
     if (previewCache.has(candidatePhoto.path)) {
       candidateUrl = previewCache.get(candidatePhoto.path)!;
     } else {
-      getPhotoPreview(candidatePhoto.path).then((url) => {
-        previewCache.set(candidatePhoto.path, url);
-        if (get().compareTargetIndex === targetIdx) {
-          set({ comparePreviewUrl: url, comparePreviewStatus: 'loaded', comparePreviewError: null });
-        }
-      }).catch((error) => {
-        if (get().compareTargetIndex === targetIdx) {
-          set({
-            comparePreviewUrl: null,
-            comparePreviewStatus: 'error',
-            comparePreviewError: `提取 ${candidatePhoto.filename} 对比预览失败：${String(error)}`,
-          });
-        }
-      });
+      getPhotoPreview(candidatePhoto.path)
+        .then((url) => {
+          previewCache.set(candidatePhoto.path, url);
+          if (get().compareTargetIndex === targetIdx) {
+            set({ comparePreviewUrl: url, comparePreviewStatus: 'loaded', comparePreviewError: null });
+          }
+        })
+        .catch((error) => {
+          if (get().compareTargetIndex === targetIdx) {
+            set({
+              comparePreviewUrl: null,
+              comparePreviewStatus: 'error',
+              comparePreviewError: `提取 ${candidatePhoto.filename} 对比预览失败：${String(error)}`,
+            });
+          }
+        });
     }
 
     set({
       isCompareMode: true,
+      compareScope: initialScope,
       compareTargetIndex: targetIdx,
       comparePreviewUrl: candidateUrl,
       comparePreviewStatus: candidateUrl ? 'loaded' : 'loading',
@@ -545,20 +625,22 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
         comparePreviewStatus: 'loaded',
       });
     } else {
-      getPhotoPreview(candidatePhoto.path).then((url) => {
-        previewCache.set(candidatePhoto.path, url);
-        if (get().compareTargetIndex === index) {
-          set({ comparePreviewUrl: url, comparePreviewStatus: 'loaded', comparePreviewError: null });
-        }
-      }).catch((error) => {
-        if (get().compareTargetIndex === index) {
-          set({
-            comparePreviewUrl: null,
-            comparePreviewStatus: 'error',
-            comparePreviewError: `提取 ${candidatePhoto.filename} 对比预览失败：${String(error)}`,
-          });
-        }
-      });
+      getPhotoPreview(candidatePhoto.path)
+        .then((url) => {
+          previewCache.set(candidatePhoto.path, url);
+          if (get().compareTargetIndex === index) {
+            set({ comparePreviewUrl: url, comparePreviewStatus: 'loaded', comparePreviewError: null });
+          }
+        })
+        .catch((error) => {
+          if (get().compareTargetIndex === index) {
+            set({
+              comparePreviewUrl: null,
+              comparePreviewStatus: 'error',
+              comparePreviewError: `提取 ${candidatePhoto.filename} 对比预览失败：${String(error)}`,
+            });
+          }
+        });
     }
   },
 
@@ -588,8 +670,24 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   nextCompareCandidate: () => {
-    const { photos, currentIndex, compareTargetIndex, setCompareTargetIndex } = get();
+    const { photos, currentIndex, compareTargetIndex, compareScope, setCompareTargetIndex } = get();
     if (compareTargetIndex === null || photos.length <= 1) return;
+
+    const currentPhoto = photos[currentIndex];
+    if (compareScope === 'burst' && currentPhoto?.burst_group_id) {
+      const burstId = currentPhoto.burst_group_id;
+      const candidates = photos
+        .map((p, idx) => ({ p, idx }))
+        .filter(({ p, idx }) => p.burst_group_id === burstId && idx !== currentIndex)
+        .map(({ idx }) => idx);
+
+      if (candidates.length > 0) {
+        const curPos = candidates.indexOf(compareTargetIndex);
+        const nextPos = curPos === -1 ? 0 : (curPos + 1) % candidates.length;
+        setCompareTargetIndex(candidates[nextPos]);
+        return;
+      }
+    }
 
     let nextIdx = compareTargetIndex + 1;
     if (nextIdx === currentIndex) {
@@ -601,8 +699,24 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
   },
 
   prevCompareCandidate: () => {
-    const { currentIndex, compareTargetIndex, setCompareTargetIndex } = get();
+    const { photos, currentIndex, compareTargetIndex, compareScope, setCompareTargetIndex } = get();
     if (compareTargetIndex === null) return;
+
+    const currentPhoto = photos[currentIndex];
+    if (compareScope === 'burst' && currentPhoto?.burst_group_id) {
+      const burstId = currentPhoto.burst_group_id;
+      const candidates = photos
+        .map((p, idx) => ({ p, idx }))
+        .filter(({ p, idx }) => p.burst_group_id === burstId && idx !== currentIndex)
+        .map(({ idx }) => idx);
+
+      if (candidates.length > 0) {
+        const curPos = candidates.indexOf(compareTargetIndex);
+        const prevPos = curPos <= 0 ? candidates.length - 1 : curPos - 1;
+        setCompareTargetIndex(candidates[prevPos]);
+        return;
+      }
+    }
 
     let prevIdx = compareTargetIndex - 1;
     if (prevIdx === currentIndex) {
@@ -622,6 +736,102 @@ export const usePhotoStore = create<PhotoStore>((set, get) => ({
 
     selectIndex(oldCompare);
     setCompareTargetIndex(oldCurrent);
+  },
+
+  pickBurstWinner: async (targetWinnerIndex?: number) => {
+    const { photos, currentIndex, undoStack } = get();
+    const winnerIdx = typeof targetWinnerIndex === 'number' ? targetWinnerIndex : currentIndex;
+    if (winnerIdx < 0 || winnerIdx >= photos.length) return;
+
+    const winnerPhoto = photos[winnerIdx];
+    const burstId = winnerPhoto.burst_group_id;
+
+    if (!burstId) {
+      // 非连拍照片：直接标记为 Pick (若无星级设为 5 星)
+      await get().setPickStatus('Pick');
+      if (winnerPhoto.rating === 0) {
+        await get().setRating(5);
+      }
+      return;
+    }
+
+    // 属于连拍组：找出同组所有照片
+    const burstIndices: number[] = [];
+    photos.forEach((p, i) => {
+      if (p.burst_group_id === burstId) {
+        burstIndices.push(i);
+      }
+    });
+
+    if (burstIndices.length === 0) return;
+
+    // 记录整组撤销快照
+    const snapshots = burstIndices.map((i) => snapshotTriage(photos[i]));
+    const nextUndo = appendUndoEntry(undoStack, {
+      label: `连拍定优 #${winnerIdx + 1} (${winnerPhoto.filename})`,
+      snapshots,
+    });
+
+    // 构造乐观更新
+    const newPhotos = [...photos];
+    const updatesToPersist: { photo: PhotoItem; rating: number; pick_status: 'Pick' | 'Reject' }[] = [];
+
+    burstIndices.forEach((i) => {
+      const orig = photos[i];
+      const isWinner = i === winnerIdx;
+      const nextRating = isWinner && orig.rating === 0 ? 5 : orig.rating;
+      const nextPick = isWinner ? ('Pick' as const) : ('Reject' as const);
+
+      const updated = {
+        ...orig,
+        rating: nextRating,
+        pick_status: nextPick,
+      };
+      newPhotos[i] = updated;
+      updatesToPersist.push({ photo: orig, rating: nextRating, pick_status: nextPick });
+    });
+
+    set({
+      photos: newPhotos,
+      undoStack: nextUndo,
+      writeStatus: 'saving',
+      writeError: null,
+      xmpConflict: null,
+    });
+
+    // 逐张落盘 XMP 并更新 Hash
+    const errors: string[] = [];
+    let conflict: XmpConflict | null = null;
+    const latestPhotos = [...get().photos];
+
+    for (const item of updatesToPersist) {
+      try {
+        const sourceHash = await updatePhotoTriage(
+          item.photo.path,
+          item.rating,
+          item.photo.color_label,
+          item.pick_status,
+          item.photo.retouch_status,
+          item.photo.defect_tags.map((t) => t.id).join(','),
+          item.photo.burst_group_id,
+          item.photo.xmp_source_hash,
+        );
+        const idx = latestPhotos.findIndex((p) => p.path === item.photo.path);
+        if (idx !== -1) {
+          latestPhotos[idx] = { ...latestPhotos[idx], xmp_source_hash: sourceHash };
+        }
+      } catch (err) {
+        errors.push(`${item.photo.filename}: ${String(err)}`);
+        conflict ??= makeXmpConflict(err, item.photo, { pick_status: item.pick_status, rating: item.rating }, 'write');
+      }
+    }
+
+    set({
+      photos: latestPhotos,
+      writeStatus: errors.length > 0 ? 'error' : 'saved',
+      writeError: errors.length > 0 ? `连拍定优落盘部分失败：${errors.slice(0, 3).join('; ')}` : null,
+      xmpConflict: conflict,
+    });
   },
 
   toggleSyncZoomAndPan: () => {

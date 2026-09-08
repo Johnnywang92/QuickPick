@@ -16,12 +16,17 @@ import {
   Wand2,
   Loader2,
   RefreshCw,
+  Crown,
+  Eye,
+  Layers,
 } from 'lucide-react';
 
 export const SplitCompareView: React.FC = () => {
   const {
     photos,
     currentIndex,
+    compareScope,
+    setCompareScope,
     compareTargetIndex,
     currentPreviewUrl,
     comparePreviewUrl,
@@ -39,6 +44,7 @@ export const SplitCompareView: React.FC = () => {
     setPickStatus,
     setComparePhotoRating,
     setComparePhotoPickStatus,
+    pickBurstWinner,
     retryCurrentPreview,
     retryComparePreview,
   } = usePhotoStore();
@@ -51,6 +57,7 @@ export const SplitCompareView: React.FC = () => {
 
   const leftImageContainerRef = useRef<Container | null>(null);
   const rightImageContainerRef = useRef<Container | null>(null);
+  const leftSpriteRef = useRef<Sprite | null>(null);
 
   const [leftZoom, setLeftZoom] = useState<number>(100);
   const [rightZoom, setRightZoom] = useState<number>(100);
@@ -64,6 +71,7 @@ export const SplitCompareView: React.FC = () => {
   const [rightInitAttempt, setRightInitAttempt] = useState(0);
   const [leftLoadAttempt, setLeftLoadAttempt] = useState(0);
   const [rightLoadAttempt, setRightLoadAttempt] = useState(0);
+  const [isBlinking, setIsBlinking] = useState(false);
 
   const leftIsPanning = useRef<boolean>(false);
   const rightIsPanning = useRef<boolean>(false);
@@ -71,6 +79,68 @@ export const SplitCompareView: React.FC = () => {
 
   const leftPhoto = photos[currentIndex];
   const rightPhoto = compareTargetIndex !== null ? photos[compareTargetIndex] : null;
+
+  const burstPhotos = React.useMemo(() => {
+    if (!leftPhoto?.burst_group_id) return [];
+    return photos.filter((p) => p.burst_group_id === leftPhoto.burst_group_id);
+  }, [photos, leftPhoto?.burst_group_id]);
+
+  const burstTotalCount = burstPhotos.length;
+  const burstCandidatePosition = React.useMemo(() => {
+    if (!rightPhoto || !leftPhoto?.burst_group_id) return 1;
+    const idx = burstPhotos.findIndex((p) => p.path === rightPhoto.path);
+    return idx >= 0 ? idx + 1 : 1;
+  }, [burstPhotos, rightPhoto]);
+
+  // 瞬时闪烁比对按键监听 (按住 B 临时切换左图为右图)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if ((e.key === 'b' || e.key === 'B') && !e.repeat) {
+        e.preventDefault();
+        setIsBlinking(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        setIsBlinking(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // 闪烁切换左图 Pixi 纹理
+  useEffect(() => {
+    const sprite = leftSpriteRef.current;
+    if (!sprite) return;
+    if (isBlinking && comparePreviewUrl) {
+      try {
+        const candidateTexture = Assets.get(comparePreviewUrl);
+        if (candidateTexture) {
+          sprite.texture = candidateTexture;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    } else if (currentPreviewUrl) {
+      try {
+        const mainTexture = Assets.get(currentPreviewUrl);
+        if (mainTexture) {
+          sprite.texture = mainTexture;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [isBlinking, currentPreviewUrl, comparePreviewUrl]);
 
   // 初始化左侧 Pixi Application
   useEffect(() => {
@@ -199,6 +269,7 @@ export const SplitCompareView: React.FC = () => {
         container.removeChildren();
 
         const sprite = new Sprite(texture);
+        leftSpriteRef.current = sprite;
         sprite.anchor.set(0.5);
 
         const app = leftAppRef.current;
@@ -225,6 +296,7 @@ export const SplitCompareView: React.FC = () => {
 
     return () => {
       isCurrent = false;
+      leftSpriteRef.current = null;
     };
   }, [currentPreviewUrl, leftReady, leftLoadAttempt]);
 
@@ -383,6 +455,48 @@ export const SplitCompareView: React.FC = () => {
             <span>双图分屏比对模式</span>
           </div>
 
+          {/* 连拍比对作用域切换 */}
+          {burstTotalCount > 1 && (
+            <div className="flex items-center bg-dark-800 border border-dark-650 rounded-md p-0.5 text-[11px]">
+              <button
+                onClick={() => setCompareScope('burst')}
+                className={`flex items-center space-x-1 px-2 py-0.5 rounded transition-colors ${
+                  compareScope === 'burst'
+                    ? 'bg-brand-600 text-white font-medium shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="候选片仅在当前连拍组内循环"
+              >
+                <Layers className="w-3 h-3" />
+                <span>连拍组内 ({burstTotalCount}张)</span>
+              </button>
+              <button
+                onClick={() => setCompareScope('all')}
+                className={`px-2 py-0.5 rounded transition-colors ${
+                  compareScope === 'all'
+                    ? 'bg-dark-650 text-slate-200 font-medium shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="候选片在全相册内切换"
+              >
+                全相册
+              </button>
+            </div>
+          )}
+
+          {/* 闪烁比对快捷提示 */}
+          <div
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] border font-mono transition-all ${
+              isBlinking
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                : 'bg-dark-800/80 text-slate-400 border-dark-700'
+            }`}
+            title="在左侧视口按住 [B] 键可瞬时显示右侧候选片，松开瞬时还原"
+          >
+            <Eye className="w-3 h-3 text-amber-400" />
+            <span>按住 [B] 闪烁比对</span>
+          </div>
+
           <button
             onClick={toggleSyncZoomAndPan}
             title="开启/关闭双画布缩放平移联动"
@@ -466,15 +580,25 @@ export const SplitCompareView: React.FC = () => {
 
           {/* 左侧信息浮标 */}
           <div className="absolute top-3 left-3 z-20 flex items-center space-x-2 bg-dark-800/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-dark-700 text-xs font-mono">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="font-semibold text-emerald-400">主选片 #{currentIndex + 1}</span>
-            <span className="text-slate-300">{leftPhoto.filename}</span>
-            {leftPhoto.exif && (leftPhoto.exif.shutter_speed || leftPhoto.exif.aperture) && (
-              <span className="text-amber-300/90 pl-1.5 border-l border-dark-700 text-[11px]">
-                {leftPhoto.exif.focal_length ? `${Math.round(leftPhoto.exif.focal_length)}mm ` : ''}
-                {leftPhoto.exif.aperture ? `f/${leftPhoto.exif.aperture} ` : ''}
-                {leftPhoto.exif.shutter_speed || ''}
-              </span>
+            {isBlinking ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                <span className="font-semibold text-amber-400">⚡ 闪烁比对中 (候选片)</span>
+                <span className="text-slate-300">{rightPhoto?.filename || ''}</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="font-semibold text-emerald-400">主选片 #{currentIndex + 1}</span>
+                <span className="text-slate-300">{leftPhoto.filename}</span>
+                {leftPhoto.exif && (leftPhoto.exif.shutter_speed || leftPhoto.exif.aperture) && (
+                  <span className="text-amber-300/90 pl-1.5 border-l border-dark-700 text-[11px]">
+                    {leftPhoto.exif.focal_length ? `${Math.round(leftPhoto.exif.focal_length)}mm ` : ''}
+                    {leftPhoto.exif.aperture ? `f/${leftPhoto.exif.aperture} ` : ''}
+                    {leftPhoto.exif.shutter_speed || ''}
+                  </span>
+                )}
+              </>
             )}
             <span className="text-slate-500">{leftZoom}%</span>
           </div>
@@ -504,6 +628,17 @@ export const SplitCompareView: React.FC = () => {
 
           {/* 左侧独立定夺工具栏 */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-dark-700 shadow-xl text-xs">
+            {leftPhoto.burst_group_id && (
+              <button
+                onClick={() => void pickBurstWinner(currentIndex)}
+                title="将当前主选片定为连拍优胜 (打5星及Pick)，并自动将同组其余照片标记为排除 (Reject) [快捷键 W]"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-all shadow-sm"
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>连拍胜出 [W]</span>
+              </button>
+            )}
+
             <button
               onClick={() => setPickStatus('Pick')}
               className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${
@@ -578,7 +713,11 @@ export const SplitCompareView: React.FC = () => {
           {/* 右侧信息浮标与候选前后切换器 */}
           <div className="absolute top-3 left-3 z-20 flex items-center space-x-2 bg-dark-800/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-dark-700 text-xs font-mono">
             <span className="w-2 h-2 rounded-full bg-blue-400" />
-            <span className="font-semibold text-blue-400">对比候选 #{compareTargetIndex! + 1}</span>
+            <span className="font-semibold text-blue-400">
+              {compareScope === 'burst' && leftPhoto?.burst_group_id
+                ? `连拍候选 [${burstCandidatePosition}/${burstTotalCount}]`
+                : `对比候选 #${compareTargetIndex! + 1}`}
+            </span>
             <span className="text-slate-300">{rightPhoto.filename}</span>
             {rightPhoto.exif && (rightPhoto.exif.shutter_speed || rightPhoto.exif.aperture) && (
               <span className="text-amber-300/90 pl-1.5 border-l border-dark-700 text-[11px]">
@@ -592,17 +731,17 @@ export const SplitCompareView: React.FC = () => {
             <div className="flex items-center space-x-0.5 pl-1.5 border-l border-dark-700">
               <button
                 onClick={handlePrevCandidate}
-                disabled={compareTargetIndex === 0}
+                disabled={compareScope === 'burst' ? burstTotalCount <= 1 : compareTargetIndex === 0}
                 title="切换上一张候选片"
-                className="p-0.5 hover:bg-dark-700 rounded disabled:opacity-30"
+                className="p-0.5 hover:bg-dark-700 rounded disabled:opacity-30 cursor-pointer"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={handleNextCandidate}
-                disabled={compareTargetIndex === photos.length - 1}
+                disabled={compareScope === 'burst' ? burstTotalCount <= 1 : compareTargetIndex === photos.length - 1}
                 title="切换下一张候选片"
-                className="p-0.5 hover:bg-dark-700 rounded disabled:opacity-30"
+                className="p-0.5 hover:bg-dark-700 rounded disabled:opacity-30 cursor-pointer"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -634,6 +773,17 @@ export const SplitCompareView: React.FC = () => {
 
           {/* 右侧独立定夺工具栏 */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-dark-700 shadow-xl text-xs">
+            {rightPhoto.burst_group_id && (
+              <button
+                onClick={() => void pickBurstWinner(compareTargetIndex!)}
+                title="将右侧候选片定为连拍优胜 (打5星及Pick)，并自动将同组其余照片标记为排除 (Reject)"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-all shadow-sm"
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>连拍胜出</span>
+              </button>
+            )}
+
             <button
               onClick={() => setComparePhotoPickStatus('Pick')}
               className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${

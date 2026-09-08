@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { usePhotoStore } from './store/photoStore';
+import { useEffect, useMemo } from 'react';
+import { usePhotoStore, getFilteredProgress } from './store/photoStore';
 import { PixiCanvas } from './components/viewport/PixiCanvas';
 import { SplitCompareView } from './components/viewport/SplitCompareView';
 import { Filmstrip } from './components/filmstrip/Filmstrip';
@@ -43,9 +43,17 @@ export default function App() {
     openFolder,
     retryCurrentPreview,
     setExportModalOpen,
+    activeFilter,
+    selectedCamera,
+    selectedLens,
+    resetFilter,
   } = usePhotoStore();
 
   useKeyboardShortcuts();
+
+  const filterProgress = useMemo(() => {
+    return getFilteredProgress(photos, currentIndex, activeFilter, selectedCamera, selectedLens);
+  }, [photos, currentIndex, activeFilter, selectedCamera, selectedLens]);
 
   useEffect(() => {
     initEngine();
@@ -80,9 +88,30 @@ export default function App() {
               <span className="font-mono bg-dark-700 px-2 py-0.5 rounded text-slate-200 max-w-[280px] truncate" title={folderPath}>
                 {folderPath}
               </span>
-              <span className="bg-brand-600/20 text-brand-400 border border-brand-500/30 px-2 py-0.5 rounded font-mono text-[11px]">
-                {currentIndex + 1} / {photos.length}
-              </span>
+              {filterProgress.isFiltered ? (
+                <div className="flex items-center space-x-1.5 font-mono text-[11px]">
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded flex items-center space-x-1">
+                    <span className="text-[10px] text-amber-400/80 font-sans">筛选:</span>
+                    <span className="font-semibold">{filterProgress.filteredIndex >= 0 ? filterProgress.filteredIndex + 1 : '-'}</span>
+                    <span className="text-amber-400/60">/</span>
+                    <span>{filterProgress.filteredTotal}</span>
+                  </span>
+                  <span className="bg-dark-700/80 text-slate-400 border border-dark-600 px-1.5 py-0.5 rounded text-[10px]">
+                    全局 #{currentIndex + 1}/{photos.length}
+                  </span>
+                  <button
+                    onClick={resetFilter}
+                    className="p-0.5 hover:bg-dark-700 text-slate-400 hover:text-amber-300 rounded transition-colors cursor-pointer"
+                    title="清除筛选回到全部照片 (快捷键 Esc)"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <span className="bg-brand-600/20 text-brand-400 border border-brand-500/30 px-2 py-0.5 rounded font-mono text-[11px]">
+                  {currentIndex + 1} / {photos.length}
+                </span>
+              )}
             </div>
           ) : (
             <span className="text-xs text-slate-500">未载入相册</span>
