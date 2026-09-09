@@ -161,7 +161,7 @@ pub fn cluster_photos_by_timeline(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ExifMetadata, PhotoItem, RetouchStatus};
+    use crate::models::{ExifMetadata, PhotoItem};
 
     fn make_test_photo(name: &str, dt: Option<&str>) -> PhotoItem {
         PhotoItem {
@@ -170,16 +170,9 @@ mod tests {
             filename: name.to_string(),
             file_size: 24_000_000,
             is_raw: true,
-            rating: 0,
-            color_label: String::new(),
-            pick_status: "None".to_string(),
             thumb_width: None,
             thumb_height: None,
-            retouch_status: RetouchStatus::Clean,
-            defect_tags: vec![],
             burst_group_id: None,
-            faces: vec![],
-            xmp_source_hash: None,
             exif: dt.map(|time| ExifMetadata {
                 camera_make: None,
                 camera_model: None,
@@ -219,7 +212,10 @@ mod tests {
         assert_eq!(chapters[0].start_index, 0);
         assert_eq!(chapters[0].end_index, 2);
         assert_eq!(chapters[0].photo_count, 3);
-        assert_eq!(chapters[0].start_time.as_deref(), Some("2026-08-15 14:00:00"));
+        assert_eq!(
+            chapters[0].start_time.as_deref(),
+            Some("2026-08-15 14:00:00")
+        );
         assert_eq!(chapters[0].end_time.as_deref(), Some("2026-08-15 14:05:00"));
 
         // 验证第 2 章节

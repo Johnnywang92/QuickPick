@@ -16,6 +16,23 @@ path = "src/main.rs"
 [[bin]]
 name = "quickpick-server"
 path = "src/bin/server.rs"
+required-features = ["server-bin"]
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+required-features = ["benchmark-bin"]
+
+[[bin]]
+name = "real-media-acceptance"
+path = "src/bin/real_media_acceptance.rs"
+required-features = ["acceptance-bin"]
+
+[features]
+default = []
+server-bin = []
+benchmark-bin = []
+acceptance-bin = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -36,7 +53,7 @@ thiserror = "2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 libc = "0.2"
 base64 = "0.22"
-quick-xml = "0.42"
+rusqlite = { version = "0.32", features = ["backup", "bundled"] }
 
 [profile.release]
 opt-level = 3

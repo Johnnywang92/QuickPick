@@ -1,7 +1,7 @@
-use std::env;
-use std::path::Path;
-use std::time::Duration;
 use quickpick_lib::engine::cache::{build_folder_cache, DEFAULT_PROXY_MAX_EDGE};
+use std::env;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() {
@@ -15,6 +15,9 @@ async fn main() {
     let mut interval_secs: u64 = 30;
     let mut run_once = false;
     let mut max_edge = DEFAULT_PROXY_MAX_EDGE;
+    let mut cache_root = env::var("QUICKPICK_CACHE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/var/cache/quickpick"));
 
     // 优先读取环境变量 (Docker 容器传参规范)
     if let Ok(env_dirs) = env::var("WATCH_DIRS") {
@@ -64,6 +67,12 @@ async fn main() {
                     i += 1;
                 }
             }
+            "--cache-dir" => {
+                if i + 1 < args.len() {
+                    cache_root = PathBuf::from(&args[i + 1]);
+                    i += 1;
+                }
+            }
             "--once" => {
                 run_once = true;
             }
@@ -72,8 +81,9 @@ async fn main() {
                 println!("  --watch <DIR>        指定监听或构建缓存的相册目录");
                 println!("  --interval <SECS>    相册自动扫描轮询间隔 (秒，默认 30)");
                 println!("  --max-edge <PIXELS>  2K 代理长边分辨率上限 (默认 2048)");
+                println!("  --cache-dir <DIR>    独立缓存目录，禁止放入照片源目录");
                 println!("  --once               仅执行一次扫描并退出 (适用于 CI/定时任务)");
-                println!("  环境变量支持: WATCH_DIRS=/photos, SCAN_INTERVAL=30, PROXY_MAX_EDGE=2048");
+                println!("  环境变量支持: WATCH_DIRS=/photos, QUICKPICK_CACHE_DIR=/cache");
                 return;
             }
             _ => {
@@ -91,6 +101,7 @@ async fn main() {
     }
 
     println!("[INFO] 监听相册目录列表: {:?}", watch_dirs);
+    println!("[INFO] 独立缓存目录: {}", cache_root.display());
     println!("[INFO] 2K 代理分辨率上限: {}px", max_edge);
     println!("[INFO] 守护进程已就绪，按 Ctrl+C 安全退出.\n");
 
@@ -105,7 +116,7 @@ async fn main() {
             println!("[SCAN] 正在扫描相册目录: {}", dir_str);
             let start = std::time::Instant::now();
 
-            match build_folder_cache(p, max_edge) {
+            match build_folder_cache(&cache_root, p, max_edge) {
                 Ok(catalog) => {
                     let elapsed = start.elapsed();
                     println!(

@@ -1,25 +1,24 @@
 pub mod cache;
 pub mod exif;
 pub mod export;
-use std::path::Path;
-use std::fs;
 use crate::libraw_ffi;
 use crate::models::PhotoItem;
-use crate::xmp::{get_xmp_path, read_xmp};
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::Path;
 
 pub const RAW_EXTENSIONS: &[&str] = &[
-    "arw", "cr3", "cr2", "nef", "dng", "raf", "orf", "rw2", "pef", "srw"
+    "arw", "cr3", "cr2", "nef", "dng", "raf", "orf", "rw2", "pef", "srw",
 ];
 
-pub const IMAGE_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "webp"
-];
+pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp"];
 
 /// 判断是否为支持的照片文件
 pub fn is_supported_photo(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let ext_lower = ext.to_lowercase();
-        RAW_EXTENSIONS.contains(&ext_lower.as_str()) || IMAGE_EXTENSIONS.contains(&ext_lower.as_str())
+        RAW_EXTENSIONS.contains(&ext_lower.as_str())
+            || IMAGE_EXTENSIONS.contains(&ext_lower.as_str())
     } else {
         false
     }
@@ -34,117 +33,70 @@ pub fn is_raw_file(path: &Path) -> bool {
     }
 }
 
-/// 扫描目录并返回照片列表 (自动检测并挂载 .quickpick_cache/catalog.json)
-pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> {
-    let p_dir = dir.as_ref();
-    let catalog_opt = cache::load_catalog_cache(p_dir);
+/// 根据相册内相对路径生成可重复的照片身份，不读取或修改照片内容。
+/// 整个相册目录移动后，相对路径不变，照片身份也保持不变。
+pub fn stable_photo_id(root: &Path, path: &Path) -> String {
+    let canonical_root = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let canonical_path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let normalized = canonical_path
+        .strip_prefix(&canonical_root)
+        .unwrap_or(&canonical_path);
+    let mut hasher = Sha256::new();
+    hasher.update(normalized.to_string_lossy().as_bytes());
+    format!("photo:{:x}", hasher.finalize())
+}
 
+/// 第一阶段只读枚举目录，不解码照片、不读取 EXIF，也不运行辅助分析。
+///
+/// 用户选择不从相邻 XMP 读取，桌面主流程也不访问源目录缓存。
+pub fn scan_directory_fast<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> {
+    scan_directory_fast_impl(dir.as_ref(), || {})
+}
+
+fn scan_directory_fast_impl(
+    p_dir: &Path,
+    on_enumeration_started: impl FnOnce(),
+) -> Result<Vec<PhotoItem>, String> {
     let mut items = Vec::new();
-    let entries = fs::read_dir(p_dir).map_err(|e| e.to_string())?;
+    let entries = fs::read_dir(p_dir)
+        .map_err(|error| format!("无法读取照片目录 {}: {error}", p_dir.display()))?;
+    on_enumeration_started();
+    if !p_dir.is_dir() {
+        return Err(format!(
+            "照片目录在扫描过程中断开或不可用: {}",
+            p_dir.display()
+        ));
+    }
 
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| format!("扫描照片目录时读取条目失败，源磁盘可能已断开: {error}"))?;
+        if !p_dir.is_dir() {
+            return Err(format!(
+                "照片目录在扫描过程中断开或不可用: {}",
+                p_dir.display()
+            ));
+        }
         let path = entry.path();
         if path.is_file() && is_supported_photo(&path) {
-            let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let filename = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             let is_raw = is_raw_file(&path);
 
-            // 读取已有的 XMP 元数据伴侣文件 (摄影师评级等黄金源数据)
-            let xmp_p = get_xmp_path(&path);
-            let xmp_meta = read_xmp(&xmp_p).unwrap_or_default();
-
-            // 检查 catalog.json 缓存中是否存在预计算数据
-            let cached_item = catalog_opt
-                .as_ref()
-                .and_then(|c| c.items.iter().find(|it| it.filename == filename));
-
-            let (retouch_status, defect_tags, burst_group_id, thumb_width, thumb_height, faces, exif) =
-                if let Some(cat) = cached_item {
-                    let status = if !xmp_meta.retouch_status.is_empty() {
-                        match xmp_meta.retouch_status.to_lowercase().as_str() {
-                            "clean" => crate::models::RetouchStatus::Clean,
-                            "fixable" => crate::models::RetouchStatus::Fixable,
-                            "fatal" => crate::models::RetouchStatus::Fatal,
-                            "failed" => crate::models::RetouchStatus::Failed,
-                            _ => cat.retouch_status.clone(),
-                        }
-                    } else {
-                        cat.retouch_status.clone()
-                    };
-
-                    let bg_id = if !xmp_meta.burst_group_id.is_empty() {
-                        Some(xmp_meta.burst_group_id)
-                    } else {
-                        cat.burst_group_id.clone()
-                    };
-
-                    let exif = cat.exif.clone().or_else(|| {
-                        if is_raw {
-                            libraw_ffi::extract_raw_metadata(&path).ok()
-                        } else {
-                            exif::extract_image_file_exif(&path)
-                        }
-                    });
-
-                    (
-                        status,
-                        cat.defect_tags.clone(),
-                        bg_id,
-                        cat.thumb_width,
-                        cat.thumb_height,
-                        cat.faces.clone(),
-                        exif,
-                    )
-                } else {
-                    let status = match xmp_meta.retouch_status.to_lowercase().as_str() {
-                        "clean" => crate::models::RetouchStatus::Clean,
-                        "fixable" => crate::models::RetouchStatus::Fixable,
-                        "fatal" => crate::models::RetouchStatus::Fatal,
-                        "failed" => crate::models::RetouchStatus::Failed,
-                        _ => crate::models::RetouchStatus::Pending,
-                    };
-
-                    let bg_id = if xmp_meta.burst_group_id.is_empty() {
-                        None
-                    } else {
-                        Some(xmp_meta.burst_group_id)
-                    };
-
-                    // 实时提取 EXIF/拍摄参数
-                    let parsed_exif = if is_raw {
-                        libraw_ffi::extract_raw_metadata(&path).ok()
-                    } else {
-                        exif::extract_image_file_exif(&path)
-                    };
-
-                    (status, Vec::new(), bg_id, None, None, Vec::new(), parsed_exif)
-                };
-
             items.push(PhotoItem {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: stable_photo_id(p_dir, &path),
                 path: path.to_string_lossy().to_string(),
                 filename,
                 file_size,
                 is_raw,
-                rating: xmp_meta.rating,
-                color_label: xmp_meta.label,
-                pick_status: if xmp_meta.pick_status.is_empty() {
-                    "None".to_string()
-                } else {
-                    xmp_meta.pick_status
-                },
-                thumb_width,
-                thumb_height,
-                retouch_status,
-                defect_tags,
-                burst_group_id,
-                faces,
-                exif,
-                xmp_source_hash: if xmp_meta.source_hash.is_empty() {
-                    None
-                } else {
-                    Some(xmp_meta.source_hash)
-                },
+                thumb_width: None,
+                thumb_height: None,
+                burst_group_id: None,
+                exif: None,
             });
         }
     }
@@ -152,69 +104,86 @@ pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> 
     // 按文件名自然升序排序
     items.sort_by(|a, b| a.filename.cmp(&b.filename));
 
-    // 1. 连拍序列成组聚类
-    crate::rules::group_bursts(&mut items);
+    Ok(items)
+}
 
-    // 2. 自动诊断与可修/不可修规则初筛 (若无 XMP 覆写且无 catalog 预计算)
-    let cloned_items = items.clone();
-    for (i, item) in items.iter_mut().enumerate() {
-        if item.retouch_status == crate::models::RetouchStatus::Pending {
-            let analysis = load_photo_preview(&item.path)
-                .and_then(|(bytes, _)| crate::rules::analyze_image_bytes(&bytes));
-            match analysis {
-                Ok(metrics) => {
-                    let (status, tags) = crate::rules::evaluate_photo_retouchability(
-                        &metrics,
-                        Some(&cloned_items),
-                        i,
-                    );
-                    item.retouch_status = status;
-                    item.defect_tags = tags;
-                }
-                Err(_) => item.retouch_status = crate::models::RetouchStatus::Failed,
-            }
-        }
+/// 完整同步扫描仅供基准、兼容服务与底层测试使用。
+/// 桌面主流程使用 `scan_directory_fast`，并在列表可用后逐张后台分析。
+pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> {
+    let mut items = scan_directory_fast(dir)?;
+
+    for item in &mut items {
+        let path = Path::new(&item.path);
+        item.exif = if item.is_raw {
+            libraw_ffi::extract_raw_metadata(path).ok()
+        } else {
+            exif::extract_image_file_exif(path)
+        };
     }
+
+    crate::rules::group_bursts(&mut items);
 
     Ok(items)
 }
 
-/// 加载单张照片的最佳预览图像字节 (优先命中 2K 代理缓存，避免网络拉取 50MB RAW)
-pub fn load_photo_preview<P: AsRef<Path>>(path: P) -> Result<(Vec<u8>, String), String> {
+/// 从原始源文件只读提取预览。
+pub fn load_source_photo_preview<P: AsRef<Path>>(path: P) -> Result<(Vec<u8>, String), String> {
     let p = path.as_ref();
-
-    // 1. 极速通道：优先检查是否存在 .quickpick_cache 代理文件 (2K WebP / 2K JPG)
-    if let Some(proxy_path) = cache::find_proxy_file(p) {
-        if let Ok(data) = fs::read(&proxy_path) {
-            let ext = proxy_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("jpg")
-                .to_lowercase();
-            let mime = if ext == "webp" {
-                "image/webp"
-            } else {
-                "image/jpeg"
-            };
-            return Ok((data, mime.to_string()));
-        }
-    }
-
-    // 2. 退化通道：原生 LibRaw / 本地读取
     if is_raw_file(p) {
         let thumb = libraw_ffi::extract_embedded_thumbnail(p)
             .map_err(|e| format!("RAW 内嵌图提取失败: {}", e))?;
 
-        let mime = if thumb.is_jpeg { "image/jpeg" } else { "image/x-portable-pixmap" };
+        let mime = if thumb.is_jpeg {
+            "image/jpeg"
+        } else {
+            "image/x-portable-pixmap"
+        };
         Ok((thumb.data, mime.to_string()))
     } else {
         let data = fs::read(p).map_err(|e| format!("读取图像文件失败: {}", e))?;
-        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("jpeg").to_lowercase();
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("jpeg")
+            .to_lowercase();
         let mime = match ext.as_str() {
             "png" => "image/png",
             "webp" => "image/webp",
             _ => "image/jpeg",
         };
         Ok((data, mime.to_string()))
+    }
+}
+
+/// 加载单张照片预览。缓存由应用数据目录层负责，源目录不参与缓存。
+pub fn load_photo_preview<P: AsRef<Path>>(path: P) -> Result<(Vec<u8>, String), String> {
+    load_source_photo_preview(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_reports_source_directory_disconnection_without_modifying_photos() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("qp_scan_disconnect_{}", uuid::Uuid::new_v4()));
+        let source = temp_dir.join("source");
+        let disconnected = temp_dir.join("disconnected-source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("photo.jpg"), b"unchanged source bytes").unwrap();
+
+        let error = scan_directory_fast_impl(&source, || {
+            fs::rename(&source, &disconnected).unwrap();
+        })
+        .unwrap_err();
+
+        assert!(error.contains("扫描过程中断开"));
+        assert_eq!(
+            fs::read(disconnected.join("photo.jpg")).unwrap(),
+            b"unchanged source bytes"
+        );
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

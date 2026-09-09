@@ -8,7 +8,11 @@ use image::{DynamicImage, GenericImageView};
 /// - NormDist = sqrt((cx - W/2)^2 + (cy - H/2)^2) / (0.5 * D) ∈ [0, 1]
 pub fn calculate_face_priority(face: &FaceInfo, img_width: f32, img_height: f32) -> f32 {
     let w = if img_width <= 0.0 { 1920.0 } else { img_width };
-    let h = if img_height <= 0.0 { 1080.0 } else { img_height };
+    let h = if img_height <= 0.0 {
+        1080.0
+    } else {
+        img_height
+    };
     let diag = (w * w + h * h).sqrt();
 
     // 归一化面积 (因为 face.width, face.height 本身已经是 0.0~1.0 归一化值)
@@ -45,7 +49,11 @@ pub fn sort_and_truncate_faces(
     }
 
     // 优先级降序排序
-    faces.sort_by(|a, b| b.priority.partial_cmp(&a.priority).unwrap_or(std::cmp::Ordering::Equal));
+    faces.sort_by(|a, b| {
+        b.priority
+            .partial_cmp(&a.priority)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if faces.len() <= max_top {
         (faces, Vec::new())
@@ -93,7 +101,10 @@ pub fn inherit_pinned_faces(current_faces: &mut [FaceInfo], previous_pinned_face
 
 /// 大合影全员睁眼一票否决检测（场景感知版本）
 /// 若存在任何人（包括 Top 6 或背景未上榜人物）眼睛开合度 < 0.35，生成诊断警告
-pub fn evaluate_group_eyes_with_scene(all_faces: &[FaceInfo], scene: WorkflowScene) -> Option<DefectTag> {
+pub fn evaluate_group_eyes_with_scene(
+    all_faces: &[FaceInfo],
+    scene: WorkflowScene,
+) -> Option<DefectTag> {
     // 演唱会模式下，单人或双人特写允许闭眼深情演唱，不视为大合影闭眼缺陷
     if scene == WorkflowScene::Concert && all_faces.len() <= 2 {
         return None;
@@ -110,7 +121,10 @@ pub fn evaluate_group_eyes_with_scene(all_faces: &[FaceInfo], scene: WorkflowSce
 
     let count = closed_faces.len();
     let first_face = closed_faces[0];
-    let label_str = first_face.label.clone().unwrap_or_else(|| format!("人物 #{}", first_face.id));
+    let label_str = first_face
+        .label
+        .clone()
+        .unwrap_or_else(|| format!("人物 #{}", first_face.id));
 
     let (label_prefix, confidence) = match scene {
         WorkflowScene::Conference => ("商务大合影闭眼警告", 0.98),
@@ -120,10 +134,13 @@ pub fn evaluate_group_eyes_with_scene(all_faces: &[FaceInfo], scene: WorkflowSce
 
     Some(DefectTag {
         id: "group_photo_blink".to_string(),
-        category: "fixable".to_string(), // 大合影闭眼通常可通过连拍同位置换脸拯救
+        category: "warning".to_string(),
         label: format!("{} ({}人)", label_prefix, count),
         confidence,
-        hint: Some(format!("检测到 [{}] 等 {} 位人物闭眼，建议调出同组连拍使用 Face Loupe 进行眼神替换", label_str, count)),
+        hint: Some(format!(
+            "检测到 [{}] 等 {} 位人物闭眼，建议调出同组连拍使用 Face Loupe 进行眼神替换",
+            label_str, count
+        )),
     })
 }
 
@@ -133,7 +150,10 @@ pub fn evaluate_group_eyes(all_faces: &[FaceInfo]) -> Option<DefectTag> {
 }
 
 /// 评估多人合影或双人合照中的睁闭眼分歧冲突（场景感知版本）
-pub fn evaluate_group_eye_conflict_with_scene(all_faces: &[FaceInfo], scene: WorkflowScene) -> Option<DefectTag> {
+pub fn evaluate_group_eye_conflict_with_scene(
+    all_faces: &[FaceInfo],
+    scene: WorkflowScene,
+) -> Option<DefectTag> {
     // 演唱会模式下，单人或双人特写允许闭眼投入演出，不属于合影分歧
     if scene == WorkflowScene::Concert && all_faces.len() <= 2 {
         return None;
@@ -143,7 +163,10 @@ pub fn evaluate_group_eye_conflict_with_scene(all_faces: &[FaceInfo], scene: Wor
         return None;
     }
     let closed_count = all_faces.iter().filter(|f| f.eye_open_score < 0.35).count();
-    let open_count = all_faces.iter().filter(|f| f.eye_open_score >= 0.70).count();
+    let open_count = all_faces
+        .iter()
+        .filter(|f| f.eye_open_score >= 0.70)
+        .count();
 
     if closed_count > 0 && open_count > 0 {
         let confidence = match scene {
@@ -154,7 +177,7 @@ pub fn evaluate_group_eye_conflict_with_scene(all_faces: &[FaceInfo], scene: Wor
 
         Some(DefectTag {
             id: "review_group_blink_conflict".to_string(),
-            category: "fixable".to_string(),
+            category: "warning".to_string(),
             label: format!("合影闭眼分歧 ({}闭/{}睁)", closed_count, open_count),
             confidence,
             hint: Some(format!(
@@ -199,10 +222,7 @@ pub fn detect_faces_heuristic(img: &DynamicImage) -> Vec<FaceInfo> {
             let cr = 128.0 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
             // 亚洲人与常见人像肤色区间标准
-            if y_val > 60.0
-                && (85.0..=135.0).contains(&cb)
-                && (135.0..=180.0).contains(&cr)
-            {
+            if y_val > 60.0 && (85.0..=135.0).contains(&cb) && (135.0..=180.0).contains(&cr) {
                 skin_points.push((x, y));
             }
         }
@@ -365,7 +385,10 @@ mod tests {
         let p2 = calculate_face_priority(&edge_small_face, img_w, img_h);
 
         // 中心大脸的优先级必须显著高于边缘小脸
-        assert!(p1 > p2, "Center large face should have higher priority than edge small face");
+        assert!(
+            p1 > p2,
+            "Center large face should have higher priority than edge small face"
+        );
 
         // 若边缘小脸被摄影师手动钉选 (IsPinned = true)，其优先级应由于 +10 权重反超中心脸
         let mut pinned_small_face = edge_small_face.clone();
@@ -398,7 +421,11 @@ mod tests {
 
         let (top6, background) = sort_and_truncate_faces(faces.clone(), img_w, img_h, 6);
         assert_eq!(top6.len(), 6, "Top 6 faces should strictly have 6 items");
-        assert_eq!(background.len(), 4, "Remaining background faces should have 4 items");
+        assert_eq!(
+            background.len(),
+            4,
+            "Remaining background faces should have 4 items"
+        );
 
         // 钉选主角必须在 Top 1
         assert!(top6[0].is_pinned, "Pinned face must be ranked #1");
@@ -455,9 +482,15 @@ mod tests {
 
         inherit_pinned_faces(&mut next_faces, &prev_pinned);
 
-        assert!(next_faces[1].is_pinned, "Closest face in next burst frame should inherit pinned state");
+        assert!(
+            next_faces[1].is_pinned,
+            "Closest face in next burst frame should inherit pinned state"
+        );
         assert_eq!(next_faces[1].label.as_deref(), Some("新娘主角"));
-        assert!(!next_faces[0].is_pinned, "Unrelated face should remain unpinned");
+        assert!(
+            !next_faces[0].is_pinned,
+            "Unrelated face should remain unpinned"
+        );
     }
 
     #[test]
@@ -465,15 +498,27 @@ mod tests {
         let faces = vec![
             FaceInfo {
                 id: "f1".to_string(),
-                x: 0.2, y: 0.3, width: 0.1, height: 0.1,
+                x: 0.2,
+                y: 0.3,
+                width: 0.1,
+                height: 0.1,
                 eye_open_score: 0.95, // 极佳睁眼
-                sharpness: 90.0, is_pinned: false, priority: 1.0, label: None,
+                sharpness: 90.0,
+                is_pinned: false,
+                priority: 1.0,
+                label: None,
             },
             FaceInfo {
                 id: "f2".to_string(),
-                x: 0.5, y: 0.3, width: 0.1, height: 0.1,
+                x: 0.5,
+                y: 0.3,
+                width: 0.1,
+                height: 0.1,
                 eye_open_score: 0.15, // 闭眼
-                sharpness: 88.0, is_pinned: false, priority: 1.0, label: None,
+                sharpness: 88.0,
+                is_pinned: false,
+                priority: 1.0,
+                label: None,
             },
         ];
 
@@ -488,28 +533,61 @@ mod tests {
     fn test_scene_aware_eye_evaluations() {
         let solo_singer = vec![FaceInfo {
             id: "singer".to_string(),
-            x: 0.4, y: 0.3, width: 0.2, height: 0.2,
+            x: 0.4,
+            y: 0.3,
+            width: 0.2,
+            height: 0.2,
             eye_open_score: 0.10, // 深情闭眼
-            sharpness: 90.0, is_pinned: true, priority: 10.0, label: Some("主唱".to_string()),
+            sharpness: 90.0,
+            is_pinned: true,
+            priority: 10.0,
+            label: Some("主唱".to_string()),
         }];
 
         // 演唱会模式：单人闭眼应被放行，不报警大合影闭眼
         let concert_tag = evaluate_group_eyes_with_scene(&solo_singer, WorkflowScene::Concert);
-        assert!(concert_tag.is_none(), "Concert solo singer closed eyes should be allowed");
+        assert!(
+            concert_tag.is_none(),
+            "Concert solo singer closed eyes should be allowed"
+        );
 
         // 商业会议模式：大合影闭眼应有极高置信度警告
         let conf_faces = vec![
             FaceInfo {
-                id: "vip1".to_string(), x: 0.2, y: 0.3, width: 0.1, height: 0.1,
-                eye_open_score: 0.95, sharpness: 90.0, is_pinned: false, priority: 1.0, label: None,
+                id: "vip1".to_string(),
+                x: 0.2,
+                y: 0.3,
+                width: 0.1,
+                height: 0.1,
+                eye_open_score: 0.95,
+                sharpness: 90.0,
+                is_pinned: false,
+                priority: 1.0,
+                label: None,
             },
             FaceInfo {
-                id: "vip2".to_string(), x: 0.5, y: 0.3, width: 0.1, height: 0.1,
-                eye_open_score: 0.20, sharpness: 88.0, is_pinned: false, priority: 1.0, label: None,
+                id: "vip2".to_string(),
+                x: 0.5,
+                y: 0.3,
+                width: 0.1,
+                height: 0.1,
+                eye_open_score: 0.20,
+                sharpness: 88.0,
+                is_pinned: false,
+                priority: 1.0,
+                label: None,
             },
             FaceInfo {
-                id: "vip3".to_string(), x: 0.8, y: 0.3, width: 0.1, height: 0.1,
-                eye_open_score: 0.90, sharpness: 91.0, is_pinned: false, priority: 1.0, label: None,
+                id: "vip3".to_string(),
+                x: 0.8,
+                y: 0.3,
+                width: 0.1,
+                height: 0.1,
+                eye_open_score: 0.90,
+                sharpness: 91.0,
+                is_pinned: false,
+                priority: 1.0,
+                label: None,
             },
         ];
         let conf_tag = evaluate_group_eyes_with_scene(&conf_faces, WorkflowScene::Conference);

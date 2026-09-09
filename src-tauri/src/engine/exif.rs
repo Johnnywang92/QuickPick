@@ -36,12 +36,18 @@ pub fn clean_string(raw: &str) -> Option<String> {
 }
 
 /// 标准化相机品牌与机身型号，避免 "SONY" / "ILCE-7RM5" 重复出现冗余
-pub fn normalize_camera(make: Option<&str>, model: Option<&str>) -> (Option<String>, Option<String>) {
+pub fn normalize_camera(
+    make: Option<&str>,
+    model: Option<&str>,
+) -> (Option<String>, Option<String>) {
     let clean_make = make.and_then(clean_string);
     let mut clean_model = model.and_then(clean_string);
 
     if let (Some(m), Some(mod_str)) = (&clean_make, &clean_model) {
-        if mod_str.to_lowercase().starts_with(&format!("{} ", m.to_lowercase())) {
+        if mod_str
+            .to_lowercase()
+            .starts_with(&format!("{} ", m.to_lowercase()))
+        {
             let stripped = mod_str[m.len()..].trim().to_string();
             if !stripped.is_empty() {
                 clean_model = Some(stripped);
@@ -205,23 +211,27 @@ pub fn parse_tiff_bytes(tiff_data: &[u8]) -> Option<ExifMetadata> {
     let mut model = None;
     let mut exif_subifd_offset = None;
 
-    parse_ifd(&reader, ifd0_offset, |tag, type_id, count, val_or_offset| {
-        match tag {
-            0x010F => {
-                // Make
-                make = read_string_value(&reader, type_id, count, val_or_offset);
+    parse_ifd(
+        &reader,
+        ifd0_offset,
+        |tag, type_id, count, val_or_offset| {
+            match tag {
+                0x010F => {
+                    // Make
+                    make = read_string_value(&reader, type_id, count, val_or_offset);
+                }
+                0x0110 => {
+                    // Model
+                    model = read_string_value(&reader, type_id, count, val_or_offset);
+                }
+                0x8769 => {
+                    // ExifIFDPointer
+                    exif_subifd_offset = Some(val_or_offset as usize);
+                }
+                _ => {}
             }
-            0x0110 => {
-                // Model
-                model = read_string_value(&reader, type_id, count, val_or_offset);
-            }
-            0x8769 => {
-                // ExifIFDPointer
-                exif_subifd_offset = Some(val_or_offset as usize);
-            }
-            _ => {}
-        }
-    });
+        },
+    );
 
     let mut lens_model = None;
     let mut lens_make = None;
@@ -256,7 +266,9 @@ pub fn parse_tiff_bytes(tiff_data: &[u8]) -> Option<ExifMetadata> {
                 0x9003 | 0x9004 => {
                     // DateTimeOriginal / DateTimeDigitized
                     if date_time_original.is_none() {
-                        if let Some(mut dt) = read_string_value(&reader, type_id, count, val_or_offset) {
+                        if let Some(mut dt) =
+                            read_string_value(&reader, type_id, count, val_or_offset)
+                        {
                             // 将 "2026:08:15 14:30:00" 转换为 "2026-08-15 14:30:00"
                             if dt.len() >= 10 && &dt[4..5] == ":" && &dt[7..8] == ":" {
                                 dt.replace_range(4..5, "-");
@@ -548,7 +560,10 @@ mod tests {
         assert_eq!(exif.iso, Some(100));
         assert_eq!(exif.focal_length, Some(50.0));
         assert_eq!(exif.focal_length_35mm, Some(50));
-        assert_eq!(exif.date_time_original.as_deref(), Some("2026-08-15 14:30:00"));
+        assert_eq!(
+            exif.date_time_original.as_deref(),
+            Some("2026-08-15 14:30:00")
+        );
 
         // 2. 测试封装在 JPEG APP1 节中的解析
         let mut jpeg = Vec::new();
@@ -563,7 +578,10 @@ mod tests {
         let jpeg_exif = parse_jpeg_app1(&jpeg).expect("Should parse synthetic JPEG APP1 exif");
         assert_eq!(jpeg_exif.camera_make.as_deref(), Some("SONY"));
         assert_eq!(jpeg_exif.camera_model.as_deref(), Some("ILCE-7RM5"));
-        assert_eq!(jpeg_exif.lens_model.as_deref(), Some("FE 24-70mm F2.8 GM II"));
+        assert_eq!(
+            jpeg_exif.lens_model.as_deref(),
+            Some("FE 24-70mm F2.8 GM II")
+        );
         assert_eq!(jpeg_exif.aperture, Some(2.8));
         assert_eq!(jpeg_exif.iso, Some(100));
     }

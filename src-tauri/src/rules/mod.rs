@@ -1,7 +1,7 @@
 pub mod face;
 pub mod timeline;
+use crate::models::{AnalysisStatus, DefectTag, PhotoItem, WorkflowScene};
 pub use timeline::{cluster_photos_by_timeline, TimelineChapter};
-use crate::models::{DefectTag, PhotoItem, RetouchStatus, WorkflowScene};
 
 /// 图像指标分析结果
 #[derive(Debug, Clone, Default)]
@@ -107,7 +107,9 @@ pub fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageMetrics, String> {
 }
 
 fn parse_photo_timestamp(photo: &PhotoItem) -> Option<i64> {
-    photo.exif.as_ref()
+    photo
+        .exif
+        .as_ref()
         .and_then(|e| e.date_time_original.as_deref())
         .and_then(|dt_str| {
             chrono::NaiveDateTime::parse_from_str(dt_str, "%Y-%m-%d %H:%M:%S")
@@ -149,7 +151,6 @@ fn are_photos_burst_consecutive(
 
 /// 连拍序列成组识别 (基于 EXIF 毫秒时间窗口与文件名编号混合聚类)
 pub fn group_bursts(photos: &mut [PhotoItem]) {
-    let mut group_counter = 1;
     let mut current_indices: Vec<usize> = Vec::new();
     let mut last_seq: Option<i64> = None;
 
@@ -165,8 +166,7 @@ pub fn group_bursts(photos: &mut [PhotoItem]) {
             current_indices.push(i);
         } else {
             if current_indices.len() >= 2 {
-                let gid = format!("burst-grp-{:03}", group_counter);
-                group_counter += 1;
+                let gid = format!("burst:{}", photos[current_indices[0]].id);
                 for &idx in &current_indices {
                     photos[idx].burst_group_id = Some(gid.clone());
                 }
@@ -178,7 +178,7 @@ pub fn group_bursts(photos: &mut [PhotoItem]) {
     }
 
     if current_indices.len() >= 2 {
-        let gid = format!("burst-grp-{:03}", group_counter);
+        let gid = format!("burst:{}", photos[current_indices[0]].id);
         for &idx in &current_indices {
             photos[idx].burst_group_id = Some(gid.clone());
         }
@@ -190,45 +190,46 @@ fn extract_seq_num(filename: &str) -> Option<i64> {
     digits.parse::<i64>().ok()
 }
 
-/// 综合评估照片的“可修 / 不可修”状态并生成诊断标签（支持场景工作流模式定制）
-pub fn evaluate_photo_retouchability_with_scene(
+/// 生成仅供人工复核参考的本地分析提示（支持场景工作流模式定制）。
+pub fn evaluate_photo_analysis_with_scene(
     metrics: &ImageMetrics,
-    burst_group_photos: Option<&[PhotoItem]>,
-    current_photo_idx: usize,
+    _burst_group_photos: Option<&[PhotoItem]>,
+    _current_photo_idx: usize,
     scene: WorkflowScene,
-) -> (RetouchStatus, Vec<DefectTag>) {
+) -> (AnalysisStatus, Vec<DefectTag>) {
     let mut tags = Vec::new();
-    let mut fatal_count = 0;
-    let mut fixable_count = 0;
+    let mut needs_check = false;
 
     // 确定各场景的锐度阈值
-    let (fatal_blur_thresh, borderline_blur_thresh, slight_blur_thresh) = match scene {
-        WorkflowScene::Concert => (18.0, 38.0, 65.0),  // 舞台暗光与烟雾动态，适度宽容
-        WorkflowScene::Cosplay => (35.0, 55.0, 80.0),  // 二次元/Cosplay 极致看重美瞳与睫毛锐度，阈值加严
+    let (severe_blur_thresh, borderline_blur_thresh, slight_blur_thresh) = match scene {
+        WorkflowScene::Concert => (18.0, 38.0, 65.0), // 舞台暗光与烟雾动态，适度宽容
+        WorkflowScene::Cosplay => (35.0, 55.0, 80.0), // 二次元/Cosplay 极致看重美瞳与睫毛锐度，阈值加严
         WorkflowScene::Conference => (25.0, 45.0, 75.0),
-        WorkflowScene::Wedding => (22.0, 45.0, 75.0),  // 婚礼大笑大哭抓拍适度容差
+        WorkflowScene::Wedding => (22.0, 45.0, 75.0), // 婚礼大笑大哭抓拍适度容差
         WorkflowScene::General => (25.0, 45.0, 75.0),
     };
 
-    // 1. 致命硬伤检测：严重脱焦 / 剧烈运动模糊
-    if metrics.sharpness < fatal_blur_thresh {
+    // 1. 锐度异常提示：严重脱焦 / 剧烈运动模糊
+    if metrics.sharpness < severe_blur_thresh {
         tags.push(DefectTag {
-            id: "fatal_severe_blur".to_string(),
-            category: "fatal".to_string(),
-            label: "严重脱焦/拖影".to_string(),
-            confidence: 0.94,
-            hint: Some("主体边缘锐度极低，光学校验失误，商业客照无法真实还原".to_string()),
+            id: "possible_severe_blur".to_string(),
+            category: "warning".to_string(),
+            label: "可能严重脱焦/拖影".to_string(),
+            confidence: 0.85,
+            hint: Some(
+                "主体边缘梯度反差极低，可能存在较严重脱焦或运动拖影，建议放大复核焦点".to_string(),
+            ),
         });
-        fatal_count += 1;
+        needs_check = true;
     } else if metrics.sharpness < borderline_blur_thresh {
         let (label, hint) = match scene {
             WorkflowScene::Cosplay => (
                 "Cosplay美瞳/眼部微软待审".to_string(),
-                "二次元正片对眼部美瞳与假睫毛锐度极度严苛，当前处于临界边缘，建议100%放大确认".to_string(),
+                "二次元正片对眼部美瞳与假睫毛锐度要求较高，当前边缘反差处于临界区，建议100%放大确认".to_string(),
             ),
             WorkflowScene::Concert => (
                 "舞台边缘合焦/烟雾光晕".to_string(),
-                "舞台光效或烟雾导致局部反差稍弱，建议核实歌手眼部焦点".to_string(),
+                "舞台光效或烟雾可能削弱了局部反差，建议核实歌手眼部焦点".to_string(),
             ),
             _ => (
                 "临界合焦".to_string(),
@@ -237,128 +238,103 @@ pub fn evaluate_photo_retouchability_with_scene(
         };
         tags.push(DefectTag {
             id: "review_borderline_sharpness".to_string(),
-            category: "fixable".to_string(),
+            category: "warning".to_string(),
             label,
             confidence: 0.75,
             hint: Some(hint),
         });
-        fixable_count += 1;
+        needs_check = true;
     } else if metrics.sharpness < slight_blur_thresh {
         tags.push(DefectTag {
-            id: "fixable_slight_blur".to_string(),
-            category: "fixable".to_string(),
-            label: "焦点微软".to_string(),
-            confidence: 0.78,
-            hint: Some("可通过高反差保留/智能锐化滤镜增强，适合缩略图或小尺寸输出".to_string()),
+            id: "possible_slight_blur".to_string(),
+            category: "warning".to_string(),
+            label: "焦点可能微软".to_string(),
+            confidence: 0.75,
+            hint: Some(
+                "边缘反差轻微不足，可通过后期智能锐化滤镜适度增强，建议结合输出画幅评估"
+                    .to_string(),
+            ),
         });
-        fixable_count += 1;
+        needs_check = true;
     }
 
-    // 2. 致命硬伤检测：高光死白
-    let fatal_hl_thresh = match scene {
+    // 2. 高光异常提示
+    let severe_highlight_thresh = match scene {
         WorkflowScene::Concert => 0.14, // 演唱会舞台爆闪导致面部过曝是常见硬伤
         WorkflowScene::Cosplay => 0.16,
         _ => 0.18,
     };
 
-    if metrics.highlight_clipped_pct > fatal_hl_thresh {
+    if metrics.highlight_clipped_pct > severe_highlight_thresh {
         let label = if scene == WorkflowScene::Concert {
             "舞台爆闪严重死白".to_string()
         } else {
             "高光严重死白".to_string()
         };
         tags.push(DefectTag {
-            id: "fatal_blown_highlights".to_string(),
-            category: "fatal".to_string(),
+            id: "possible_blown_highlights".to_string(),
+            category: "warning".to_string(),
             label,
-            confidence: 0.90,
-            hint: Some("大面积全通道截断，RAW 像素饱和溢出，肤色细节不可恢复".to_string()),
+            confidence: 0.85,
+            hint: Some(
+                "预览图高光大面积截断，可能存在过曝溢出风险，建议复核 RAW 动态范围".to_string(),
+            ),
         });
-        fatal_count += 1;
+        needs_check = true;
     } else if metrics.highlight_clipped_pct > 0.05 {
         tags.push(DefectTag {
-            id: "fixable_highlight_recoverable".to_string(),
-            category: "fixable".to_string(),
-            label: "高光偏亮可拉回".to_string(),
-            confidence: 0.82,
-            hint: Some("RAW 动态范围充足，在 Lightroom 中降低高光 -35 即可挽回细节".to_string()),
+            id: "possible_bright_highlights".to_string(),
+            category: "warning".to_string(),
+            label: "高光可能偏亮".to_string(),
+            confidence: 0.80,
+            hint: Some("局部高光偏亮但未大面积截断，通常可在后期适度压暗高光挽回细节".to_string()),
         });
-        fixable_count += 1;
+        needs_check = true;
     }
 
-    // 3. 可修项：曝光偏暗
-    if metrics.mean_luminance < 75.0 && metrics.sharpness >= fatal_blur_thresh {
+    // 3. 曝光偏暗提示
+    if metrics.mean_luminance < 75.0 && metrics.sharpness >= severe_blur_thresh {
         let label = if scene == WorkflowScene::Concert {
             "舞台暗部氛围可提亮".to_string()
         } else {
             "曝光偏暗".to_string()
         };
         tags.push(DefectTag {
-            id: "fixable_underexposed".to_string(),
-            category: "fixable".to_string(),
+            id: "possible_underexposed".to_string(),
+            category: "warning".to_string(),
             label,
-            confidence: 0.86,
-            hint: Some("主体合焦清晰但欠曝，暗部噪点可控，后期提亮阴影 +1.5EV 即可还原".to_string()),
+            confidence: 0.82,
+            hint: Some(
+                "整体直方图偏暗，若传感器动态范围充足，可在后期提亮暗部并配合降噪".to_string(),
+            ),
         });
-        fixable_count += 1;
+        needs_check = true;
     }
 
-    // 4. 可修项：连拍换脸/换眼匹配机制
-    if let Some(group) = burst_group_photos {
-        if group.len() > 1 {
-            let mut candidate_name: Option<String> = None;
-            for (idx, other) in group.iter().enumerate() {
-                if idx != current_photo_idx && other.retouch_status == RetouchStatus::Clean {
-                    candidate_name = Some(other.filename.clone());
-                    break;
-                }
-            }
-
-            if let Some(candidate) = candidate_name {
-                if fatal_count > 0 || fixable_count > 0 {
-                    tags.push(DefectTag {
-                        id: "fixable_burst_swap".to_string(),
-                        category: "fixable".to_string(),
-                        label: "连拍可换脸/换眼".to_string(),
-                        confidence: 0.95,
-                        hint: Some(format!("同组连拍底片 [{}] 合焦极佳，推荐作为脸部/眼神替换源", candidate)),
-                    });
-                    // 如果只是因表情或局部原因被标记，连拍素材可挽救该张
-                    if fatal_count > 0 && metrics.sharpness >= fatal_blur_thresh {
-                        fatal_count -= 1;
-                    }
-                    fixable_count += 1;
-                }
-            }
-        }
-    }
-
-    // 最终判定
-    let status = if fatal_count > 0 {
-        RetouchStatus::Fatal
-    } else if fixable_count > 0 {
-        RetouchStatus::Fixable
+    // 分析结果仅决定是否显示人工复核提示，不代表用户选片决定。
+    let status = if needs_check {
+        AnalysisStatus::NeedsCheck
     } else {
         tags.push(DefectTag {
-            id: "clean_prime".to_string(),
-            category: "clean".to_string(),
-            label: "完美原片".to_string(),
-            confidence: 0.95,
-            hint: Some("焦点锐利、曝光平衡，符合商业主片标准，建议直接 4~5 星采纳".to_string()),
+            id: "no_obvious_issue".to_string(),
+            category: "info".to_string(),
+            label: "未见明显问题".to_string(),
+            confidence: 0.88,
+            hint: Some("当前预览分析未发现明显锐度或曝光异常，仍建议结合原图人工确认".to_string()),
         });
-        RetouchStatus::Clean
+        AnalysisStatus::NoIssues
     };
 
     (status, tags)
 }
 
-/// 综合评估照片的“可修 / 不可修”状态（通用默认模式）
-pub fn evaluate_photo_retouchability(
+/// 使用通用场景生成本地分析提示。
+pub fn evaluate_photo_analysis(
     metrics: &ImageMetrics,
     burst_group_photos: Option<&[PhotoItem]>,
     current_photo_idx: usize,
-) -> (RetouchStatus, Vec<DefectTag>) {
-    evaluate_photo_retouchability_with_scene(
+) -> (AnalysisStatus, Vec<DefectTag>) {
+    evaluate_photo_analysis_with_scene(
         metrics,
         burst_group_photos,
         current_photo_idx,
@@ -379,17 +355,10 @@ mod tests {
                 filename: "_DSC0001.jpg".into(),
                 file_size: 1000,
                 is_raw: false,
-                rating: 0,
-                color_label: "".into(),
-                pick_status: "None".into(),
                 thumb_width: None,
                 thumb_height: None,
-                retouch_status: RetouchStatus::Pending,
-                defect_tags: vec![],
                 burst_group_id: None,
-                faces: vec![],
                 exif: None,
-                xmp_source_hash: None,
             },
             PhotoItem {
                 id: "2".into(),
@@ -397,17 +366,10 @@ mod tests {
                 filename: "_DSC0002.jpg".into(),
                 file_size: 1000,
                 is_raw: false,
-                rating: 0,
-                color_label: "".into(),
-                pick_status: "None".into(),
                 thumb_width: None,
                 thumb_height: None,
-                retouch_status: RetouchStatus::Pending,
-                defect_tags: vec![],
                 burst_group_id: None,
-                faces: vec![],
                 exif: None,
-                xmp_source_hash: None,
             },
             PhotoItem {
                 id: "3".into(),
@@ -415,22 +377,15 @@ mod tests {
                 filename: "_DSC0010.jpg".into(),
                 file_size: 1000,
                 is_raw: false,
-                rating: 0,
-                color_label: "".into(),
-                pick_status: "None".into(),
                 thumb_width: None,
                 thumb_height: None,
-                retouch_status: RetouchStatus::Pending,
-                defect_tags: vec![],
                 burst_group_id: None,
-                faces: vec![],
                 exif: None,
-                xmp_source_hash: None,
             },
         ];
 
         group_bursts(&mut photos);
-        assert!(photos[0].burst_group_id.is_some());
+        assert_eq!(photos[0].burst_group_id.as_deref(), Some("burst:1"));
         assert_eq!(photos[0].burst_group_id, photos[1].burst_group_id);
         assert!(photos[2].burst_group_id.is_none());
     }
@@ -446,20 +401,13 @@ mod tests {
                 filename: "_DSC0001.ARW".into(),
                 file_size: 1000,
                 is_raw: true,
-                rating: 0,
-                color_label: "".into(),
-                pick_status: "None".into(),
                 thumb_width: None,
                 thumb_height: None,
-                retouch_status: RetouchStatus::Pending,
-                defect_tags: vec![],
                 burst_group_id: None,
-                faces: vec![],
                 exif: Some(ExifMetadata {
                     date_time_original: Some("2026-08-15 14:30:00".into()),
                     ..Default::default()
                 }),
-                xmp_source_hash: None,
             },
             PhotoItem {
                 id: "2".into(),
@@ -467,20 +415,13 @@ mod tests {
                 filename: "_DSC0002.ARW".into(),
                 file_size: 1000,
                 is_raw: true,
-                rating: 0,
-                color_label: "".into(),
-                pick_status: "None".into(),
                 thumb_width: None,
                 thumb_height: None,
-                retouch_status: RetouchStatus::Pending,
-                defect_tags: vec![],
                 burst_group_id: None,
-                faces: vec![],
                 exif: Some(ExifMetadata {
                     date_time_original: Some("2026-08-15 14:30:01".into()),
                     ..Default::default()
                 }),
-                xmp_source_hash: None,
             },
             PhotoItem {
                 id: "3".into(),
@@ -488,33 +429,26 @@ mod tests {
                 filename: "_DSC0003.ARW".into(),
                 file_size: 1000,
                 is_raw: true,
-                rating: 0,
-                color_label: "".into(),
-                pick_status: "None".into(),
                 thumb_width: None,
                 thumb_height: None,
-                retouch_status: RetouchStatus::Pending,
-                defect_tags: vec![],
                 burst_group_id: None,
-                faces: vec![],
                 exif: Some(ExifMetadata {
                     date_time_original: Some("2026-08-15 15:30:00".into()), // 1 小时后
                     ..Default::default()
                 }),
-                xmp_source_hash: None,
             },
         ];
 
         group_bursts(&mut photos);
         // Photo 1 与 Photo 2 仅差 1 秒，属于同一连拍组
-        assert!(photos[0].burst_group_id.is_some());
+        assert_eq!(photos[0].burst_group_id.as_deref(), Some("burst:1"));
         assert_eq!(photos[0].burst_group_id, photos[1].burst_group_id);
         // Photo 3 虽编号连续但间隔 1 小时，绝不误成组
         assert!(photos[2].burst_group_id.is_none());
     }
 
     #[test]
-    fn test_fatal_blur_evaluation() {
+    fn test_severe_blur_is_flagged_for_review() {
         let metrics = ImageMetrics {
             sharpness: 10.0, // 极低锐度
             mean_luminance: 120.0,
@@ -522,13 +456,14 @@ mod tests {
             shadow_clipped_pct: 0.0,
             dynamic_range: 200.0,
         };
-        let (status, tags) = evaluate_photo_retouchability(&metrics, None, 0);
-        assert_eq!(status, RetouchStatus::Fatal);
-        assert!(tags.iter().any(|t| t.id == "fatal_severe_blur"));
+        let (status, tags) = evaluate_photo_analysis(&metrics, None, 0);
+        assert_eq!(status, AnalysisStatus::NeedsCheck);
+        assert!(tags.iter().any(|t| t.id == "possible_severe_blur"));
+        assert!(tags.iter().all(|tag| tag.category == "warning"));
     }
 
     #[test]
-    fn test_clean_evaluation() {
+    fn test_no_obvious_issue_evaluation() {
         let metrics = ImageMetrics {
             sharpness: 180.0, // 高锐度
             mean_luminance: 130.0,
@@ -536,9 +471,10 @@ mod tests {
             shadow_clipped_pct: 0.01,
             dynamic_range: 220.0,
         };
-        let (status, tags) = evaluate_photo_retouchability(&metrics, None, 0);
-        assert_eq!(status, RetouchStatus::Clean);
-        assert!(tags.iter().any(|t| t.id == "clean_prime"));
+        let (status, tags) = evaluate_photo_analysis(&metrics, None, 0);
+        assert_eq!(status, AnalysisStatus::NoIssues);
+        assert!(tags.iter().any(|t| t.id == "no_obvious_issue"));
+        assert!(tags.iter().all(|tag| tag.category == "info"));
     }
 
     #[test]
@@ -550,27 +486,39 @@ mod tests {
             shadow_clipped_pct: 0.01,
             dynamic_range: 200.0,
         };
-        let (status, tags) = evaluate_photo_retouchability(&metrics, None, 0);
-        assert_eq!(status, RetouchStatus::Fixable);
+        let (status, tags) = evaluate_photo_analysis(&metrics, None, 0);
+        assert_eq!(status, AnalysisStatus::NeedsCheck);
         assert!(tags.iter().any(|t| t.id == "review_borderline_sharpness"));
     }
 
     #[test]
-    fn test_scene_aware_retouchability_evaluation() {
+    fn test_scene_aware_photo_analysis() {
         // 1. 测试演唱会模式对舞台暗光微动模糊的适度容差
         let stage_metrics = ImageMetrics {
-            sharpness: 20.0, // 在通用模式下 < 25 会被判定为 Fatal
+            sharpness: 20.0, // 在通用模式下应提示人工复核
             mean_luminance: 90.0,
             highlight_clipped_pct: 0.02,
             shadow_clipped_pct: 0.05,
             dynamic_range: 200.0,
         };
-        let (general_status, _) = evaluate_photo_retouchability_with_scene(&stage_metrics, None, 0, WorkflowScene::General);
-        assert_eq!(general_status, RetouchStatus::Fatal, "General mode should flag sharpness 20 as fatal");
+        let (general_status, _) =
+            evaluate_photo_analysis_with_scene(&stage_metrics, None, 0, WorkflowScene::General);
+        assert_eq!(
+            general_status,
+            AnalysisStatus::NeedsCheck,
+            "General mode should flag sharpness 20 for review"
+        );
 
-        let (concert_status, concert_tags) = evaluate_photo_retouchability_with_scene(&stage_metrics, None, 0, WorkflowScene::Concert);
-        assert_eq!(concert_status, RetouchStatus::Fixable, "Concert mode should be lenient with sharpness 20");
-        assert!(concert_tags.iter().any(|t| t.id == "review_borderline_sharpness"));
+        let (concert_status, concert_tags) =
+            evaluate_photo_analysis_with_scene(&stage_metrics, None, 0, WorkflowScene::Concert);
+        assert_eq!(
+            concert_status,
+            AnalysisStatus::NeedsCheck,
+            "Concert mode should be lenient with sharpness 20"
+        );
+        assert!(concert_tags
+            .iter()
+            .any(|t| t.id == "review_borderline_sharpness"));
 
         // 2. 测试演唱会对舞台爆闪高光过曝的严格拦截
         let stage_flash_metrics = ImageMetrics {
@@ -580,9 +528,16 @@ mod tests {
             shadow_clipped_pct: 0.0,
             dynamic_range: 255.0,
         };
-        let (flash_status, flash_tags) = evaluate_photo_retouchability_with_scene(&stage_flash_metrics, None, 0, WorkflowScene::Concert);
-        assert_eq!(flash_status, RetouchStatus::Fatal);
-        assert!(flash_tags.iter().any(|t| t.label.contains("舞台爆闪严重死白")));
+        let (flash_status, flash_tags) = evaluate_photo_analysis_with_scene(
+            &stage_flash_metrics,
+            None,
+            0,
+            WorkflowScene::Concert,
+        );
+        assert_eq!(flash_status, AnalysisStatus::NeedsCheck);
+        assert!(flash_tags
+            .iter()
+            .any(|t| t.label.contains("舞台爆闪严重死白")));
 
         // 3. 测试 Cosplay 模式对美瞳眼妆锐度的严格审核
         let cosplay_metrics = ImageMetrics {
@@ -592,7 +547,10 @@ mod tests {
             shadow_clipped_pct: 0.01,
             dynamic_range: 200.0,
         };
-        let (_, cosplay_tags) = evaluate_photo_retouchability_with_scene(&cosplay_metrics, None, 0, WorkflowScene::Cosplay);
-        assert!(cosplay_tags.iter().any(|t| t.label.contains("Cosplay美瞳/眼部微软")));
+        let (_, cosplay_tags) =
+            evaluate_photo_analysis_with_scene(&cosplay_metrics, None, 0, WorkflowScene::Cosplay);
+        assert!(cosplay_tags
+            .iter()
+            .any(|t| t.label.contains("Cosplay美瞳/眼部微软")));
     }
 }

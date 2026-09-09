@@ -70,10 +70,7 @@ impl Drop for LibRawContext {
 
 /// 从 RAW 文件中极速提取内嵌预览图（覆盖 Sony ARW, Canon CR3, Nikon NEF 等）
 pub fn extract_embedded_thumbnail<P: AsRef<Path>>(path: P) -> Result<RawThumbnail, LibRawError> {
-    let path_str = path
-        .as_ref()
-        .to_str()
-        .ok_or(LibRawError::InvalidPath)?;
+    let path_str = path.as_ref().to_str().ok_or(LibRawError::InvalidPath)?;
     let c_path = CString::new(path_str).map_err(|_| LibRawError::InvalidPath)?;
 
     let ctx = LibRawContext::new()?;
@@ -138,7 +135,9 @@ fn c_chars_to_string(slice: &[std::ffi::c_char]) -> Option<String> {
 }
 
 /// 从已经打开的 LibRaw 上下文中提取 EXIF 拍摄参数
-pub(crate) unsafe fn extract_raw_metadata_from_ctx(ctx_ptr: *mut std::ffi::c_void) -> Option<crate::models::ExifMetadata> {
+pub(crate) unsafe fn extract_raw_metadata_from_ctx(
+    ctx_ptr: *mut std::ffi::c_void,
+) -> Option<crate::models::ExifMetadata> {
     if ctx_ptr.is_null() {
         return None;
     }
@@ -174,38 +173,39 @@ pub(crate) unsafe fn extract_raw_metadata_from_ctx(ctx_ptr: *mut std::ffi::c_voi
             (None, None, None)
         };
 
-        let (iso, shutter_speed_val, aperture, focal_length, date_time_original) = if !imgother_ptr.is_null() {
-            let imgother = &*imgother_ptr;
-            let iso = if imgother.iso_speed > 0.0 {
-                Some(imgother.iso_speed.round() as u32)
+        let (iso, shutter_speed_val, aperture, focal_length, date_time_original) =
+            if !imgother_ptr.is_null() {
+                let imgother = &*imgother_ptr;
+                let iso = if imgother.iso_speed > 0.0 {
+                    Some(imgother.iso_speed.round() as u32)
+                } else {
+                    None
+                };
+                let shutter = if imgother.shutter > 0.0 {
+                    Some(imgother.shutter)
+                } else {
+                    None
+                };
+                let ap = if imgother.aperture > 0.0 {
+                    Some(imgother.aperture)
+                } else {
+                    None
+                };
+                let fl = if imgother.focal_len > 0.0 {
+                    Some(imgother.focal_len)
+                } else {
+                    None
+                };
+                let dt = if imgother.timestamp > 0 {
+                    chrono::DateTime::from_timestamp(imgother.timestamp, 0)
+                        .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+                } else {
+                    None
+                };
+                (iso, shutter, ap, fl, dt)
             } else {
-                None
+                (None, None, None, None, None)
             };
-            let shutter = if imgother.shutter > 0.0 {
-                Some(imgother.shutter)
-            } else {
-                None
-            };
-            let ap = if imgother.aperture > 0.0 {
-                Some(imgother.aperture)
-            } else {
-                None
-            };
-            let fl = if imgother.focal_len > 0.0 {
-                Some(imgother.focal_len)
-            } else {
-                None
-            };
-            let dt = if imgother.timestamp > 0 {
-                chrono::DateTime::from_timestamp(imgother.timestamp, 0)
-                    .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
-            } else {
-                None
-            };
-            (iso, shutter, ap, fl, dt)
-        } else {
-            (None, None, None, None, None)
-        };
 
         let shutter_speed = shutter_speed_val.map(crate::engine::exif::format_shutter_speed);
 
@@ -236,11 +236,10 @@ pub(crate) unsafe fn extract_raw_metadata_from_ctx(ctx_ptr: *mut std::ffi::c_voi
 }
 
 /// 从 RAW 文件中快速读取机身、镜头、曝光与拍摄参数
-pub fn extract_raw_metadata<P: AsRef<Path>>(path: P) -> Result<crate::models::ExifMetadata, LibRawError> {
-    let path_str = path
-        .as_ref()
-        .to_str()
-        .ok_or(LibRawError::InvalidPath)?;
+pub fn extract_raw_metadata<P: AsRef<Path>>(
+    path: P,
+) -> Result<crate::models::ExifMetadata, LibRawError> {
+    let path_str = path.as_ref().to_str().ok_or(LibRawError::InvalidPath)?;
     let c_path = CString::new(path_str).map_err(|_| LibRawError::InvalidPath)?;
 
     let ctx = LibRawContext::new()?;

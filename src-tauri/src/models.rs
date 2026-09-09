@@ -2,12 +2,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RetouchStatus {
-    Clean,    // 完美原片
-    Fixable,  // 可修解决
-    Fatal,    // 不可修硬伤
-    Pending,  // 待分析
-    Failed,   // 解码或分析失败，可重试
+pub enum AnalysisStatus {
+    NoIssues,
+    NeedsCheck,
+    Pending,
+    Failed,
 }
 
 /// 专业摄影工作流场景预设模式
@@ -15,7 +14,7 @@ pub enum RetouchStatus {
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowScene {
     #[default]
-    General,    // 通用人像 / 旅拍客照
+    General, // 通用人像 / 旅拍客照
     Concert,    // 演唱会 / 舞台演出 / 音乐节
     Cosplay,    // 二次元 / 漫展 / Cosplay / JK / 汉服
     Conference, // 商业活动 / 会议公关 / 图片直播
@@ -25,7 +24,7 @@ pub enum WorkflowScene {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefectTag {
     pub id: String,           // 如 "burst_face_swap", "severe_blur", "photobomber"
-    pub category: String,     // "fixable" | "fatal" | "clean"
+    pub category: String,     // "info" | "warning"
     pub label: String,        // 中文展示标签
     pub confidence: f32,      // 0.0 ~ 1.0
     pub hint: Option<String>, // 操作/替换建议
@@ -67,26 +66,10 @@ pub struct PhotoItem {
     pub filename: String,
     pub file_size: u64,
     pub is_raw: bool,
-    pub rating: u8,          // 0~5
-    pub color_label: String, // "", "Red", "Yellow", "Green", "Blue", "Purple"
-    pub pick_status: String, // "None", "Pick", "Reject"
     pub thumb_width: Option<u32>,
     pub thumb_height: Option<u32>,
-    pub retouch_status: RetouchStatus,
-    pub defect_tags: Vec<DefectTag>,
     pub burst_group_id: Option<String>,
-    pub faces: Vec<FaceInfo>,
     pub exif: Option<ExifMetadata>,
-    /// 扫描时完整 XMP 的 SHA-256；写入成功后由前端更新。
-    pub xmp_source_hash: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TriageUpdate {
-    pub path: String,
-    pub rating: Option<u8>,
-    pub color_label: Option<String>,
-    pub pick_status: Option<String>,
 }
 
 pub use crate::rules::timeline::TimelineChapter;
