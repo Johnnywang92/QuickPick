@@ -136,6 +136,7 @@ export const clusterPhotosIntoScenes = (
   photos: LocalPhoto[],
   minGapMinutes = 10,
   presetId: WorkflowScene = 'general',
+  targetGoal?: number | null,
 ): SceneChapter[] => {
   if (photos.length === 0) return [];
   const minGapSeconds = Math.max(60, minGapMinutes * 60);
@@ -159,6 +160,17 @@ export const clusterPhotosIntoScenes = (
   const scenes: SceneChapter[] = [];
   const numSplits = splitIndices.length;
   const preset = getStorylinePreset(presetId);
+  const quotas =
+    targetGoal && targetGoal > 0
+      ? distributeTargetGoalAcrossChapters(
+          numSplits,
+          targetGoal,
+          Array.from(
+            { length: numSplits },
+            (_, index) => preset.chapters[index]?.weight ?? 1,
+          ),
+        )
+      : [];
 
   for (let idx = 0; idx < numSplits; idx++) {
     const startIdx = splitIndices[idx];
@@ -167,7 +179,7 @@ export const clusterPhotosIntoScenes = (
     const color = SCENE_COLORS[idx % SCENE_COLORS.length];
     const presetChapter = preset.chapters[idx];
     const name = presetChapter ? presetChapter.name : `环节 ${idx + 1}`;
-    const initialQuota = presetChapter ? presetChapter.weight : undefined;
+    const initialQuota = quotas[idx];
 
     scenes.push({
       id: `scene-${idx + 1}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -284,10 +296,17 @@ function scheduleViewState(state: AlbumStore): void {
   viewStateTimer = setTimeout(() => void drainPendingViewState(), 350);
 }
 
-function restoredScenes(scenesJson: string, photos: LocalPhoto[]): SceneChapter[] {
+function restoredScenes(
+  scenesJson: string,
+  photos: LocalPhoto[],
+  presetId: WorkflowScene,
+  targetGoal?: number | null,
+): SceneChapter[] {
   try {
     const value: unknown = JSON.parse(scenesJson);
-    if (!Array.isArray(value) || value.length === 0) return clusterPhotosIntoScenes(photos, 10);
+    if (!Array.isArray(value) || value.length === 0) {
+      return clusterPhotosIntoScenes(photos, 10, presetId, targetGoal);
+    }
     const scenes = value.filter((scene): scene is SceneChapter => {
       if (!scene || typeof scene !== 'object') return false;
       const candidate = scene as Partial<SceneChapter>;
@@ -301,7 +320,7 @@ function restoredScenes(scenesJson: string, photos: LocalPhoto[]): SceneChapter[
         candidate.endIndex! < photos.length
       );
     });
-    if (scenes.length === 0) return clusterPhotosIntoScenes(photos, 10);
+    if (scenes.length === 0) return clusterPhotosIntoScenes(photos, 10, presetId, targetGoal);
     return scenes.map((scene) => ({
       ...scene,
       startPath: photos[scene.startIndex].path,
@@ -309,7 +328,7 @@ function restoredScenes(scenesJson: string, photos: LocalPhoto[]): SceneChapter[
       photoCount: scene.endIndex - scene.startIndex + 1,
     }));
   } catch {
-    return clusterPhotosIntoScenes(photos, 10);
+    return clusterPhotosIntoScenes(photos, 10, presetId, targetGoal);
   }
 }
 
@@ -383,7 +402,13 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         })),
       );
 
-      const scenes = restoredScenes(project.scenes_json, localPhotos);
+      const activePresetId = getStorylinePreset(project.active_preset_id).id;
+      const scenes = restoredScenes(
+        project.scenes_json,
+        localPhotos,
+        activePresetId,
+        project.target_count,
+      );
       const restoredIndex = project.current_photo_id
         ? localPhotos.findIndex((photo) => photo.id === project.current_photo_id)
         : -1;
@@ -401,7 +426,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         scenes,
         activeFilter,
         selectedSceneId,
-        activePresetId: getStorylinePreset(project.active_preset_id).id,
+        activePresetId,
         targetGoal: project.target_count ?? null,
         isLoading: false,
         scanError: null,
@@ -503,29 +528,38 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
     const preset = getStorylinePreset(presetId);
 
     if (scenes.length === 0) {
-      const newScenes = clusterPhotosIntoScenes(photos, preset.defaultGapMinutes, presetId);
+      const newScenes = clusterPhotosIntoScenes(
+        photos,
+        preset.defaultGapMinutes,
+        presetId,
+        targetGoal,
+      );
       set({ activePresetId: presetId, scenes: newScenes });
       scheduleViewState(get());
       return;
     }
 
+    const quotas =
+      targetGoal && targetGoal > 0
+        ? distributeTargetGoalAcrossChapters(
+            scenes.length,
+            targetGoal,
+            scenes.map((_, index) => preset.chapters[index]?.weight ?? 1),
+          )
+        : [];
     const updatedScenes = scenes.map((scene, idx) => {
       const presetChapter = preset.chapters[idx];
       const newName = overwriteNames && presetChapter ? presetChapter.name : scene.name;
       return {
         ...scene,
         name: newName,
-        targetGoal: presetChapter ? presetChapter.weight : scene.targetGoal,
-        targetQuota: presetChapter ? presetChapter.weight : scene.targetQuota,
+        targetGoal: quotas[idx],
+        targetQuota: quotas[idx],
       };
     });
 
     set({ activePresetId: presetId, scenes: updatedScenes });
-    if (targetGoal && targetGoal > 0) {
-      get().distributeTargetGoal(targetGoal);
-    } else {
-      scheduleViewState(get());
-    }
+    scheduleViewState(get());
   },
 
   splitSceneAtPhoto: (photoIndex: number) => {
@@ -629,14 +663,15 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   },
 
   distributeTargetGoal: (totalGoal: number) => {
-    const { scenes } = get();
+    const { scenes, activePresetId } = get();
     if (scenes.length === 0 || totalGoal <= 0) {
       set({ targetGoal: totalGoal > 0 ? totalGoal : null });
       scheduleViewState(get());
       return;
     }
 
-    const weights = scenes.map((s) => s.photoCount);
+    const preset = getStorylinePreset(activePresetId);
+    const weights = scenes.map((scene, index) => preset.chapters[index]?.weight ?? scene.photoCount);
     const distributed = distributeTargetGoalAcrossChapters(scenes.length, totalGoal, weights);
 
     const updatedScenes = scenes.map((scene, i) => ({
@@ -650,7 +685,17 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   },
 
   setTargetGoal: (goal: number | null) => {
-    set({ targetGoal: goal });
+    set((state) => ({
+      targetGoal: goal,
+      scenes:
+        goal === null
+          ? state.scenes.map((scene) => ({
+              ...scene,
+              targetGoal: undefined,
+              targetQuota: undefined,
+            }))
+          : state.scenes,
+    }));
     scheduleViewState(get());
   },
 
@@ -667,9 +712,9 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   },
 
   reclusterScenes: (minGapMinutes = 10, presetId?: WorkflowScene) => {
-    const { photos, activePresetId } = get();
+    const { photos, activePresetId, targetGoal } = get();
     const pid = presetId || activePresetId;
-    const newScenes = clusterPhotosIntoScenes(photos, minGapMinutes, pid);
+    const newScenes = clusterPhotosIntoScenes(photos, minGapMinutes, pid, targetGoal);
     set({ scenes: newScenes, activePresetId: pid });
     scheduleViewState(get());
   },

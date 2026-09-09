@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { photoMatchesFilter, useAlbumStore, withUpdatedBurstGroups } from './albumStore';
+import {
+  clusterPhotosIntoScenes,
+  photoMatchesFilter,
+  useAlbumStore,
+  withUpdatedBurstGroups,
+} from './albumStore';
 import { useInsightStore } from './insightStore';
 import { usePreviewStore } from './previewStore';
 import { useSelectionStore } from './selectionStore';
@@ -28,6 +33,8 @@ describe('albumStore filter navigation', () => {
       activeFilter: 'all',
       selectedSceneId: null,
       scenes: [],
+      activePresetId: 'general',
+      targetGoal: null,
     });
   });
 
@@ -189,6 +196,24 @@ describe('albumStore filter navigation', () => {
       expect(state.activePresetId).toBe('family');
       expect(state.scenes[0].name).toBe('睡颜萌态与静物');
       expect(state.scenes[1].name).toBe('室内亲子互动');
+      expect(state.scenes[0].targetGoal).toBeUndefined();
+      expect(state.scenes[1].targetQuota).toBeUndefined();
+    });
+
+    it('only converts preset weights into quotas when a total target exists', () => {
+      const timedPhotos = photos.map((photo, index) =>
+        photoFixture(photo.id, {
+          ...photo,
+          capturedAt: `2026-09-09 12:${String(index * 11).padStart(2, '0')}:00`,
+        }),
+      );
+
+      const withoutGoal = clusterPhotosIntoScenes(timedPhotos, 10, 'family');
+      expect(withoutGoal.every((scene) => scene.targetGoal === undefined)).toBe(true);
+
+      const withGoal = clusterPhotosIntoScenes(timedPhotos, 10, 'family', 100);
+      expect(withGoal.map((scene) => scene.targetGoal)).toEqual([21, 29, 29, 21]);
+      expect(withGoal.reduce((sum, scene) => sum + (scene.targetGoal || 0), 0)).toBe(100);
     });
   });
 

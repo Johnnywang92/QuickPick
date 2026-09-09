@@ -15,12 +15,48 @@ describe('mergeUtils', () => {
     };
 
     const pkg = buildExportPackage('proj_1', '婚礼精选', photos, selections, 'bride', '小红');
-    expect(pkg.schemaVersion).toBe('1.0');
+    expect(pkg.schemaVersion).toBe('1.1');
     expect(pkg.albumName).toBe('婚礼精选');
     expect(pkg.authorRole).toBe('bride');
     expect(pkg.authorName).toBe('小红');
     expect(pkg.selections.p1.state).toBe('selected');
+    expect(pkg.selections.p1.relativePath).toBe('1.jpg');
     expect(pkg.selections.p2).toBeUndefined(); // unreviewed should be omitted
+  });
+
+  it('matches selections by relative path when device-local photo IDs differ', () => {
+    const exportedPhotos = [
+      { ...photo1, id: 'device-a-id', path: '/Users/a/Wedding/ceremony/1.jpg' },
+    ];
+    const pkg = buildExportPackage(
+      'device-a-project',
+      'Wedding',
+      exportedPhotos,
+      {
+        'device-a-id': {
+          photoId: 'device-a-id',
+          state: 'selected',
+          updatedAt: '2026-09-09T00:00:00Z',
+        },
+      },
+      'bride',
+      undefined,
+      '/Users/a/Wedding',
+    );
+    const localPhotos = [
+      { ...photo1, id: 'device-b-id', path: '/Volumes/Photos/Wedding/ceremony/1.jpg' },
+    ];
+
+    const result = analyzeSelectionMerge(
+      localPhotos,
+      {},
+      pkg,
+      '/Volumes/Photos/Wedding',
+    );
+
+    expect(pkg.selections['device-a-id'].relativePath).toBe('ceremony/1.jpg');
+    expect(result.matchedSelectionCount).toBe(1);
+    expect(result.importOnlySelectedCount).toBe(1);
   });
 
   it('analyzes consensus and conflicts accurately', () => {

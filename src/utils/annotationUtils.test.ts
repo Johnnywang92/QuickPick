@@ -22,6 +22,19 @@ describe('annotationUtils', () => {
     expect(raw).toBe('简单备注');
   });
 
+  it('preserves trailing spaces while editing plain and structured comments', () => {
+    const plain = serializeAnnotation({ comment: 'hello ', presetTags: [], pins: [] });
+    expect(plain).toBe('hello ');
+    expect(parseAnnotation(plain).comment).toBe('hello ');
+
+    const structured = serializeAnnotation({
+      comment: 'hello ',
+      presetTags: ['修除碎发'],
+      pins: [],
+    });
+    expect(parseAnnotation(structured).comment).toBe('hello ');
+  });
+
   it('serializes and deserializes structured annotation with pins and tags', () => {
     const pin1 = createPin(0.45, 0.62, 1, '面部微调', '鼻翼微修');
     const pin2 = createPin(0.85, 0.12, 2, '消除路人/杂物', '擦掉背景空调');

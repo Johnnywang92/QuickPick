@@ -37,17 +37,17 @@ export function parseAnnotation(rawNote: string | undefined | null): PhotoAnnota
     }
   }
 
-  return { comment: trimmed, presetTags: [], pins: [] };
+  return { comment: rawNote, presetTags: [], pins: [] };
 }
 
 export function serializeAnnotation(annotation: PhotoAnnotation): string {
   const hasPins = Array.isArray(annotation.pins) && annotation.pins.length > 0;
   const hasTags = Array.isArray(annotation.presetTags) && annotation.presetTags.length > 0;
-  const comment = (annotation.comment || '').trim();
+  const comment = annotation.comment || '';
 
   // 如果只有纯文本备注，没有图上 Pin 针也没有预设标签，直接存储纯文本以保持极简与旧兼容
   if (!hasPins && !hasTags) {
-    return comment;
+    return comment.trim() ? comment : '';
   }
 
   const payload: PhotoAnnotation = {

@@ -79,8 +79,7 @@ function applyAnalysisResult(photoId: string, result: PhotoAnalysisResult): void
   }));
 }
 
-function finalizeBurstGroups(generation: number): void {
-  if (generation !== analysisGeneration) return;
+function refreshBurstGroups(): void {
   const groupedPhotos = withUpdatedBurstGroups(useAlbumStore.getState().photos);
   useAlbumStore.setState({ photos: groupedPhotos });
 
@@ -108,8 +107,14 @@ function finalizeBurstGroups(generation: number): void {
         reasons,
       };
     }
-    return { insights, isAnalyzing: false };
+    return { insights };
   });
+}
+
+function finalizeBurstGroups(generation: number): void {
+  if (generation !== analysisGeneration) return;
+  refreshBurstGroups();
+  useInsightStore.setState({ isAnalyzing: false });
 }
 
 interface InsightStore {
@@ -268,7 +273,6 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     try {
       const result = await analyzePhotoDetails(photoPath, index, photoId);
       applyAnalysisResult(photoId, result);
-      set({ isAnalyzing: false });
     } catch (e) {
       console.warn('Analysis failed for photo:', e);
       applyAnalysisResult(photoId, {
@@ -276,6 +280,8 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
         defect_tags: [],
         faces: [],
       });
+    } finally {
+      refreshBurstGroups();
       set({ isAnalyzing: false });
     }
   },

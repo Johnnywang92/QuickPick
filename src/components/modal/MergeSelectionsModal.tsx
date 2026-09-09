@@ -8,6 +8,7 @@ import {
   MergeAnalysisResult,
   MergeConflictItem,
   QuickPickSelectionExport,
+  resolveImportedSelections,
 } from '../../utils/mergeUtils';
 import { saveManifestFile } from '../../services/tauriBridge';
 import {
@@ -59,8 +60,11 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
         if (!parsed || !parsed.selections) {
           throw new Error('选片文件格式不正确');
         }
+        const res = analyzeSelectionMerge(photos, selections, parsed, folderPath);
+        if (Object.keys(parsed.selections).length > 0 && res.matchedSelectionCount === 0) {
+          throw new Error('选片文件中的照片与当前相册不匹配，请确认双方打开的是同一套原片');
+        }
         setImportedPackage(parsed);
-        const res = analyzeSelectionMerge(photos, selections, parsed);
         setAnalysis(res);
         setConflictsState(res.conflicts);
       } catch (err: any) {
@@ -74,11 +78,12 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
     if (!analysis || !importedPackage) return;
 
     const updates: { photoId: string; state: SelectionState }[] = [];
+    const resolvedSelections = resolveImportedSelections(photos, importedPackage, folderPath);
 
     // 1. 共识区：双方都选中的，确保为已选
     for (const photo of photos) {
       const local = selections[photo.id];
-      const incoming = importedPackage.selections[photo.id];
+      const incoming = resolvedSelections[photo.id];
       if (incoming && incoming.state === 'selected') {
         if (!local || local.state !== 'selected') {
           // 对方选中但本地未选的，或者双方都选中的，统统加入 updates
@@ -114,7 +119,15 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
 
   const handleExportPackage = async () => {
     if (!currentProjectId) return;
-    const pkg = buildExportPackage(currentProjectId, albumName, photos, selections, role, authorName);
+    const pkg = buildExportPackage(
+      currentProjectId,
+      albumName,
+      photos,
+      selections,
+      role,
+      authorName,
+      folderPath,
+    );
     const content = JSON.stringify(pkg, null, 2);
     try {
       await saveManifestFile(content, 'json');
