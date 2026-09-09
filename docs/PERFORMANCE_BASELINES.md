@@ -15,7 +15,8 @@
 | **主备底片瞬时闪烁比对 (Blink)** | **≤ 5 ms** | > 16.6 ms | 双视口纹理引用瞬时替换 |
 | **胶片栏虚拟滚动 DOM 节点数** | **恒定 15 ~ 20 个** | > 40 个 | `Filmstrip.tsx` 动态可视区域切片 |
 | **10,000 张相册常驻内存峰值** | **< 350 MB** | > 600 MB | 显存/内存 LRU 淘汰与 `Assets.unload` |
-| **前端打包体积 (JS + CSS)** | **< 650 KB (gzip < 180 KB)** | > 1.2 MB | Vite Rollup 生产构建输出体积 |
+| **前端入口 JavaScript** | **< 650 KB** | > 1,024 KB | 从 `dist/index.html` 精确定位入口文件 |
+| **最大 JavaScript Chunk** | **< 500 KB** | > 500 KB | Vite Rollup 生产构建输出体积 |
 
 ---
 
@@ -51,5 +52,13 @@ npm run gate
 该命令会自动串行执行：
 1. `npm run build`: 前端 TypeScript 严格类型检查与生产静态构建；
 2. `npm run clippy`: Rust 全目标代码静态检查，`-D warnings` 零容忍策略；
-3. `npm run test:rs`: 运行全部 27 项 Rust 单元与集成测试（包含 XMP 防冲突与导出容灾）；
+3. `npm run test:rs`: 运行 Rust 单元与集成测试（包含项目恢复、只读扫描和导出容灾）；
 4. `npm run baseline`: 验证产物体积与合规资源完整性。
+
+`npm run baseline` 中的内置照片仅用于发现工程性能回退，不能作为真实客片性能验收证据。真实 RAW/JPEG 素材使用只读验收命令：
+
+```bash
+npm run accept:media -- /path/to/real-album --min-count 1000
+```
+
+该命令默认在操作前后对源目录所有文件计算 SHA-256，验证目录内容、大小、mtime、权限及链接目标均未变化；同时输出格式覆盖、首列表、首预览、预览平均值/P95、元数据成功数和失败文件。使用 `--limit N` 可先做抽样解码，但照片总数仍按整个目录校验。`--metadata-only` 只用于大目录快速预检，不能替代发布前的完整内容校验。
