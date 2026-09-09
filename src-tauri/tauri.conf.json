@@ -29,9 +29,17 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": [
-      "../LICENSES/*",
-      "../docs/LIBRAW_REPLACEMENT.md"
-    ]
+    "resources": {
+      "../LICENSES/*": "LICENSES/",
+      "../docs/LIBRAW_REPLACEMENT.md": "docs/LIBRAW_REPLACEMENT.md"
+    },
+    "macOS": {
+      "frameworks": [
+        "Frameworks/libraw.25.dylib",
+        "Frameworks/libomp.dylib",
+        "Frameworks/libjpeg.8.dylib",
+        "Frameworks/liblcms2.2.dylib"
+      ]
+    }
   }
 }

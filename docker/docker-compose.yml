@@ -17,11 +17,13 @@ services:
       - PUID=1000             # 运行用户 UID (建议匹配 NAS 存储共享目录所属用户)
       - PGID=1000             # 运行组 GID
       - WATCH_DIRS=/photos    # 挂载的相册工作目录 (支持冒号/分号分隔多个目录)
+      - QUICKPICK_CACHE_DIR=/cache
       - SCAN_INTERVAL=30      # 自动巡检新拷入 RAW 的时间间隔 (秒)
       - PROXY_MAX_EDGE=2048   # 2K 代理图像分辨率上限 (像素)
     volumes:
-      # 挂载 NAS 物理存储卷上的拍摄底片共享文件夹 (需读写权限用于生成 .quickpick_cache)
-      - /volume1/photo:/photos:rw
+      # 原片卷永久只读；代理和索引写入独立缓存卷。
+      - /volume1/photo:/photos:ro
+      - quickpick-cache:/cache
     deploy:
       resources:
         limits:
@@ -35,3 +37,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  quickpick-cache:

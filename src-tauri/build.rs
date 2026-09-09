@@ -10,6 +10,15 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
+        let bundled_frameworks = std::path::Path::new(&manifest_dir).join("Frameworks");
+        if bundled_frameworks.exists() {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                bundled_frameworks.display()
+            );
+        }
+
         // 1. 本地标准库与 Homebrew 路径搜寻 (兼容 Apple Silicon 与 Intel Mac)
         let search_paths = [
             "/opt/homebrew/lib",
@@ -29,12 +38,9 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=raw");
         println!("cargo:rustc-link-lib=dylib=c++");
 
-        // 3. 规范化 RPATH（优先检索 App Bundle 内嵌 Frameworks，再检索执行路径与系统路径）
-        // 确保打包分发的 QuickPick.app 在没有安装 Homebrew 的普通用户电脑上也能运行
-        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+        // 3. Tauri 的 bundle.macOS.frameworks 会为发布包注入 Contents/Frameworks RPATH。
+        // Homebrew 目录只用于链接期搜索，不能写入发布二进制的 LC_RPATH。
         println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path");
-        println!("cargo:rustc-link-arg=-Wl,-rpath,/opt/homebrew/lib");
-        println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/local/lib");
     }
 
     #[cfg(not(target_os = "macos"))]

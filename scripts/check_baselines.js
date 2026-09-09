@@ -54,8 +54,12 @@ if (!fs.existsSync(distDir)) {
   logFail('未找到 dist/ 构建产物目录，请先执行 npm run build');
 } else {
   const indexHtml = path.join(distDir, 'index.html');
+  let mainJsFile = '';
   if (fs.existsSync(indexHtml)) {
     logPass('dist/index.html 存在');
+    const html = fs.readFileSync(indexHtml, 'utf-8');
+    const entryMatch = html.match(/<script[^>]+src=["']\/assets\/(index-[^"']+\.js)["']/);
+    if (entryMatch) mainJsFile = entryMatch[1];
   } else {
     logFail('缺少 dist/index.html');
   }
@@ -65,13 +69,20 @@ if (!fs.existsSync(distDir)) {
     const files = fs.readdirSync(assetsDir);
     let totalSize = 0;
     let mainJsSize = 0;
+    let largestJsSize = 0;
+    let largestJsFile = '';
 
     for (const file of files) {
       const filePath = path.join(assetsDir, file);
       const stat = fs.statSync(filePath);
       totalSize += stat.size;
 
-      if (file.startsWith('index-') && file.endsWith('.js')) {
+      if (file.endsWith('.js') && stat.size > largestJsSize) {
+        largestJsSize = stat.size;
+        largestJsFile = file;
+      }
+
+      if (file === mainJsFile) {
         mainJsSize = stat.size;
       }
     }
@@ -80,13 +91,20 @@ if (!fs.existsSync(distDir)) {
     const totalMb = (totalSize / (1024 * 1024)).toFixed(2);
 
     if (mainJsSize === 0) {
-      logFail('未找到主 JavaScript Chunk (index-*.js)');
+      logFail('无法从 dist/index.html 定位主 JavaScript 入口 Chunk');
     } else if (mainJsSize > 1024 * 1024) {
       logFail(`主 Bundle 体积过大: ${mainJsKb} KB (上限 1,024 KB)`);
     } else if (mainJsSize > 650 * 1024) {
       logWarn(`主 Bundle 体积略高: ${mainJsKb} KB (建议 < 650 KB)`);
     } else {
       logPass(`主 Bundle 体积在标准预算内: ${mainJsKb} KB`);
+    }
+
+    const largestJsKb = (largestJsSize / 1024).toFixed(2);
+    if (largestJsSize > 500 * 1024) {
+      logFail(`单个 JavaScript Chunk 体积过大: ${largestJsFile} ${largestJsKb} KB (上限 500 KB)`);
+    } else {
+      logPass(`最大 JavaScript Chunk 在标准预算内: ${largestJsFile} ${largestJsKb} KB`);
     }
 
     if (totalSize > 3 * 1024 * 1024) {
@@ -114,15 +132,37 @@ if (fs.existsSync(cargoConfigPath)) {
   logPass('src-tauri/.cargo/config.toml 无硬编码 target 限制');
 }
 
-// 检查 src-tauri/build.rs 是否配置了 Frameworks RPATH
-const buildRsPath = path.join(rootDir, 'src-tauri/build.rs');
-if (fs.existsSync(buildRsPath)) {
-  const buildContent = fs.readFileSync(buildRsPath, 'utf-8');
-  if (buildContent.includes('@executable_path/../Frameworks')) {
-    logPass('build.rs 已配置标准 macOS @executable_path/../Frameworks RPATH');
-  } else {
-    logFail('build.rs 缺少 @executable_path/../Frameworks RPATH 配置');
+const tauriConfigPath = path.join(rootDir, 'src-tauri/tauri.conf.json');
+const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf-8'));
+const bundledFrameworks = tauriConfig.bundle?.macOS?.frameworks || [];
+const requiredFrameworks = [
+  'Frameworks/libraw.25.dylib',
+  'Frameworks/libomp.dylib',
+  'Frameworks/libjpeg.8.dylib',
+  'Frameworks/liblcms2.2.dylib',
+];
+if (requiredFrameworks.every((framework) => bundledFrameworks.includes(framework))) {
+  logPass('Tauri 已配置 macOS Contents/Frameworks 动态库与标准 RPATH');
+} else {
+  logFail('Tauri macOS frameworks 配置不完整，发布包可能无法在无 Homebrew 环境运行');
+}
+
+console.log('\n\x1b[1m=== 4. 执行合成样本核心管线回归基准 ===\x1b[0m');
+try {
+  const { execSync } = await import('child_process');
+  const benchOutput = execSync('cargo run --manifest-path src-tauri/Cargo.toml --features benchmark-bin --bin benchmark --quiet', {
+    cwd: rootDir,
+    encoding: 'utf-8',
+    timeout: 30000,
+  });
+  const lines = benchOutput.trim().split('\n');
+  for (const line of lines) {
+    if (line.startsWith('•')) {
+      logPass(line.replace(/^•\s*/, ''));
+    }
   }
+} catch (error) {
+  logFail(`性能基准压测未通过或发生异常: ${error.message}`);
 }
 
 console.log('\n\x1b[1m=== 基准核验结果 ===\x1b[0m');
