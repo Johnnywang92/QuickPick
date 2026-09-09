@@ -704,8 +704,9 @@ fn validate_filter(filter: &str) -> Result<(), String> {
 
 fn validate_active_preset(preset: &str) -> Result<(), String> {
     match preset {
-        "general" | "concert" | "cosplay" | "conference" | "wedding" | "family"
-        | "travel" => Ok(()),
+        "general" | "concert" | "cosplay" | "conference" | "wedding" | "family" | "travel" => {
+            Ok(())
+        }
         _ => Err(format!("无效的故事线题材预设: {preset}")),
     }
 }

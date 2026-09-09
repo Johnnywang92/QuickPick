@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { photoMatchesFilter, useAlbumStore } from './albumStore';
+import { photoMatchesFilter, useAlbumStore, withUpdatedBurstGroups } from './albumStore';
 import { useInsightStore } from './insightStore';
 import { usePreviewStore } from './previewStore';
 import { useSelectionStore } from './selectionStore';
@@ -189,6 +189,40 @@ describe('albumStore filter navigation', () => {
       expect(state.activePresetId).toBe('family');
       expect(state.scenes[0].name).toBe('睡颜萌态与静物');
       expect(state.scenes[1].name).toBe('室内亲子互动');
+    });
+  });
+
+  describe('withUpdatedBurstGroups hybrid clustering', () => {
+    it('splits photos taken close in time if phash visual distance is high', () => {
+      const p1 = photoFixture('p1', {
+        filename: 'IMG_0001.JPG',
+        capturedAt: '2026-09-09 12:00:00',
+        phash: '0000000000000000',
+      });
+      const p2 = photoFixture('p2', {
+        filename: 'IMG_0002.JPG',
+        capturedAt: '2026-09-09 12:00:01', // 1s
+        phash: 'ffff0000ffff0000', // 32 bits diff
+      });
+      const grouped = withUpdatedBurstGroups([p1, p2]);
+      expect(grouped[0].burstGroupId).toBeUndefined();
+      expect(grouped[1].burstGroupId).toBeUndefined();
+    });
+
+    it('groups photos across 10 seconds if phash visual distance is small', () => {
+      const p1 = photoFixture('p1', {
+        filename: 'IMG_0001.JPG',
+        capturedAt: '2026-09-09 12:00:00',
+        phash: '1111222233334444',
+      });
+      const p2 = photoFixture('p2', {
+        filename: 'IMG_0002.JPG',
+        capturedAt: '2026-09-09 12:00:10', // 10s (> 2s, <= 15s)
+        phash: '1111222233334446', // 1 bit diff
+      });
+      const grouped = withUpdatedBurstGroups([p1, p2]);
+      expect(grouped[0].burstGroupId).toBe('burst:p1');
+      expect(grouped[1].burstGroupId).toBe('burst:p1');
     });
   });
 });
