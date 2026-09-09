@@ -26,10 +26,15 @@ describe('compareStore', () => {
     });
     useCompareStore.setState({
       isCompareMode: true,
+      isPkMode: false,
       compareTargetIndex: 1,
       comparePreviewUrl: null,
       comparePreviewStatus: 'idle',
       comparePreviewError: null,
+    });
+    usePreviewStore.setState({
+      previewCache: new Map(),
+      getPreview: vi.fn().mockResolvedValue('preview:default'),
     });
   });
 
@@ -55,5 +60,56 @@ describe('compareStore', () => {
 
     expect(useCompareStore.getState().comparePreviewStatus).toBe('error');
     expect(useSelectionStore.getState().selections).toBe(before);
+  });
+
+  it('ignores an older preview request that resolves after the current candidate', async () => {
+    let resolveOld!: (url: string) => void;
+    let resolveCurrent!: (url: string) => void;
+    usePreviewStore.setState({
+      getPreview: vi.fn((photo) =>
+        new Promise<string>((resolve) => {
+          if (photo.id === 'right') resolveOld = resolve;
+          else resolveCurrent = resolve;
+        }),
+      ),
+    });
+
+    const oldRequest = useCompareStore.getState().setCompareTargetIndex(1);
+    const currentRequest = useCompareStore.getState().setCompareTargetIndex(2);
+    resolveCurrent('preview:current');
+    await currentRequest;
+    resolveOld('preview:old');
+    await oldRequest;
+
+    expect(useCompareStore.getState().compareTargetIndex).toBe(2);
+    expect(useCompareStore.getState().comparePreviewUrl).toBe('preview:current');
+  });
+
+  it('runs burst pk elimination: voting left eliminates challenger and advances to final winner', () => {
+    const setSelectionState = vi.fn();
+    useSelectionStore.setState({ setSelectionState });
+
+    useCompareStore.getState().startBurstPk('burst:left');
+
+    const state = useCompareStore.getState();
+    expect(state.isPkMode).toBe(true);
+    expect(state.pkChampionIndex).toBe(0);
+    expect(state.pkChallengerIndex).toBe(1);
+    expect(state.pkRemainingIndices).toEqual([2]);
+
+    // Vote left -> challenger (index 1 / 'right') is marked skipped
+    useCompareStore.getState().pkVoteLeft();
+    expect(setSelectionState).toHaveBeenCalledWith('right', 'skipped');
+
+    const afterVote = useCompareStore.getState();
+    expect(afterVote.pkChampionIndex).toBe(0);
+    expect(afterVote.pkChallengerIndex).toBe(2);
+    expect(afterVote.pkRemainingIndices).toEqual([]);
+
+    // Final vote left -> challenger 2 skipped, champion 0 selected, PK exits
+    useCompareStore.getState().pkVoteLeft();
+    expect(setSelectionState).toHaveBeenCalledWith('same-group-third', 'skipped');
+    expect(setSelectionState).toHaveBeenCalledWith('left', 'selected');
+    expect(useCompareStore.getState().isPkMode).toBe(false);
   });
 });

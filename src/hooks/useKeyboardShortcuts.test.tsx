@@ -1,8 +1,9 @@
-import { fireEvent, renderHook } from '@testing-library/react';
+import { act, fireEvent, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useKeyboardShortcuts } from './useKeyboardShortcuts';
 import { useAlbumStore } from '../store/albumStore';
 import { useSelectionStore } from '../store/selectionStore';
+import { useCompareStore } from '../store/compareStore';
 import { photoFixture } from '../test/photoFixture';
 
 describe('useKeyboardShortcuts', () => {
@@ -12,6 +13,7 @@ describe('useKeyboardShortcuts', () => {
     toggleSelect.mockReset();
     useAlbumStore.setState({ photos: [photoFixture('current')], currentIndex: 0 });
     useSelectionStore.setState({ toggleSelect });
+    useCompareStore.setState({ isPkMode: false, isCompareMode: false });
   });
 
   it('does not trigger selection while typing in editable controls', () => {
@@ -47,6 +49,18 @@ describe('useKeyboardShortcuts', () => {
 
     fireEvent.keyDown(window, { key: ' ' });
 
+    expect(toggleSelect).toHaveBeenCalledWith('current');
+  });
+
+  it('pauses shortcuts only while PK mode is active', () => {
+    renderHook(() => useKeyboardShortcuts());
+
+    act(() => useCompareStore.setState({ isPkMode: true }));
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(toggleSelect).not.toHaveBeenCalled();
+
+    act(() => useCompareStore.setState({ isPkMode: false }));
+    fireEvent.keyDown(window, { key: ' ' });
     expect(toggleSelect).toHaveBeenCalledWith('current');
   });
 });

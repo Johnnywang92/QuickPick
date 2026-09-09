@@ -2,7 +2,14 @@ export type PhotoFormat = 'raw' | 'jpeg' | 'png';
 
 export type SelectionState = 'unreviewed' | 'selected' | 'maybe' | 'skipped';
 
-export type WorkflowScene = 'general' | 'concert' | 'cosplay' | 'conference' | 'wedding';
+export type WorkflowScene =
+  | 'general'
+  | 'concert'
+  | 'cosplay'
+  | 'conference'
+  | 'wedding'
+  | 'family'
+  | 'travel';
 
 export interface FaceInfo {
   id: string;
@@ -47,6 +54,8 @@ export interface LocalPhoto {
   burstGroupId?: string;
   faces?: FaceInfo[];
   exif?: ExifMetadata;
+  phash?: string;                 // 64-bit DCT 感知哈希十六进制字符串
+  sharpness?: number;             // 图像锐度指标 (拉普拉斯方差)
 }
 
 /**
@@ -58,7 +67,30 @@ export interface PhotoInsight {
   possibleBlur?: number;          // 模糊评分 (0 ~ 100)
   possibleClosedEyes?: number;    // 闭眼程度或最小睁眼打分
   similarityGroupId?: string;     // 相似/连拍分组
+  isBestPick?: boolean;           // 连拍/相似组内推荐最佳瞬间
   reasons: string[];              // 人类可读提示标签，如 ["可能闭眼", "轻微脱焦"]
+}
+
+/**
+ * 用户视觉图上批注 (Pin 针)
+ */
+export interface VisualPin {
+  id: string;
+  pinIndex: number;
+  x: number;              // 归一化横坐标 0.0 ~ 1.0 (相对图片宽度)
+  y: number;              // 归一化纵坐标 0.0 ~ 1.0 (相对图片高度)
+  tag?: string;           // 快速标签，如 "面部微调", "除杂物", "修碎发"
+  comment?: string;       // 详细要求
+}
+
+/**
+ * 照片综合修图批注
+ */
+export interface PhotoAnnotation {
+  comment?: string;       // 整体通用要求/备注
+  presetTags?: string[];  // 选中的高频标签列表
+  pins?: VisualPin[];     // 局部图上坐标标记
+  updatedAt?: string;     // 更新时间
 }
 
 /**
@@ -67,7 +99,7 @@ export interface PhotoInsight {
 export interface UserSelection {
   photoId: string;
   state: SelectionState;          // 'unreviewed' | 'selected' | 'maybe' | 'skipped'
-  note?: string;                  // 用户自定义备注，如 "喜欢这张侧脸"
+  note?: string;                  // 用户自定义备注或序列化修图批注 JSON
   updatedAt: string;              // ISO 8601 时间戳
 }
 
@@ -100,6 +132,11 @@ export type FilterCategory =
   | 'maybe'           // 待考虑
   | 'needs_check'     // 可能需要检查 (闭眼/模糊)
   | 'burst';          // 相似连拍
+
+/**
+ * 清单导出格式
+ */
+export type ManifestFormat = 'txt' | 'csv' | 'json' | 'html';
 
 /**
  * 导出模式

@@ -382,18 +382,18 @@ export const ExportModal: React.FC = () => {
 
               <div>
                 <label className="block font-semibold text-slate-300 mb-2">选择清单格式</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['txt', 'csv', 'json'] as ManifestFormat[]).map((fmt) => (
+                <div className="grid grid-cols-4 gap-2">
+                  {(['txt', 'csv', 'json', 'html'] as ManifestFormat[]).map((fmt) => (
                     <button
                       key={fmt}
                       onClick={() => setManifestFormat(fmt)}
-                      className={`p-2 rounded-lg border text-center font-mono font-semibold uppercase transition-all cursor-pointer ${
+                      className={`p-2 rounded-lg border text-center font-mono font-semibold uppercase transition-all cursor-pointer text-xs ${
                         manifestFormat === fmt
                           ? 'border-blue-500 bg-blue-500/15 text-blue-300'
                           : 'border-dark-700 bg-dark-800 text-slate-400 hover:border-dark-600'
                       }`}
                     >
-                      {fmt}
+                      {fmt === 'html' ? 'HTML 指示单' : fmt}
                     </button>
                   ))}
                 </div>

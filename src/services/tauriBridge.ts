@@ -31,6 +31,8 @@ export interface PhotoAnalysisResult {
   faces: FaceInfo[];
   preview_width?: number | null;
   preview_height?: number | null;
+  phash?: string | null;
+  sharpness?: number | null;
 }
 
 type u64 = number;
@@ -65,6 +67,7 @@ export interface ProjectState {
   target_count?: number;
   active_filter: string;
   selected_scene_id?: string;
+  active_preset_id: string;
   scenes_json: string;
   photo_id_remaps: Record<string, string>;
 }
@@ -78,6 +81,7 @@ export interface ProjectViewStateInput {
   target_count?: number;
   active_filter: string;
   selected_scene_id?: string;
+  active_preset_id: string;
   scenes_json: string;
 }
 
@@ -265,6 +269,7 @@ export async function openProjectState(
       target_count: undefined,
       active_filter: 'all',
       selected_scene_id: undefined,
+      active_preset_id: 'general',
       scenes_json: '[]',
       photo_id_remaps: Object.fromEntries(photos.map((photo) => [photo.id, photo.id])),
     };
@@ -365,6 +370,8 @@ export async function analyzePhotoDetails(
       faces: [],
       preview_width: 1600,
       preview_height: 1066,
+      phash: '0000000000000000',
+      sharpness: 80,
     };
   }
   return await invoke<PhotoAnalysisResult>('analyze_photo_details', {
@@ -429,14 +436,17 @@ export async function selectDirectory(title = '选择导出目标文件夹'): Pr
 
 export async function saveManifestFile(
   content: string,
-  extension: 'txt' | 'csv' | 'json',
+  extension: 'txt' | 'csv' | 'json' | 'html',
 ): Promise<string | null> {
+  const defaultFilename =
+    extension === 'html' ? 'QuickPick_修图指示书.html' : `QuickPick_Selected_List.${extension}`;
   if (!isTauri()) {
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const mimeType = extension === 'html' ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8';
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `QuickPick_Selected_List.${extension}`;
+    link.download = defaultFilename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -444,9 +454,14 @@ export async function saveManifestFile(
     return link.download;
   }
   const selected = await save({
-    title: '保存选片清单',
-    defaultPath: `QuickPick_Selected_List.${extension}`,
-    filters: [{ name: `${extension.toUpperCase()} 清单`, extensions: [extension] }],
+    title: extension === 'html' ? '保存精修指示书' : '保存选片清单',
+    defaultPath: defaultFilename,
+    filters: [
+      {
+        name: extension === 'html' ? 'HTML 网页指示单' : `${extension.toUpperCase()} 清单`,
+        extensions: [extension],
+      },
+    ],
   });
   if (!selected) return null;
   await invoke('save_manifest_file', { path: selected, content });

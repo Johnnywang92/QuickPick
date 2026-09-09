@@ -8,7 +8,8 @@ import {
   persistViewedPhoto,
   ProjectState,
 } from '../services/tauriBridge';
-import { UserSelection, SelectionState } from '../types/photo';
+import { UserSelection, SelectionState, PhotoAnnotation } from '../types/photo';
+import { parseAnnotation, serializeAnnotation } from '../utils/annotationUtils';
 
 export interface SelectionUndoChange {
   photoId: string;
@@ -56,6 +57,8 @@ interface SelectionStore {
   setMaybe: (photoId: string) => void;
   setSkipped: (photoId: string) => void;
   setNote: (photoId: string, note: string) => void;
+  setAnnotation: (photoId: string, annotation: PhotoAnnotation) => void;
+  getAnnotation: (photoId: string) => PhotoAnnotation;
   undoLast: () => void;
   getSelection: (photoId: string) => UserSelection;
   getStats: (totalCount: number) => SelectionStats;
@@ -283,6 +286,16 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
         set({ selections: { ...get().selections, [photoId]: previous } });
       },
     );
+  },
+
+  setAnnotation: (photoId, annotation) => {
+    const note = serializeAnnotation(annotation);
+    get().setNote(photoId, note);
+  },
+
+  getAnnotation: (photoId) => {
+    const selection = get().selections[photoId];
+    return parseAnnotation(selection?.note);
   },
 
   undoLast: () => {

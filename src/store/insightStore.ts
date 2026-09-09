@@ -7,6 +7,7 @@ import {
   detectPhotoFaces,
 } from '../services/tauriBridge';
 import { useAlbumStore, withUpdatedBurstGroups } from './albumStore';
+import { findBestPicksByBurstGroup } from '../utils/phashUtils';
 
 export type FaceReviewPreset = 'group' | 'candid' | 'portrait';
 
@@ -70,6 +71,8 @@ function applyAnalysisResult(photoId: string, result: PhotoAnalysisResult): void
             faces: result.faces,
             previewWidth: result.preview_width || undefined,
             previewHeight: result.preview_height || undefined,
+            phash: result.phash || undefined,
+            sharpness: result.sharpness ?? undefined,
           }
         : photo,
     ),
@@ -80,16 +83,28 @@ function finalizeBurstGroups(generation: number): void {
   if (generation !== analysisGeneration) return;
   const groupedPhotos = withUpdatedBurstGroups(useAlbumStore.getState().photos);
   useAlbumStore.setState({ photos: groupedPhotos });
+
+  const bestPicks = findBestPicksByBurstGroup(groupedPhotos);
+
   useInsightStore.setState((state) => {
     const insights = { ...state.insights };
     for (const photo of groupedPhotos) {
       const existing = insights[photo.id];
       if (!existing) continue;
-      const reasons = existing.reasons.filter((reason) => reason !== '与其他照片相似');
-      if (photo.burstGroupId) reasons.push('与其他照片相似');
+      const reasons = existing.reasons.filter(
+        (reason) => reason !== '与其他照片相似' && reason !== '组内推荐最佳',
+      );
+      const isBest = !!photo.burstGroupId && bestPicks.get(photo.burstGroupId) === photo.id;
+      if (photo.burstGroupId) {
+        reasons.push('与其他照片相似');
+        if (isBest) {
+          reasons.push('组内推荐最佳');
+        }
+      }
       insights[photo.id] = {
         ...existing,
         similarityGroupId: photo.burstGroupId,
+        isBestPick: isBest,
         reasons,
       };
     }

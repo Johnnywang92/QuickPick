@@ -234,8 +234,15 @@ export const Filmstrip: React.FC = () => {
                       }`}
                     />
                     {photo.burstGroupId && (
-                      <span className="text-[8px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono">
-                        连拍
+                      <span
+                        className={`text-[8px] px-1 py-0.2 rounded font-mono ${
+                          insight?.isBestPick
+                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
+                            : 'bg-indigo-500/20 text-indigo-300'
+                        }`}
+                        title={insight?.isBestPick ? '连拍组内推荐最佳瞬间' : '相似连拍'}
+                      >
+                        {insight?.isBestPick ? '★ 优' : '连拍'}
                       </span>
                     )}
                     {uncertaintyReasons.length > 0 && (

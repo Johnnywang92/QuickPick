@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { ExportMode, LocalPhoto } from '../types/photo';
+import { ExportMode, LocalPhoto, ManifestFormat } from '../types/photo';
+export type { ManifestFormat };
 import {
   exportPhotos as tauriExportPhotos,
   cancelExport,
@@ -12,8 +13,7 @@ import {
 } from '../services/tauriBridge';
 import { useAlbumStore } from './albumStore';
 import { useSelectionStore } from './selectionStore';
-
-export type ManifestFormat = 'txt' | 'csv' | 'json';
+import { generateRetouchHtmlReport } from '../utils/reportGenerator';
 
 function normalizePortablePath(path: string): string {
   const normalized = path.replace(/\\/g, '/');
@@ -286,6 +286,26 @@ export const useExportStore = create<ExportStore>((set, get) => ({
         ].map(safeCsvCell).join(','),
       );
       return `\uFEFF${[header, ...rows].join('\r\n')}`;
+    }
+
+    if (manifestFormat === 'html') {
+      const { scenes, photos: allPhotos } = useAlbumStore.getState();
+      const reportItems = selectedPhotos.map((photo) => {
+        const photoIndex = allPhotos.findIndex((p) => p.id === photo.id);
+        const scene = scenes.find((s) => s.startIndex <= photoIndex && photoIndex <= s.endIndex);
+        const selection = selections[photo.id] || {
+          photoId: photo.id,
+          state: 'selected' as const,
+          note: '',
+          updatedAt: '',
+        };
+        return {
+          photo,
+          selection,
+          scene,
+        };
+      });
+      return generateRetouchHtmlReport(projectName, reportItems);
     }
 
     // JSON 格式

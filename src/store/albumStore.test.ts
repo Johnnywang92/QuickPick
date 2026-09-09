@@ -51,4 +51,144 @@ describe('albumStore filter navigation', () => {
     expect(photoMatchesFilter(photos[2], 2, 'unreviewed', null, [], selections, viewed, insights)).toBe(true);
     expect(photoMatchesFilter(photos[3], 3, 'unreviewed', null, [], selections, viewed, insights)).toBe(true);
   });
+
+  describe('storyline chapter operations', () => {
+    it('splits scene at given photo index', () => {
+      useAlbumStore.setState({
+        photos,
+        scenes: [
+          {
+            id: 's1',
+            name: '全流程',
+            startIndex: 0,
+            endIndex: 3,
+            photoCount: 4,
+            startPath: photos[0].path,
+            endPath: photos[3].path,
+            color: '#3b82f6',
+            targetGoal: 5,
+          },
+        ],
+        selectedSceneId: 's1',
+      });
+
+      useAlbumStore.getState().splitSceneAtPhoto(2);
+      const scenes = useAlbumStore.getState().scenes;
+      expect(scenes).toHaveLength(2);
+      expect(scenes[0].startIndex).toBe(0);
+      expect(scenes[0].endIndex).toBe(1);
+      expect(scenes[0].photoCount).toBe(2);
+      expect(scenes[1].startIndex).toBe(2);
+      expect(scenes[1].endIndex).toBe(3);
+      expect(scenes[1].photoCount).toBe(2);
+      expect(scenes.reduce((sum, scene) => sum + (scene.targetGoal || 0), 0)).toBe(5);
+      expect(useAlbumStore.getState().selectedSceneId).toBe(scenes[1].id);
+    });
+
+    it('merges two adjacent scenes', () => {
+      useAlbumStore.setState({
+        photos,
+        scenes: [
+          {
+            id: 's1',
+            name: '前半',
+            startIndex: 0,
+            endIndex: 1,
+            photoCount: 2,
+            startPath: photos[0].path,
+            endPath: photos[1].path,
+            color: '#3b82f6',
+            targetGoal: 10,
+          },
+          {
+            id: 's2',
+            name: '后半',
+            startIndex: 2,
+            endIndex: 3,
+            photoCount: 2,
+            startPath: photos[2].path,
+            endPath: photos[3].path,
+            color: '#8b5cf6',
+            targetGoal: 10,
+          },
+        ],
+      });
+
+      useAlbumStore.getState().mergeScenes('s1', 's2');
+      const scenes = useAlbumStore.getState().scenes;
+      expect(scenes).toHaveLength(1);
+      expect(scenes[0].startIndex).toBe(0);
+      expect(scenes[0].endIndex).toBe(3);
+      expect(scenes[0].photoCount).toBe(4);
+      expect(scenes[0].targetGoal).toBe(20);
+    });
+
+    it('distributes total target goal across chapters', () => {
+      useAlbumStore.setState({
+        photos,
+        scenes: [
+          {
+            id: 's1',
+            name: 'A',
+            startIndex: 0,
+            endIndex: 1,
+            photoCount: 2,
+            startPath: photos[0].path,
+            endPath: photos[1].path,
+            color: '#3b82f6',
+          },
+          {
+            id: 's2',
+            name: 'B',
+            startIndex: 2,
+            endIndex: 3,
+            photoCount: 2,
+            startPath: photos[2].path,
+            endPath: photos[3].path,
+            color: '#8b5cf6',
+          },
+        ],
+      });
+
+      useAlbumStore.getState().distributeTargetGoal(30);
+      const state = useAlbumStore.getState();
+      expect(state.targetGoal).toBe(30);
+      const total = state.scenes.reduce((sum, s) => sum + (s.targetGoal || 0), 0);
+      expect(total).toBe(30);
+    });
+
+    it('applies photography scene preset to chapters', () => {
+      useAlbumStore.setState({
+        photos,
+        scenes: [
+          {
+            id: 's1',
+            name: '旧环节1',
+            startIndex: 0,
+            endIndex: 1,
+            photoCount: 2,
+            startPath: photos[0].path,
+            endPath: photos[1].path,
+            color: '#3b82f6',
+          },
+          {
+            id: 's2',
+            name: '旧环节2',
+            startIndex: 2,
+            endIndex: 3,
+            photoCount: 2,
+            startPath: photos[2].path,
+            endPath: photos[3].path,
+            color: '#8b5cf6',
+          },
+        ],
+      });
+
+      useAlbumStore.getState().applyScenePreset('family');
+      const state = useAlbumStore.getState();
+      expect(state.activePresetId).toBe('family');
+      expect(state.scenes[0].name).toBe('睡颜萌态与静物');
+      expect(state.scenes[1].name).toBe('室内亲子互动');
+    });
+  });
 });

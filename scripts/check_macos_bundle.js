@@ -17,6 +17,7 @@ const requiredFiles = [
   'Contents/Frameworks/libomp.dylib',
   'Contents/Frameworks/libjpeg.8.dylib',
   'Contents/Frameworks/liblcms2.2.dylib',
+  'Contents/Resources/icon.icns',
   'Contents/Resources/LICENSES/LGPL-2.1.txt',
   'Contents/Resources/LICENSES/LIBRAW_LICENSE.txt',
   'Contents/Resources/docs/LIBRAW_REPLACEMENT.md',
@@ -30,6 +31,14 @@ if (process.platform !== 'darwin') {
 const missing = requiredFiles.filter((relativePath) => !fs.existsSync(path.join(appDir, relativePath)));
 if (missing.length > 0) {
   console.error(`macOS bundle 缺少必要文件：\n${missing.join('\n')}`);
+  process.exit(1);
+}
+
+const infoPlist = execFileSync('plutil', ['-p', path.join(appDir, 'Contents/Info.plist')], {
+  encoding: 'utf8',
+});
+if (!infoPlist.includes('"CFBundleIconFile" => "icon.icns"')) {
+  console.error('macOS bundle 的 Info.plist 未声明 icon.icns 应用图标');
   process.exit(1);
 }
 

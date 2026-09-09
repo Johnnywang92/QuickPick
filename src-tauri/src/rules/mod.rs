@@ -1,6 +1,10 @@
 pub mod face;
+pub mod phash;
 pub mod timeline;
 use crate::models::{AnalysisStatus, DefectTag, PhotoItem, WorkflowScene};
+pub use phash::{
+    compute_phash, distance_to_similarity, hamming_distance, hash_to_hex, hex_to_hash,
+};
 pub use timeline::{cluster_photos_by_timeline, TimelineChapter};
 
 /// 图像指标分析结果
@@ -118,35 +122,69 @@ fn parse_photo_timestamp(photo: &PhotoItem) -> Option<i64> {
         })
 }
 
-fn are_photos_burst_consecutive(
+pub fn are_photos_burst_consecutive_hybrid(
     p_curr: &PhotoItem,
     p_prev: &PhotoItem,
     seq_curr: Option<i64>,
     seq_prev: Option<i64>,
+    phash_curr: Option<u64>,
+    phash_prev: Option<u64>,
 ) -> bool {
+    let visual_dist = match (phash_curr, phash_prev) {
+        (Some(h1), Some(h2)) => Some(phash::hamming_distance(h1, h2)),
+        _ => None,
+    };
+
+    // 1. 视觉防误断开: 若两图具有感知哈希且汉明距离 >= 14 (画面主体/构图完全不同)，
+    // 即使拍摄时间在 2 秒以内也不属于同一连拍组 (如摄影师迅速转身或转场)
+    if let Some(dist) = visual_dist {
+        if dist >= 14 {
+            return false;
+        }
+    }
+
     let t_curr = parse_photo_timestamp(p_curr);
     let t_prev = parse_photo_timestamp(p_prev);
 
     match (t_curr, t_prev) {
         (Some(tc), Some(tp)) => {
             let dt = (tc - tp).abs();
-            // 若两个文件均有拍摄时间戳：时间差在 2 秒以内判定为同一连拍组
             if dt <= 2 {
                 match (seq_curr, seq_prev) {
                     (Some(sc), Some(sp)) => (sc - sp).abs() <= 5,
                     _ => true,
                 }
+            } else if dt <= 15 {
+                // 时间差在 15 秒内且视觉高度相似 (汉明距离 <= 8) 聚为一组
+                visual_dist.is_some_and(|d| d <= 8)
+            } else if dt <= 60 {
+                // 极度相似或重复画面 (汉明距离 <= 3) 允许放宽至 60 秒内成组
+                visual_dist.is_some_and(|d| d <= 3)
             } else {
-                // 时间差大于 2 秒，即使编号连续也不属于同一连拍组（如间隔数小时或不同场景）
                 false
             }
         }
-        // 若任意一方缺少时间戳，退化至文件名连续编号检测
-        _ => match (seq_curr, seq_prev) {
-            (Some(s), Some(l)) => (s - l).abs() == 1,
-            _ => false,
-        },
+        // 若任意一方缺少时间戳: 优先依赖感知哈希
+        _ => {
+            if let Some(dist) = visual_dist {
+                dist <= 8
+            } else {
+                match (seq_curr, seq_prev) {
+                    (Some(s), Some(l)) => (s - l).abs() == 1,
+                    _ => false,
+                }
+            }
+        }
     }
+}
+
+fn are_photos_burst_consecutive(
+    p_curr: &PhotoItem,
+    p_prev: &PhotoItem,
+    seq_curr: Option<i64>,
+    seq_prev: Option<i64>,
+) -> bool {
+    are_photos_burst_consecutive_hybrid(p_curr, p_prev, seq_curr, seq_prev, None, None)
 }
 
 /// 连拍序列成组识别 (基于 EXIF 毫秒时间窗口与文件名编号混合聚类)
@@ -552,5 +590,79 @@ mod tests {
         assert!(cosplay_tags
             .iter()
             .any(|t| t.label.contains("Cosplay美瞳/眼部微软")));
+    }
+
+    #[test]
+    fn test_burst_grouping_hybrid_with_phash() {
+        let p1 = PhotoItem {
+            id: "p1".to_string(),
+            path: "/path/DSC_0001.JPG".to_string(),
+            filename: "DSC_0001.JPG".to_string(),
+            file_size: 1000,
+            is_raw: false,
+            thumb_width: None,
+            thumb_height: None,
+            burst_group_id: None,
+            exif: Some(crate::models::ExifMetadata {
+                date_time_original: Some("2026-09-09 10:00:00".to_string()),
+                ..Default::default()
+            }),
+        };
+        // p2: 拍摄时间在 1 秒后，但在视觉上与 p1 完全不同 (汉明距离 20)
+        let p2 = PhotoItem {
+            id: "p2".to_string(),
+            path: "/path/DSC_0002.JPG".to_string(),
+            filename: "DSC_0002.JPG".to_string(),
+            file_size: 1000,
+            is_raw: false,
+            thumb_width: None,
+            thumb_height: None,
+            burst_group_id: None,
+            exif: Some(crate::models::ExifMetadata {
+                date_time_original: Some("2026-09-09 10:00:01".to_string()),
+                ..Default::default()
+            }),
+        };
+        // p3: 拍摄时间在 8 秒后 (超过默认 2 秒)，但与 p1 视觉高度相似 (汉明距离 4)
+        let p3 = PhotoItem {
+            id: "p3".to_string(),
+            path: "/path/DSC_0003.JPG".to_string(),
+            filename: "DSC_0003.JPG".to_string(),
+            file_size: 1000,
+            is_raw: false,
+            thumb_width: None,
+            thumb_height: None,
+            burst_group_id: None,
+            exif: Some(crate::models::ExifMetadata {
+                date_time_original: Some("2026-09-09 10:00:08".to_string()),
+                ..Default::default()
+            }),
+        };
+
+        let hash_a: u64 = 0b1111_0000_1111_0000_1111_0000_1111_0000_1111_0000_1111_0000_1111_0000_1111_0000;
+        let hash_diff: u64 = 0b0000_1111_0000_1111_0000_1111_0000_1111_0000_1111_0000_1111_0000_1111_0000_1111; // 汉明距离 64
+        let hash_similar: u64 = hash_a ^ 0b0011; // 汉明距离 2
+
+        // 1. 即使拍摄间隔仅 1 秒，若汉明距离 >= 14，应防误判拆分，不视作连拍
+        let split_by_visual = are_photos_burst_consecutive_hybrid(
+            &p2,
+            &p1,
+            Some(2),
+            Some(1),
+            Some(hash_diff),
+            Some(hash_a),
+        );
+        assert!(!split_by_visual, "视觉截然不同的两张图即使相差 1 秒也不应合并");
+
+        // 2. 拍摄间隔 8 秒 (大于默认 2 秒)，但汉明距离很低 (2 <= 8)，应成功识别并成组
+        let grouped_by_visual = are_photos_burst_consecutive_hybrid(
+            &p3,
+            &p1,
+            Some(3),
+            Some(1),
+            Some(hash_similar),
+            Some(hash_a),
+        );
+        assert!(grouped_by_visual, "视觉高度相似的照片在 15 秒窗口内应成功成组");
     }
 }

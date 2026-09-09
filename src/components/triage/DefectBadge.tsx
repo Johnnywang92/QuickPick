@@ -16,6 +16,7 @@ export const DefectBadge: React.FC = () => {
   const hasBlink = reasons.some((r) => r.includes('眼睛'));
   const hasBlur = reasons.some((r) => r.includes('模糊'));
   const hasBurst = !!currentPhoto.burstGroupId;
+  const isBestPick = !!insight?.isBestPick;
 
   if (insight?.analysisStatus === 'pending') {
     return (
@@ -64,9 +65,24 @@ export const DefectBadge: React.FC = () => {
       )}
 
       {hasBurst && (
-        <span className="flex items-center space-x-1 text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-0.5 rounded-full font-medium">
-          <Layers className="w-3 h-3 text-indigo-400" />
-          <span>相似连拍 (按 C 比对)</span>
+        <span
+          className={
+            isBestPick
+              ? 'flex items-center space-x-1 text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-medium shadow-[0_0_8px_rgba(16,185,129,0.25)]'
+              : 'flex items-center space-x-1 text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-0.5 rounded-full font-medium'
+          }
+        >
+          {isBestPick ? (
+            <>
+              <Sparkles className="w-3 h-3 text-emerald-400" />
+              <span>★ 连拍推荐最佳 (按 C 比对)</span>
+            </>
+          ) : (
+            <>
+              <Layers className="w-3 h-3 text-indigo-400" />
+              <span>相似连拍 (按 C 比对)</span>
+            </>
+          )}
         </span>
       )}
 

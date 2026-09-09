@@ -4,10 +4,23 @@ import { useSelectionStore } from '../store/selectionStore';
 import { useCompareStore } from '../store/compareStore';
 import { useInsightStore } from '../store/insightStore';
 
-export function useKeyboardShortcuts() {
+interface KeyboardShortcutsOptions {
+  onToggleRetouch?: () => void;
+}
+
+export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
   const { photos, currentIndex, nextPhoto, prevPhoto, resetFilter, jumpToFirstMatching, jumpToLastMatching } = useAlbumStore();
   const { toggleSelect, setMaybe, setSkipped, undoLast } = useSelectionStore();
-  const { isCompareMode, toggleCompareMode, exitCompareMode, swapComparePhotos, nextCompareCandidate, prevCompareCandidate } = useCompareStore();
+  const {
+    isCompareMode,
+    isPkMode,
+    startBurstPk,
+    toggleCompareMode,
+    exitCompareMode,
+    swapComparePhotos,
+    nextCompareCandidate,
+    prevCompareCandidate,
+  } = useCompareStore();
   const { toggleFaceLoupe } = useInsightStore();
 
   useEffect(() => {
@@ -25,6 +38,11 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // 如果处于 PK 对决全屏模式，将按键交由对决状态机接管
+      if (isPkMode) {
+        return;
+      }
+
       // 撤销操作: Cmd/Ctrl + Z
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -37,6 +55,23 @@ export function useKeyboardShortcuts() {
       const currentPhoto = photos[currentIndex];
 
       switch (e.key) {
+        // 连拍极速对决 [P]
+        case 'p':
+        case 'P':
+          if (!isCompareMode && currentPhoto?.burstGroupId) {
+            e.preventDefault();
+            startBurstPk(currentPhoto.burstGroupId);
+          }
+          break;
+
+        // 修图与批注要求 [R]
+        case 'r':
+        case 'R':
+          if (!isCompareMode) {
+            e.preventDefault();
+            options?.onToggleRetouch?.();
+          }
+          break;
         // 选择 / 取消选择 [空格 Space]
         case ' ':
           e.preventDefault();
@@ -150,6 +185,8 @@ export function useKeyboardShortcuts() {
     setSkipped,
     undoLast,
     isCompareMode,
+    isPkMode,
+    startBurstPk,
     toggleCompareMode,
     exitCompareMode,
     swapComparePhotos,
@@ -159,5 +196,6 @@ export function useKeyboardShortcuts() {
     resetFilter,
     jumpToFirstMatching,
     jumpToLastMatching,
+    options?.onToggleRetouch,
   ]);
 }

@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Application, Assets, Sprite, Container } from 'pixi.js';
+import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js';
 import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
+import { VisualPin } from '../../types/photo';
+import clsx from 'clsx';
 
 interface PixiCanvasProps {
   imageUrl: string | null;
@@ -9,6 +11,9 @@ interface PixiCanvasProps {
   previewStatus?: 'idle' | 'loading' | 'loaded' | 'error';
   previewError?: string | null;
   onRetryPreview?: () => void;
+  isAddingPin?: boolean;
+  onDropPin?: (normX: number, normY: number) => void;
+  pins?: VisualPin[];
 }
 
 export const PixiCanvas: React.FC<PixiCanvasProps> = ({
@@ -17,11 +22,16 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   previewStatus = 'loaded',
   previewError = null,
   onRetryPreview,
+  isAddingPin = false,
+  onDropPin,
+  pins = [],
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const imageContainerRef = useRef<Container | null>(null);
+  const pinsContainerRef = useRef<Container | null>(null);
   const spriteRef = useRef<Sprite | null>(null);
+  const mouseDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const focusedFace = useInsightStore((state) => state.focusedFace);
 
@@ -135,6 +145,11 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
         container.addChild(sprite);
         spriteRef.current = sprite;
+
+        const pinsLayer = new Container();
+        container.addChild(pinsLayer);
+        pinsContainerRef.current = pinsLayer;
+
         setZoomLevel(Math.round(fitScale * 100));
         setImageStatus('loaded');
       } catch (e) {
@@ -152,6 +167,44 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       isCurrent = false;
     };
   }, [imageUrl, pixiStatus, loadAttempt]);
+
+  // 渲染图上 Pin 针标记层
+  useEffect(() => {
+    if (!pinsContainerRef.current || !spriteRef.current) return;
+    const pinsLayer = pinsContainerRef.current;
+    const sprite = spriteRef.current;
+
+    // 清空现有 pin 针子节点
+    pinsLayer.removeChildren();
+
+    if (!pins || pins.length === 0) return;
+
+    for (const pin of pins) {
+      const pinX = (pin.x - 0.5) * sprite.texture.width;
+      const pinY = (pin.y - 0.5) * sprite.texture.height;
+
+      const g = new Graphics();
+      g.circle(pinX, pinY, 14);
+      g.fill({ color: 0xef4444 });
+      g.stroke({ color: 0xffffff, width: 2.5 });
+      pinsLayer.addChild(g);
+
+      const text = new Text({
+        text: String(pin.pinIndex),
+        style: {
+          fontFamily: 'sans-serif',
+          fontSize: 12,
+          fontWeight: 'bold',
+          fill: 0xffffff,
+          align: 'center',
+        },
+      });
+      text.anchor.set(0.5);
+      text.x = pinX;
+      text.y = pinY;
+      pinsLayer.addChild(text);
+    }
+  }, [pins, imageStatus]);
 
   // 当摄影师点击 Face Loupe 人脸特写卡片时，平滑聚焦与居中放大至对应人物
   useEffect(() => {
@@ -192,6 +245,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     if (e.button === 0 || e.button === 1) {
       setIsPanning(true);
       dragStartRef.current = { x: e.clientX, y: e.clientY };
+      mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
     }
   };
 
@@ -206,8 +260,34 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     dragStartRef.current = { x: e.clientX, y: e.clientY };
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
     setIsPanning(false);
+
+    // 点图落针模式：若未发生大幅拖拽（点击），换算归一化坐标并落针
+    if (isAddingPin && onDropPin && spriteRef.current && imageContainerRef.current && containerRef.current) {
+      const dist = Math.hypot(
+        e.clientX - mouseDownPosRef.current.x,
+        e.clientY - mouseDownPosRef.current.y,
+      );
+      if (dist < 6) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const clientX = e.clientX - rect.left;
+        const clientY = e.clientY - rect.top;
+
+        const container = imageContainerRef.current;
+        const sprite = spriteRef.current;
+
+        const localX = (clientX - container.x) / container.scale.x;
+        const localY = (clientY - container.y) / container.scale.y;
+
+        const normX = (localX + sprite.texture.width / 2) / sprite.texture.width;
+        const normY = (localY + sprite.texture.height / 2) / sprite.texture.height;
+
+        if (normX >= 0 && normX <= 1 && normY >= 0 && normY <= 1) {
+          onDropPin(normX, normY);
+        }
+      }
+    }
   };
 
   // 100% 点对点与重置适配
@@ -245,9 +325,10 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      className={`relative w-full h-full overflow-hidden bg-dark-900 ${
-        isPanning ? 'cursor-grabbing' : 'cursor-grab'
-      }`}
+      className={clsx(
+        'relative w-full h-full overflow-hidden bg-dark-900 select-none',
+        isAddingPin ? 'cursor-crosshair' : isPanning ? 'cursor-grabbing' : 'cursor-grab',
+      )}
     >
       {(pixiStatus === 'initializing' || previewStatus === 'loading' || imageStatus === 'loading') && (
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-dark-900/55">

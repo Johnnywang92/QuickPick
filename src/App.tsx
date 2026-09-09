@@ -43,6 +43,13 @@ const SplitCompareView = lazy(() =>
     default: module.SplitCompareView,
   })),
 );
+const BurstKnockoutView = lazy(() =>
+  import('./components/viewport/BurstKnockoutView').then((module) => ({
+    default: module.BurstKnockoutView,
+  })),
+);
+import { RetouchPanel } from './components/triage/RetouchPanel';
+import { createPin } from './utils/annotationUtils';
 const FaceLoupe = lazy(() =>
   import('./components/loupe/FaceLoupe').then((module) => ({ default: module.FaceLoupe })),
 );
@@ -65,6 +72,22 @@ const ReviewCenterModal = lazy(() =>
 const TimelineQuotasModal = lazy(() =>
   import('./components/timeline/TimelineQuotasModal').then((module) => ({
     default: module.TimelineQuotasModal,
+  })),
+);
+import { StorylineBar } from './components/timeline/StorylineBar';
+const FamilyRadarModal = lazy(() =>
+  import('./components/modal/FamilyRadarModal').then((module) => ({
+    default: module.FamilyRadarModal,
+  })),
+);
+const MergeSelectionsModal = lazy(() =>
+  import('./components/modal/MergeSelectionsModal').then((module) => ({
+    default: module.MergeSelectionsModal,
+  })),
+);
+const AlbumPreviewModal = lazy(() =>
+  import('./components/modal/AlbumPreviewModal').then((module) => ({
+    default: module.AlbumPreviewModal,
   })),
 );
 
@@ -97,9 +120,11 @@ export default function App() {
     persistenceWarning,
     clearPersistenceError,
     clearPersistenceWarning,
+    getAnnotation,
+    setAnnotation,
   } = useSelectionStore();
   const { currentPreviewUrl, previewStatus, previewError, retryCurrentPreview } = usePreviewStore();
-  const { isCompareMode } = useCompareStore();
+  const { isCompareMode, isPkMode } = useCompareStore();
   const { isExportModalOpen, setExportModalOpen } = useExportStore();
   const { isFaceLoupeOpen, isAnalyzing, analysisTotal, analysisCompleted, analysisFailed } =
     useInsightStore();
@@ -110,8 +135,15 @@ export default function App() {
   const [isReviewCenterOpen, setIsReviewCenterOpen] = useState<boolean>(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [startupWarning, setStartupWarning] = useState<string | null>(null);
+  const [isRetouchOpen, setIsRetouchOpen] = useState<boolean>(false);
+  const [isAddingPin, setIsAddingPin] = useState<boolean>(false);
+  const [isFamilyRadarOpen, setIsFamilyRadarOpen] = useState<boolean>(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState<boolean>(false);
+  const [isAlbumPreviewOpen, setIsAlbumPreviewOpen] = useState<boolean>(false);
 
-  useKeyboardShortcuts();
+  useKeyboardShortcuts({
+    onToggleRetouch: () => setIsRetouchOpen((prev) => !prev),
+  });
 
   useEffect(() => {
     fetchEngineInfo()
@@ -356,6 +388,15 @@ export default function App() {
         </div>
       </header>
 
+      {/* 故事线常驻胶囊进度条 */}
+      {photos.length > 0 && (
+        <StorylineBar
+          onOpenFamilyRadar={() => setIsFamilyRadarOpen(true)}
+          onOpenMerge={() => setIsMergeModalOpen(true)}
+          onOpenAlbumPreview={() => setIsAlbumPreviewOpen(true)}
+        />
+      )}
+
       {/* 视图过滤条 */}
       {photos.length > 0 && (
         <FilterToolbar onOpenReviewCenter={() => setIsReviewCenterOpen(true)} />
@@ -466,6 +507,10 @@ export default function App() {
               </span>
             </div>
           </div>
+        ) : isPkMode ? (
+          <Suspense fallback={<LoadingPanel />}>
+            <BurstKnockoutView />
+          </Suspense>
         ) : isCompareMode ? (
           <Suspense fallback={<LoadingPanel />}>
             <SplitCompareView />
@@ -480,6 +525,21 @@ export default function App() {
                 previewStatus={previewStatus}
                 previewError={previewError}
                 onRetryPreview={retryCurrentPreview}
+                isAddingPin={isAddingPin}
+                pins={currentPhoto ? getAnnotation(currentPhoto.id).pins : []}
+                onDropPin={(x, y) => {
+                  if (currentPhoto) {
+                    const currentAnn = getAnnotation(currentPhoto.id);
+                    const nextPins = currentAnn.pins || [];
+                    const newPin = createPin(x, y, nextPins.length + 1);
+                    setAnnotation(currentPhoto.id, {
+                      ...currentAnn,
+                      pins: [...nextPins, newPin],
+                    });
+                    setIsAddingPin(false);
+                    setIsRetouchOpen(true);
+                  }
+                }}
               />
             </Suspense>
 
@@ -493,6 +553,17 @@ export default function App() {
               <DefectBadge />
             </div>
 
+            {/* 视口右侧：修图与批注要求抽屉 */}
+            <RetouchPanel
+              isOpen={isRetouchOpen}
+              onClose={() => {
+                setIsRetouchOpen(false);
+                setIsAddingPin(false);
+              }}
+              isAddingPin={isAddingPin}
+              setIsAddingPin={setIsAddingPin}
+            />
+
             {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
             {isFaceLoupeOpen && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
@@ -504,7 +575,10 @@ export default function App() {
 
             {/* 视口下方：选片操作条 (Space 选择 / M 待考虑) */}
             <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20">
-              <TriageControls />
+              <TriageControls
+                onToggleRetouch={() => setIsRetouchOpen((v) => !v)}
+                isRetouchOpen={isRetouchOpen}
+              />
             </div>
           </div>
         )}
@@ -553,6 +627,36 @@ export default function App() {
       {isScenesModalOpen && (
         <Suspense fallback={null}>
           <TimelineQuotasModal />
+        </Suspense>
+      )}
+
+      {/* 至亲人物出场记分板弹窗 */}
+      {isFamilyRadarOpen && (
+        <Suspense fallback={null}>
+          <FamilyRadarModal
+            isOpen={isFamilyRadarOpen}
+            onClose={() => setIsFamilyRadarOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* 离线双人选片协同工程弹窗 */}
+      {isMergeModalOpen && (
+        <Suspense fallback={null}>
+          <MergeSelectionsModal
+            isOpen={isMergeModalOpen}
+            onClose={() => setIsMergeModalOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* 虚拟画册跨页排版模拟弹窗 */}
+      {isAlbumPreviewOpen && (
+        <Suspense fallback={null}>
+          <AlbumPreviewModal
+            isOpen={isAlbumPreviewOpen}
+            onClose={() => setIsAlbumPreviewOpen(false)}
+          />
         </Suspense>
       )}
     </div>

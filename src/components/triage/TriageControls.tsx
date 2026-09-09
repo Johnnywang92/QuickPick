@@ -3,6 +3,7 @@ import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { useInsightStore } from '../../store/insightStore';
 import { useCompareStore } from '../../store/compareStore';
+import { hasRetouchRequirements, parseAnnotation } from '../../utils/annotationUtils';
 import {
   Check,
   CircleSlash2,
@@ -10,15 +11,24 @@ import {
   Users,
   ArrowRightLeft,
   Undo2,
-  MessageSquare,
+  Sparkles,
+  Zap,
 } from 'lucide-react';
 
-export const TriageControls: React.FC = () => {
+interface TriageControlsProps {
+  onToggleRetouch?: () => void;
+  isRetouchOpen?: boolean;
+}
+
+export const TriageControls: React.FC<TriageControlsProps> = ({
+  onToggleRetouch,
+  isRetouchOpen = false,
+}) => {
   const { photos, currentIndex } = useAlbumStore();
   const { selections, toggleSelect, setMaybe, setSkipped, undoStack, undoLast, setNote } =
     useSelectionStore();
   const { isFaceLoupeOpen, toggleFaceLoupe } = useInsightStore();
-  const { toggleCompareMode, isCompareMode } = useCompareStore();
+  const { toggleCompareMode, isCompareMode, startBurstPk } = useCompareStore();
 
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
@@ -142,21 +152,41 @@ export const TriageControls: React.FC = () => {
           <span>对比 (C)</span>
         </button>
 
-        {/* 备注按钮 */}
+        {/* 连拍极速对决 [P] */}
+        {currentPhoto.burstGroupId && (
+          <button
+            onClick={() => startBurstPk(currentPhoto.burstGroupId)}
+            title="两两淘汰对决，快速选出连拍最佳 [快捷键 P]"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition-all cursor-pointer select-none"
+          >
+            <Zap className="w-3.5 h-3.5 fill-amber-400/30" />
+            <span>连拍 PK (P)</span>
+          </button>
+        )}
+
+        {/* 修图与批注要求 [R] */}
         <button
-          onClick={() => {
-            setNoteText(currentSelection.note || '');
-            setIsNoteOpen(!isNoteOpen);
-          }}
-          title={currentSelection.note ? `备注: ${currentSelection.note}` : '为照片添加选片备注'}
-          className={`flex items-center space-x-1 px-2 py-1.5 rounded-xl text-xs transition-colors cursor-pointer ${
-            currentSelection.note
-              ? 'text-amber-300 bg-amber-500/15'
-              : 'text-slate-400 hover:bg-dark-700 hover:text-slate-200'
+          onClick={onToggleRetouch}
+          title="为这张照片标记具体修图需求或图上标注 [快捷键 R]"
+          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer select-none ${
+            isRetouchOpen
+              ? 'bg-indigo-600 text-white shadow-md'
+              : hasRetouchRequirements(currentSelection.note)
+              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+              : 'hover:bg-dark-700 text-slate-300 hover:text-indigo-300'
           }`}
         >
-          <MessageSquare className="w-3.5 h-3.5" />
-          {currentSelection.note && <span className="text-[10px] max-w-[60px] truncate">{currentSelection.note}</span>}
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>
+            修图要求 (R)
+            {hasRetouchRequirements(currentSelection.note) && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-indigo-500 text-white text-[10px] font-bold font-mono">
+                {parseAnnotation(currentSelection.note).pins?.length
+                  ? `${parseAnnotation(currentSelection.note).pins?.length}点`
+                  : '已填'}
+              </span>
+            )}
+          </span>
         </button>
 
         {/* 撤销按钮 */}

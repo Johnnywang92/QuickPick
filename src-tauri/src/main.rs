@@ -48,6 +48,8 @@ struct PhotoAnalysisResult {
     faces: Vec<FaceInfo>,
     preview_width: Option<u32>,
     preview_height: Option<u32>,
+    phash: Option<String>,
+    sharpness: Option<f32>,
 }
 
 fn analyze_photo_details_blocking(
@@ -81,12 +83,16 @@ fn analyze_photo_details_blocking(
             faces: Vec::new(),
             preview_width: None,
             preview_height: None,
+            phash: None,
+            sharpness: None,
         };
     };
-    let (faces, preview_width, preview_height) = image::load_from_memory(&bytes)
+    let (faces, preview_width, preview_height, phash) = image::load_from_memory(&bytes)
         .ok()
         .map(|image| {
             let dimensions = (Some(image.width()), Some(image.height()));
+            let hash = quickpick_lib::rules::phash::compute_phash(&image);
+            let phash_hex = quickpick_lib::rules::phash::hash_to_hex(hash);
             let detected = quickpick_lib::rules::face::detect_faces_heuristic(&image);
             let faces = quickpick_lib::rules::face::sort_and_truncate_faces(
                 detected,
@@ -95,9 +101,9 @@ fn analyze_photo_details_blocking(
                 6,
             )
             .0;
-            (faces, dimensions.0, dimensions.1)
+            (faces, dimensions.0, dimensions.1, Some(phash_hex))
         })
-        .unwrap_or_else(|| (Vec::new(), None, None));
+        .unwrap_or_else(|| (Vec::new(), None, None, None));
     let Ok(metrics) = quickpick_lib::rules::analyze_image_bytes(&bytes) else {
         return PhotoAnalysisResult {
             exif,
@@ -106,6 +112,8 @@ fn analyze_photo_details_blocking(
             faces,
             preview_width,
             preview_height,
+            phash,
+            sharpness: None,
         };
     };
     let (status, defect_tags) = quickpick_lib::rules::evaluate_photo_analysis_with_scene(
@@ -127,6 +135,8 @@ fn analyze_photo_details_blocking(
         faces,
         preview_width,
         preview_height,
+        phash,
+        sharpness: Some(metrics.sharpness),
     }
 }
 

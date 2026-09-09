@@ -13,7 +13,7 @@ const BACKUP_FILE: &str = "quickpick.backup.sqlite3";
 const SESSION_FILE: &str = "quickpick.session";
 const RECOVERY_DIR: &str = "recovery";
 const BACKUP_INTERVAL_SECS: u64 = 10;
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 const FINGERPRINT_CHUNK_SIZE: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -44,6 +44,7 @@ pub struct ProjectState {
     pub target_count: Option<u32>,
     pub active_filter: String,
     pub selected_scene_id: Option<String>,
+    pub active_preset_id: String,
     pub scenes_json: String,
     pub photo_id_remaps: HashMap<String, String>,
 }
@@ -59,6 +60,7 @@ pub struct ProjectViewStateInput {
     pub target_count: Option<u32>,
     pub active_filter: String,
     pub selected_scene_id: Option<String>,
+    pub active_preset_id: String,
     pub scenes_json: String,
 }
 
@@ -334,6 +336,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                    target_count INTEGER,
                    active_filter TEXT NOT NULL DEFAULT 'all',
                    selected_scene_id TEXT,
+                   active_preset_id TEXT NOT NULL DEFAULT 'general',
                    scenes_json TEXT NOT NULL DEFAULT '[]',
                    created_at TEXT NOT NULL,
                    updated_at TEXT NOT NULL
@@ -392,7 +395,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                    PRIMARY KEY (job_id, item_index),
                    FOREIGN KEY (job_id) REFERENCES export_jobs(id) ON DELETE CASCADE
                  );
-                 PRAGMA user_version = 4;
+                 PRAGMA user_version = 5;
                  COMMIT;",
             )
             .map_err(|error| format!("初始化项目数据库失败: {error}"))?;
@@ -459,6 +462,17 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                  COMMIT;",
             )
             .map_err(|error| format!("升级项目数据库到版本 4 失败: {error}"))?;
+    }
+
+    if (1..=4).contains(&current_version) {
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 ALTER TABLE projects ADD COLUMN active_preset_id TEXT NOT NULL DEFAULT 'general';
+                 PRAGMA user_version = 5;
+                 COMMIT;",
+            )
+            .map_err(|error| format!("升级项目数据库到版本 5 失败: {error}"))?;
     }
 
     Ok(())
@@ -685,6 +699,14 @@ fn validate_filter(filter: &str) -> Result<(), String> {
     match filter {
         "all" | "unreviewed" | "selected" | "maybe" | "needs_check" | "burst" => Ok(()),
         _ => Err(format!("无效的照片筛选状态: {filter}")),
+    }
+}
+
+fn validate_active_preset(preset: &str) -> Result<(), String> {
+    match preset {
+        "general" | "concert" | "cosplay" | "conference" | "wedding" | "family"
+        | "travel" => Ok(()),
+        _ => Err(format!("无效的故事线题材预设: {preset}")),
     }
 }
 
@@ -1011,9 +1033,17 @@ pub fn open_project(
 }
 
 fn load_project_state(connection: &Connection, project_id: &str) -> Result<ProjectState, String> {
-    let (current_photo_id, target_count, active_filter, selected_scene_id, scenes_json) = connection
+    let (
+        current_photo_id,
+        target_count,
+        active_filter,
+        selected_scene_id,
+        active_preset_id,
+        scenes_json,
+    ) = connection
         .query_row(
-            "SELECT current_photo_id, target_count, active_filter, selected_scene_id, scenes_json
+            "SELECT current_photo_id, target_count, active_filter, selected_scene_id,
+                    active_preset_id, scenes_json
              FROM projects WHERE id = ?1",
             [project_id],
             |row| {
@@ -1023,6 +1053,7 @@ fn load_project_state(connection: &Connection, project_id: &str) -> Result<Proje
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             },
         )
@@ -1074,6 +1105,7 @@ fn load_project_state(connection: &Connection, project_id: &str) -> Result<Proje
         target_count,
         active_filter,
         selected_scene_id,
+        active_preset_id,
         scenes_json,
         photo_id_remaps: HashMap::new(),
     })
@@ -1085,6 +1117,7 @@ pub fn save_project_view_state(
     state: &ProjectViewStateInput,
 ) -> Result<PersistenceOutcome, String> {
     validate_filter(&state.active_filter)?;
+    validate_active_preset(&state.active_preset_id)?;
     validate_scenes_json(&state.scenes_json)?;
     let connection = open_connection(app_data_dir)?;
     let changed = connection
@@ -1094,8 +1127,9 @@ pub fn save_project_view_state(
                target_count = ?3,
                active_filter = ?4,
                selected_scene_id = ?5,
-               scenes_json = ?6,
-               updated_at = ?7
+               active_preset_id = ?6,
+               scenes_json = ?7,
+               updated_at = ?8
              WHERE id = ?1",
             params![
                 project_id,
@@ -1103,6 +1137,7 @@ pub fn save_project_view_state(
                 state.target_count,
                 state.active_filter,
                 state.selected_scene_id,
+                state.active_preset_id,
                 state.scenes_json,
                 now()
             ],
@@ -1471,6 +1506,7 @@ mod tests {
                 target_count: Some(80),
                 active_filter: "maybe".to_string(),
                 selected_scene_id: Some("scene-1".to_string()),
+                active_preset_id: "wedding".to_string(),
                 scenes_json: r#"[{"id":"scene-1","name":"室内"}]"#.to_string(),
             },
         )
@@ -1490,6 +1526,7 @@ mod tests {
         assert_eq!(reopened.target_count, Some(80));
         assert_eq!(reopened.active_filter, "maybe");
         assert_eq!(reopened.selected_scene_id.as_deref(), Some("scene-1"));
+        assert_eq!(reopened.active_preset_id, "wedding");
         assert_eq!(reopened.scenes_json, r#"[{"id":"scene-1","name":"室内"}]"#);
         let recent = list_recent_projects(&data).unwrap();
         assert_eq!(recent.len(), 1);
@@ -1646,6 +1683,7 @@ mod tests {
     fn invalid_selection_state_is_rejected() {
         assert!(validate_selection_state("picked-by-ai").is_err());
         assert!(validate_filter("five-stars").is_err());
+        assert!(validate_active_preset("sports").is_err());
         assert!(validate_scenes_json("{}").is_err());
     }
 
@@ -1656,7 +1694,10 @@ mod tests {
         let connection = Connection::open(database_path(&data)).unwrap();
         connection
             .execute_batch(
-                "CREATE TABLE photos (
+                "CREATE TABLE projects (
+                   id TEXT PRIMARY KEY
+                 );
+                 CREATE TABLE photos (
                    project_id TEXT NOT NULL,
                    photo_id TEXT NOT NULL,
                    relative_path TEXT NOT NULL,
@@ -1675,7 +1716,7 @@ mod tests {
         let version: i64 = migrated
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let (format, fingerprint, missing): (String, String, bool) = migrated
             .query_row(
                 "SELECT format, content_fingerprint, missing

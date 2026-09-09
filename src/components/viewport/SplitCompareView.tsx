@@ -20,7 +20,9 @@ import {
   Lock,
   Unlock,
   Maximize2,
+  Sparkles,
 } from 'lucide-react';
+import { computeVisualSimilarity } from '../../utils/phashUtils';
 
 export const SplitCompareView: React.FC = () => {
   const { photos, currentIndex } = useAlbumStore();
@@ -86,6 +88,11 @@ export const SplitCompareView: React.FC = () => {
 
   const leftInsight = leftPhoto ? getInsight(leftPhoto.id) : null;
   const rightInsight = rightPhoto ? getInsight(rightPhoto.id) : null;
+
+  const visualSimilarity = React.useMemo(() => {
+    if (!leftPhoto?.phash || !rightPhoto?.phash) return null;
+    return computeVisualSimilarity(leftPhoto.phash, rightPhoto.phash);
+  }, [leftPhoto?.phash, rightPhoto?.phash]);
 
   const burstPhotos = React.useMemo(() => {
     if (!leftBurstId) return [];
@@ -641,7 +648,13 @@ export const SplitCompareView: React.FC = () => {
                 ? '不选'
                 : '未决定'}
             </span>
-            {leftInsight?.reasons && leftInsight.reasons.length > 0 && (
+            {leftInsight?.isBestPick && (
+              <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-500/40 text-[10px] text-emerald-300 font-semibold shadow-sm">
+                <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                <span>★ 组内推荐最佳</span>
+              </span>
+            )}
+            {leftInsight?.reasons && leftInsight.reasons.length > 0 && !leftInsight.isBestPick && (
               <span className="px-2 py-0.5 rounded-full bg-dark-800/80 border border-dark-700 text-[10px] text-slate-300">
                 {leftInsight.reasons[0]}
               </span>
@@ -704,6 +717,14 @@ export const SplitCompareView: React.FC = () => {
               </span>
             )}
             <span className="text-slate-500">{rightZoom}%</span>
+            {visualSimilarity !== null && (
+              <span
+                className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono"
+                title="基于 64-bit DCT 感知哈希 (pHash) 评估的画面视觉相似度"
+              >
+                相似度 {visualSimilarity}%
+              </span>
+            )}
 
             <div className="flex items-center space-x-0.5 pl-1.5 border-l border-dark-700">
               <button
@@ -747,7 +768,13 @@ export const SplitCompareView: React.FC = () => {
                   ? '不选'
                   : '未决定'}
               </span>
-              {rightInsight?.reasons && rightInsight.reasons.length > 0 && (
+              {rightInsight?.isBestPick && (
+                <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-500/40 text-[10px] text-emerald-300 font-semibold shadow-sm">
+                  <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                  <span>★ 组内推荐最佳</span>
+                </span>
+              )}
+              {rightInsight?.reasons && rightInsight.reasons.length > 0 && !rightInsight.isBestPick && (
                 <span className="px-2 py-0.5 rounded-full bg-dark-800/80 border border-dark-700 text-[10px] text-slate-300">
                   {rightInsight.reasons[0]}
                 </span>

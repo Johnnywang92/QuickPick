@@ -5,7 +5,12 @@ import {
   PhotoInsight,
   SceneChapter,
   UserSelection,
+  WorkflowScene,
 } from '../types/photo';
+import {
+  getStorylinePreset,
+  distributeTargetGoalAcrossChapters,
+} from '../utils/storylinePresets';
 import {
   persistProjectViewState,
   ProjectViewStateInput,
@@ -16,6 +21,7 @@ import {
 import { useSelectionStore } from './selectionStore';
 import { useInsightStore } from './insightStore';
 import { usePreviewStore } from './previewStore';
+import { arePhotosBurstConsecutive } from '../utils/phashUtils';
 
 export const SCENE_COLORS = [
   '#3b82f6', // blue
@@ -39,13 +45,6 @@ export const DEFAULT_SCENE_NAMES = [
   '花絮留念',
 ];
 
-function filenameSequence(filename: string): number | null {
-  const digits = filename.match(/\d+/g)?.join('');
-  if (!digits) return null;
-  const value = Number.parseInt(digits, 10);
-  return Number.isSafeInteger(value) ? value : null;
-}
-
 export function withUpdatedBurstGroups(photos: LocalPhoto[]): LocalPhoto[] {
   const next: LocalPhoto[] = photos.map((photo) => ({ ...photo, burstGroupId: undefined }));
   let groupStart = 0;
@@ -61,18 +60,7 @@ export function withUpdatedBurstGroups(photos: LocalPhoto[]): LocalPhoto[] {
   for (let index = 1; index < next.length; index += 1) {
     const previous = next[index - 1];
     const current = next[index];
-    const previousTime = parseTimestamp(previous);
-    const currentTime = parseTimestamp(current);
-    const previousSequence = filenameSequence(previous.filename);
-    const currentSequence = filenameSequence(current.filename);
-    const sequenceGap =
-      previousSequence !== null && currentSequence !== null
-        ? Math.abs(currentSequence - previousSequence)
-        : null;
-    const consecutive =
-      previousTime !== null && currentTime !== null
-        ? Math.abs(currentTime - previousTime) <= 2 && (sequenceGap === null || sequenceGap <= 5)
-        : sequenceGap === 1;
+    const consecutive = arePhotosBurstConsecutive(current, previous);
 
     if (!consecutive) {
       commitGroup(index);
@@ -147,6 +135,7 @@ const parseTimestamp = (photo: LocalPhoto): number | null => {
 export const clusterPhotosIntoScenes = (
   photos: LocalPhoto[],
   minGapMinutes = 10,
+  presetId: WorkflowScene = 'general',
 ): SceneChapter[] => {
   if (photos.length === 0) return [];
   const minGapSeconds = Math.max(60, minGapMinutes * 60);
@@ -169,16 +158,19 @@ export const clusterPhotosIntoScenes = (
 
   const scenes: SceneChapter[] = [];
   const numSplits = splitIndices.length;
+  const preset = getStorylinePreset(presetId);
 
   for (let idx = 0; idx < numSplits; idx++) {
     const startIdx = splitIndices[idx];
     const endIdx = idx + 1 < numSplits ? splitIndices[idx + 1] - 1 : photos.length - 1;
     const count = endIdx - startIdx + 1;
     const color = SCENE_COLORS[idx % SCENE_COLORS.length];
-    const name = idx < DEFAULT_SCENE_NAMES.length ? DEFAULT_SCENE_NAMES[idx] : `场景 ${idx + 1}`;
+    const presetChapter = preset.chapters[idx];
+    const name = presetChapter ? presetChapter.name : `环节 ${idx + 1}`;
+    const initialQuota = presetChapter ? presetChapter.weight : undefined;
 
     scenes.push({
-      id: `scene-${idx + 1}-${Date.now()}`,
+      id: `scene-${idx + 1}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name,
       startIndex: startIdx,
       endIndex: endIdx,
@@ -186,6 +178,8 @@ export const clusterPhotosIntoScenes = (
       endPath: photos[endIdx].path,
       photoCount: count,
       color,
+      targetGoal: initialQuota,
+      targetQuota: initialQuota,
     });
   }
 
@@ -200,6 +194,7 @@ interface AlbumStore {
   scanError: string | null;
   failedFolderPath: string | null;
   scenes: SceneChapter[];
+  activePresetId: WorkflowScene;
   selectedSceneId: string | null;
   targetGoal: number | null; // 用户自设选片目标 (如 100 张)
   activeFilter: FilterCategory;
@@ -214,10 +209,15 @@ interface AlbumStore {
   selectPhotoByFilename: (filename: string) => void;
   setActiveFilter: (filter: FilterCategory) => void;
   setSelectedSceneId: (id: string | null) => void;
+  setActivePresetId: (presetId: WorkflowScene) => void;
+  applyScenePreset: (presetId: WorkflowScene, overwriteNames?: boolean) => void;
+  splitSceneAtPhoto: (photoIndex: number) => void;
+  mergeScenes: (sourceSceneId: string, targetSceneId: string) => void;
+  distributeTargetGoal: (totalGoal: number) => void;
   setTargetGoal: (goal: number | null) => void;
   setScenesModalOpen: (open: boolean) => void;
   updateScene: (sceneId: string, patch: Partial<SceneChapter>) => void;
-  reclusterScenes: (minGapMinutes?: number) => void;
+  reclusterScenes: (minGapMinutes?: number, presetId?: WorkflowScene) => void;
   resetFilter: () => void;
   jumpToFirstMatching: () => void;
   jumpToLastMatching: () => void;
@@ -242,6 +242,7 @@ function projectViewState(state: AlbumStore): ProjectViewStateInput {
     target_count: state.targetGoal ?? undefined,
     active_filter: state.activeFilter,
     selected_scene_id: state.selectedSceneId ?? undefined,
+    active_preset_id: state.activePresetId,
     scenes_json: JSON.stringify(state.scenes),
   };
 }
@@ -320,6 +321,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   scanError: null,
   failedFolderPath: null,
   scenes: [],
+  activePresetId: 'general',
   selectedSceneId: null,
   targetGoal: null,
   activeFilter: 'all',
@@ -337,6 +339,10 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
       photos: [],
       currentIndex: 0,
       scenes: [],
+      activePresetId: 'general',
+      selectedSceneId: null,
+      targetGoal: null,
+      activeFilter: 'all',
     });
     try {
       const items: PhotoItem[] = await tauriScanFolder(path);
@@ -395,6 +401,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         scenes,
         activeFilter,
         selectedSceneId,
+        activePresetId: getStorylinePreset(project.active_preset_id).id,
         targetGoal: project.target_count ?? null,
         isLoading: false,
         scanError: null,
@@ -486,6 +493,162 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
     }
   },
 
+  setActivePresetId: (presetId: WorkflowScene) => {
+    set({ activePresetId: presetId });
+    scheduleViewState(get());
+  },
+
+  applyScenePreset: (presetId: WorkflowScene, overwriteNames = true) => {
+    const { scenes, photos, targetGoal } = get();
+    const preset = getStorylinePreset(presetId);
+
+    if (scenes.length === 0) {
+      const newScenes = clusterPhotosIntoScenes(photos, preset.defaultGapMinutes, presetId);
+      set({ activePresetId: presetId, scenes: newScenes });
+      scheduleViewState(get());
+      return;
+    }
+
+    const updatedScenes = scenes.map((scene, idx) => {
+      const presetChapter = preset.chapters[idx];
+      const newName = overwriteNames && presetChapter ? presetChapter.name : scene.name;
+      return {
+        ...scene,
+        name: newName,
+        targetGoal: presetChapter ? presetChapter.weight : scene.targetGoal,
+        targetQuota: presetChapter ? presetChapter.weight : scene.targetQuota,
+      };
+    });
+
+    set({ activePresetId: presetId, scenes: updatedScenes });
+    if (targetGoal && targetGoal > 0) {
+      get().distributeTargetGoal(targetGoal);
+    } else {
+      scheduleViewState(get());
+    }
+  },
+
+  splitSceneAtPhoto: (photoIndex: number) => {
+    const { scenes, photos, selectedSceneId } = get();
+    if (photoIndex < 0 || photoIndex >= photos.length) return;
+
+    const sceneIdx = scenes.findIndex(
+      (s) => s.startIndex <= photoIndex && photoIndex <= s.endIndex,
+    );
+    if (sceneIdx === -1) return;
+
+    const targetScene = scenes[sceneIdx];
+    if (photoIndex === targetScene.startIndex) return;
+
+    const part1Count = photoIndex - targetScene.startIndex;
+    const part2Count = targetScene.endIndex - photoIndex + 1;
+
+    const sceneGoal = targetScene.targetGoal ?? targetScene.targetQuota;
+    const firstGoal =
+      sceneGoal === undefined
+        ? undefined
+        : Math.round((sceneGoal * part1Count) / (part1Count + part2Count));
+    const secondGoal = sceneGoal === undefined ? undefined : sceneGoal - (firstGoal || 0);
+
+    const scenePart1: SceneChapter = {
+      ...targetScene,
+      id: `scene-${Date.now()}-a`,
+      name: `${targetScene.name} (前段)`,
+      endIndex: photoIndex - 1,
+      endPath: photos[photoIndex - 1].path,
+      photoCount: part1Count,
+      targetGoal: firstGoal,
+      targetQuota: firstGoal,
+    };
+
+    const scenePart2: SceneChapter = {
+      id: `scene-${Date.now()}-b`,
+      name: `${targetScene.name} (后段)`,
+      startIndex: photoIndex,
+      endIndex: targetScene.endIndex,
+      startPath: photos[photoIndex].path,
+      endPath: targetScene.endPath,
+      photoCount: part2Count,
+      color: SCENE_COLORS[(sceneIdx + 1) % SCENE_COLORS.length],
+      targetGoal: secondGoal,
+      targetQuota: secondGoal,
+    };
+
+    const newScenes = [
+      ...scenes.slice(0, sceneIdx),
+      scenePart1,
+      scenePart2,
+      ...scenes.slice(sceneIdx + 1),
+    ];
+
+    set({
+      scenes: newScenes,
+      selectedSceneId: selectedSceneId === targetScene.id ? scenePart2.id : selectedSceneId,
+    });
+    scheduleViewState(get());
+  },
+
+  mergeScenes: (sourceSceneId: string, targetSceneId: string) => {
+    const { scenes, photos, selectedSceneId } = get();
+    const idx1 = scenes.findIndex((s) => s.id === sourceSceneId);
+    const idx2 = scenes.findIndex((s) => s.id === targetSceneId);
+    if (idx1 === -1 || idx2 === -1 || idx1 === idx2) return;
+
+    const s1 = scenes[idx1];
+    const s2 = scenes[idx2];
+
+    const newStartIndex = Math.min(s1.startIndex, s2.startIndex);
+    const newEndIndex = Math.max(s1.endIndex, s2.endIndex);
+    const mergedGoal = (s1.targetGoal || 0) + (s2.targetGoal || 0) || undefined;
+
+    const mergedScene: SceneChapter = {
+      id: `scene-merged-${Date.now()}`,
+      name: `${s1.name} & ${s2.name}`,
+      startIndex: newStartIndex,
+      endIndex: newEndIndex,
+      startPath: photos[newStartIndex]?.path || s1.startPath,
+      endPath: photos[newEndIndex]?.path || s2.endPath,
+      photoCount: newEndIndex - newStartIndex + 1,
+      color: s1.color,
+      targetGoal: mergedGoal,
+      targetQuota: mergedGoal,
+    };
+
+    const remainingScenes = scenes.filter((s) => s.id !== sourceSceneId && s.id !== targetSceneId);
+    const newScenes = [...remainingScenes, mergedScene].sort(
+      (a, b) => a.startIndex - b.startIndex,
+    );
+
+    const nextSelectedId =
+      selectedSceneId === sourceSceneId || selectedSceneId === targetSceneId
+        ? mergedScene.id
+        : selectedSceneId;
+
+    set({ scenes: newScenes, selectedSceneId: nextSelectedId });
+    scheduleViewState(get());
+  },
+
+  distributeTargetGoal: (totalGoal: number) => {
+    const { scenes } = get();
+    if (scenes.length === 0 || totalGoal <= 0) {
+      set({ targetGoal: totalGoal > 0 ? totalGoal : null });
+      scheduleViewState(get());
+      return;
+    }
+
+    const weights = scenes.map((s) => s.photoCount);
+    const distributed = distributeTargetGoalAcrossChapters(scenes.length, totalGoal, weights);
+
+    const updatedScenes = scenes.map((scene, i) => ({
+      ...scene,
+      targetGoal: distributed[i],
+      targetQuota: distributed[i],
+    }));
+
+    set({ targetGoal: totalGoal, scenes: updatedScenes });
+    scheduleViewState(get());
+  },
+
   setTargetGoal: (goal: number | null) => {
     set({ targetGoal: goal });
     scheduleViewState(get());
@@ -503,10 +666,11 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
     scheduleViewState(get());
   },
 
-  reclusterScenes: (minGapMinutes = 10) => {
-    const { photos } = get();
-    const newScenes = clusterPhotosIntoScenes(photos, minGapMinutes);
-    set({ scenes: newScenes });
+  reclusterScenes: (minGapMinutes = 10, presetId?: WorkflowScene) => {
+    const { photos, activePresetId } = get();
+    const pid = presetId || activePresetId;
+    const newScenes = clusterPhotosIntoScenes(photos, minGapMinutes, pid);
+    set({ scenes: newScenes, activePresetId: pid });
     scheduleViewState(get());
   },
 
