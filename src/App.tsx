@@ -1,104 +1,182 @@
-import { useEffect, useMemo, useState } from 'react';
-import { usePhotoStore, getFilteredProgress } from './store/photoStore';
-import { PixiCanvas } from './components/viewport/PixiCanvas';
-import { SplitCompareView } from './components/viewport/SplitCompareView';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { useAlbumStore } from './store/albumStore';
+import { useSelectionStore } from './store/selectionStore';
+import { usePreviewStore } from './store/previewStore';
+import { useCompareStore } from './store/compareStore';
+import { useExportStore } from './store/exportStore';
+import { useInsightStore } from './store/insightStore';
+import {
+  fetchEngineInfo,
+  fetchStartupHealth,
+  listRecentProjects,
+  RecentProject,
+  selectFolder,
+} from './services/tauriBridge';
 import { Filmstrip } from './components/filmstrip/Filmstrip';
 import { TriageControls } from './components/triage/TriageControls';
 import { FilterToolbar } from './components/triage/FilterToolbar';
 import { DefectBadge } from './components/triage/DefectBadge';
-import { FaceLoupe } from './components/loupe/FaceLoupe';
 import { PhotoInfoHud } from './components/viewport/PhotoInfoHud';
-import { ExportModal } from './components/export/ExportModal';
-import { AboutModal } from './components/modal/AboutModal';
-import { TimelineQuotasModal } from './components/timeline/TimelineQuotasModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { selectFolder } from './services/tauriBridge';
-import { FolderOpen, FolderOutput, Cpu, Sparkles, Image as ImageIcon, ArrowRightLeft, Users, Zap, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Copy, ShieldAlert, Undo2, Layers } from 'lucide-react';
+import {
+  FolderOpen,
+  FolderOutput,
+  Sparkles,
+  Image as ImageIcon,
+  Undo2,
+  CheckCircle2,
+  HelpCircle,
+  Eye,
+  Info,
+  Keyboard,
+  AlertCircle,
+  Loader2,
+  X,
+  History,
+} from 'lucide-react';
+
+const PixiCanvas = lazy(() =>
+  import('./components/viewport/PixiCanvas').then((module) => ({ default: module.PixiCanvas })),
+);
+const SplitCompareView = lazy(() =>
+  import('./components/viewport/SplitCompareView').then((module) => ({
+    default: module.SplitCompareView,
+  })),
+);
+const FaceLoupe = lazy(() =>
+  import('./components/loupe/FaceLoupe').then((module) => ({ default: module.FaceLoupe })),
+);
+const ExportModal = lazy(() =>
+  import('./components/export/ExportModal').then((module) => ({ default: module.ExportModal })),
+);
+const AboutModal = lazy(() =>
+  import('./components/modal/AboutModal').then((module) => ({ default: module.AboutModal })),
+);
+const ShortcutsModal = lazy(() =>
+  import('./components/modal/ShortcutsModal').then((module) => ({
+    default: module.ShortcutsModal,
+  })),
+);
+const ReviewCenterModal = lazy(() =>
+  import('./components/modal/ReviewCenterModal').then((module) => ({
+    default: module.ReviewCenterModal,
+  })),
+);
+const TimelineQuotasModal = lazy(() =>
+  import('./components/timeline/TimelineQuotasModal').then((module) => ({
+    default: module.TimelineQuotasModal,
+  })),
+);
+
+const LoadingPanel = () => (
+  <div className="flex h-full w-full items-center justify-center bg-dark-950 text-xs text-slate-400">
+    <Loader2 className="mr-2 h-4 w-4 animate-spin text-brand-400" />
+    正在加载视图…
+  </div>
+);
 
 export default function App() {
   const {
     folderPath,
     photos,
     currentIndex,
-    currentPreviewUrl,
-    previewStatus,
-    previewError,
-    engineInfo,
     isLoading,
-    isCompareMode,
-    writeStatus,
-    writeError,
-    xmpConflict,
+    scanError,
+    failedFolderPath,
+    isScenesModalOpen,
+    openFolder,
+    retryOpenFolder,
+  } = useAlbumStore();
+  const {
+    getStats,
     undoStack,
     isUndoing,
-    clearWriteError,
-    dismissXmpConflict,
-    resolveXmpConflict,
     undoLast,
-    toggleCompareMode,
-    isFaceLoupeOpen,
-    toggleFaceLoupe,
-    isProxyAccelerated,
-    isGeneratingCache,
-    generateCurrentFolderCache,
-    initEngine,
-    openFolder,
-    retryCurrentPreview,
-    setExportModalOpen,
-    activeFilter,
-    selectedCamera,
-    selectedLens,
-    resetFilter,
-    chapters,
-    selectedChapterId,
-    setChaptersModalOpen,
-    activeWorkflowScene,
-  } = usePhotoStore();
+    persistenceStatus,
+    persistenceError,
+    persistenceWarning,
+    clearPersistenceError,
+    clearPersistenceWarning,
+  } = useSelectionStore();
+  const { currentPreviewUrl, previewStatus, previewError, retryCurrentPreview } = usePreviewStore();
+  const { isCompareMode } = useCompareStore();
+  const { isExportModalOpen, setExportModalOpen } = useExportStore();
+  const { isFaceLoupeOpen, isAnalyzing, analysisTotal, analysisCompleted, analysisFailed } =
+    useInsightStore();
+
+  const [engineVersion, setEngineVersion] = useState<string>('');
+  const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
+  const [isReviewCenterOpen, setIsReviewCenterOpen] = useState<boolean>(false);
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [startupWarning, setStartupWarning] = useState<string | null>(null);
 
   useKeyboardShortcuts();
 
-  const filterProgress = useMemo(() => {
-    return getFilteredProgress(
-      photos,
-      currentIndex,
-      activeFilter,
-      selectedCamera,
-      selectedLens,
-      false,
-      activeWorkflowScene,
-      selectedChapterId,
-      chapters,
-    );
-  }, [
-    photos,
-    currentIndex,
-    activeFilter,
-    selectedCamera,
-    selectedLens,
-    activeWorkflowScene,
-    selectedChapterId,
-    chapters,
-  ]);
-
-  const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
-
   useEffect(() => {
-    initEngine();
-  }, [initEngine]);
+    fetchEngineInfo()
+      .then((info) => setEngineVersion(info.libraw_version))
+      .catch(() => setEngineVersion('Web Mock'));
+    listRecentProjects().then(setRecentProjects).catch(() => setRecentProjects([]));
+    fetchStartupHealth()
+      .then((health) => {
+        if (health.database_error) {
+          setStartupWarning(`项目数据库检查失败：${health.database_error}`);
+        } else if (health.export_recovery_error) {
+          setStartupWarning(`未完成导出任务恢复失败：${health.export_recovery_error}`);
+        } else if (health.database_recovered) {
+          setStartupWarning('检测到项目数据库损坏，已从安全备份恢复。请核对最近的选片结果。');
+        } else if (health.recovered_export_jobs > 0) {
+          setStartupWarning(
+            `检测到 ${health.recovered_export_jobs} 个异常中断的导出任务，已安全清理 ${health.cleaned_export_temp_files} 个临时文件。`,
+          );
+        } else if (health.previous_session_unclean) {
+          setStartupWarning('检测到上次未正常退出，项目数据库已完成完整性检查。');
+        }
+      })
+      .catch((error) => setStartupWarning(`启动安全检查失败：${String(error)}`));
+  }, []);
 
   const handleSelectFolder = async () => {
     const selected = await selectFolder();
     if (selected) {
       await openFolder(selected);
+      listRecentProjects().then(setRecentProjects).catch(() => undefined);
     }
   };
 
+  const handleContinueProject = async (project: RecentProject) => {
+    if (project.source_available) {
+      await openFolder(project.source_root);
+    } else {
+      const relocatedFolder = await selectFolder();
+      if (!relocatedFolder) return;
+      await openFolder(relocatedFolder, project.project_id);
+    }
+    listRecentProjects().then(setRecentProjects).catch(() => undefined);
+  };
+
   const currentPhoto = photos[currentIndex];
+  const stats = getStats(photos.length);
+
+  const albumName = folderPath ? folderPath.split('/').filter(Boolean).pop() || folderPath : '';
+
+  const formatRecentTime = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '最近使用';
+    return new Intl.DateTimeFormat('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  };
 
   return (
     <div className="flex flex-col h-screen w-screen bg-dark-900 text-slate-100 select-none overflow-hidden font-sans">
       {/* 顶部工具与状态栏 */}
-      <header className="h-12 border-b border-dark-700 bg-dark-800/90 backdrop-blur flex items-center justify-between px-4 z-30 shrink-0">
+      <header className="h-12 border-b border-dark-700 bg-dark-800/95 backdrop-blur flex items-center justify-between px-4 z-30 shrink-0">
+        {/* 左侧：Logo 与相册名称 */}
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2.5 font-semibold tracking-wide">
             <img src="/icon.png" alt="QuickPick Logo" className="w-6 h-6 rounded-md shadow-sm object-cover" />
@@ -111,179 +189,141 @@ export default function App() {
 
           {folderPath ? (
             <div className="flex items-center space-x-2 text-xs text-slate-300">
-              <span className="text-slate-500 font-mono">目录:</span>
-              <span className="font-mono bg-dark-700 px-2 py-0.5 rounded text-slate-200 max-w-[280px] truncate" title={folderPath}>
-                {folderPath}
+              <span className="text-slate-500 font-medium">相册:</span>
+              <span
+                className="font-semibold bg-dark-700/80 px-2 py-0.5 rounded text-slate-100 max-w-[200px] truncate"
+                title={folderPath}
+              >
+                {albumName}
               </span>
-              {filterProgress.isFiltered ? (
-                <div className="flex items-center space-x-1.5 font-mono text-[11px]">
-                  <span
-                    className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded flex items-center space-x-1"
-                    title="当前筛选进度 (快捷键 Home 跳转首张，End 跳转末张)"
-                  >
-                    <span className="text-[10px] text-amber-400/80 font-sans">筛选:</span>
-                    <span className="font-semibold">{filterProgress.filteredIndex >= 0 ? filterProgress.filteredIndex + 1 : '-'}</span>
-                    <span className="text-amber-400/60">/</span>
-                    <span>{filterProgress.filteredTotal}</span>
-                  </span>
-                  <span className="bg-dark-700/80 text-slate-400 border border-dark-600 px-1.5 py-0.5 rounded text-[10px]">
-                    全局 #{currentIndex + 1}/{photos.length}
-                  </span>
-                  <button
-                    onClick={resetFilter}
-                    className="p-0.5 hover:bg-dark-700 text-slate-400 hover:text-amber-300 rounded transition-colors cursor-pointer"
-                    title="清除筛选回到全部照片 (快捷键 Esc)"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ) : (
-                <span className="bg-brand-600/20 text-brand-400 border border-brand-500/30 px-2 py-0.5 rounded font-mono text-[11px]">
-                  {currentIndex + 1} / {photos.length}
-                </span>
-              )}
             </div>
           ) : (
-            <span className="text-xs text-slate-500">未载入相册</span>
+            <span className="text-xs text-slate-500">未打开照片文件夹</span>
           )}
         </div>
 
-        {/* 右侧操作按钮 */}
-        <div className="flex items-center space-x-3">
-          {engineInfo && (
-            <button
-              onClick={() => setIsAboutOpen(true)}
-              className="flex items-center space-x-1.5 text-xs px-2.5 py-1 rounded bg-dark-700/60 hover:bg-dark-700 border border-dark-600 hover:border-dark-500 text-slate-300 transition-colors cursor-pointer"
-              title="关于 QuickPick、LibRaw 引擎与开源合规许可"
+        {/* 中间：直观大盘 (已查看 / 已选 / 待考虑) */}
+        {photos.length > 0 && (
+          <div className="flex items-center space-x-3 text-xs">
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
+              <Eye className="w-3.5 h-3.5 text-slate-400" />
+              <span>已查看</span>
+              <span className="font-bold text-slate-100">{stats.viewedCount}</span>
+              <span className="text-slate-500">/</span>
+              <span>{photos.length}</span>
+            </div>
+
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>已选</span>
+              <span className="font-bold text-emerald-400">{stats.selectedCount}</span>
+            </div>
+
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono">
+              <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span>待考虑</span>
+              <span className="font-bold text-amber-400">{stats.maybeCount}</span>
+            </div>
+          </div>
+        )}
+
+        {/* 右侧：操作区 (撤销 / 导出 / 打开文件夹 / 关于) */}
+        <div className="flex items-center space-x-2.5">
+          {startupWarning && (
+            <div
+              className="flex max-w-[360px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs text-amber-200"
+              role="alert"
+              title={startupWarning}
             >
-              <Cpu className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="font-mono text-[11px]">LibRaw {engineInfo.libraw_version}</span>
-            </button>
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{startupWarning}</span>
+              <button
+                onClick={() => setStartupWarning(null)}
+                className="rounded p-0.5 hover:bg-amber-500/20"
+                title="关闭启动安全提示"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {persistenceStatus === 'saving' && (
+            <div className="flex items-center gap-1.5 text-xs text-blue-300" role="status">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>正在保存选择</span>
+            </div>
+          )}
+
+          {isAnalyzing && analysisTotal > 0 && (
+            <div
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-500/25 bg-indigo-500/10 px-2.5 py-1 text-xs text-indigo-200"
+              role="status"
+              title={`后台分析 ${analysisCompleted}/${analysisTotal}${analysisFailed ? `，失败 ${analysisFailed}` : ''}`}
+            >
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>后台检查 {analysisCompleted}/{analysisTotal}</span>
+            </div>
+          )}
+
+          {persistenceStatus === 'error' && (
+            <div
+              className="flex max-w-[320px] items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-xs text-rose-200"
+              role="alert"
+              title={persistenceError || undefined}
+            >
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{persistenceError || '选片结果保存失败'}</span>
+              <button
+                onClick={clearPersistenceError}
+                className="rounded p-0.5 hover:bg-rose-500/20"
+                title="关闭错误提示"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {persistenceStatus !== 'error' && persistenceWarning && (
+            <div
+              className="flex max-w-[320px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs text-amber-200"
+              role="status"
+              title={persistenceWarning}
+            >
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{persistenceWarning}</span>
+              <button
+                onClick={clearPersistenceWarning}
+                className="rounded p-0.5 hover:bg-amber-500/20"
+                title="关闭备份提示"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
           )}
 
           {photos.length > 0 && (
             <button
-              onClick={() => void undoLast()}
-              disabled={undoStack.length === 0 || writeStatus === 'saving' || isUndoing}
-              className="flex items-center gap-1.5 rounded border border-dark-600 bg-dark-700/60 px-2.5 py-1 text-[11px] text-slate-300 transition-colors hover:bg-dark-600 disabled:cursor-not-allowed disabled:opacity-35"
+              onClick={undoLast}
+              disabled={undoStack.length === 0 || isUndoing}
+              className="flex items-center gap-1.5 rounded-lg border border-dark-600 bg-dark-700/60 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-dark-600 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer"
               title={undoStack.length > 0 ? `${undoStack[undoStack.length - 1].label} (Cmd/Ctrl+Z)` : '没有可撤销的操作'}
             >
-              {isUndoing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Undo2 className="h-3.5 w-3.5" />}
+              <Undo2 className="h-3.5 w-3.5" />
               <span>撤销</span>
-            </button>
-          )}
-
-          {writeStatus === 'saving' && (
-            <div className="flex items-center space-x-1.5 text-[11px] text-blue-300">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>正在安全写入 XMP</span>
-            </div>
-          )}
-          {writeStatus === 'saved' && (
-            <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>已保存</span>
-            </div>
-          )}
-
-          {/* NAS / 本地 2K 代理加速状态指示徽标 */}
-          {isProxyAccelerated && (
-            <div
-              className="flex items-center space-x-1 px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold animate-in fade-in duration-200"
-              title="已激活 NAS / 本地 2K 代理缓存，单张仅约 150KB，零 RAW 传输 60fps 极速秒通"
-            >
-              <Zap className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400" />
-              <span>2K 加速</span>
-            </div>
-          )}
-
-          {/* 预生成 2K 代理缓存按钮 */}
-          {folderPath && photos.length > 0 && !isProxyAccelerated && (
-            <button
-              onClick={() => generateCurrentFolderCache()}
-              disabled={isGeneratingCache}
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-dark-750 hover:bg-dark-700 text-slate-300 border border-dark-600 transition-all cursor-pointer disabled:opacity-50"
-              title="为当前相册一键预生成轻量 2K 代理缓存 (.quickpick_cache)"
-            >
-              {isGeneratingCache ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 text-brand-400 animate-spin" />
-                  <span>生成缓存中...</span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>生成 2K 缓存</span>
-                </>
-              )}
-            </button>
-          )}
-
-          {photos.length > 0 && currentPhoto && currentPhoto.faces && currentPhoto.faces.length > 0 && (
-            <button
-              onClick={toggleFaceLoupe}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
-                isFaceLoupeOpen
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-dark-750 hover:bg-dark-700 text-slate-300 border-dark-600'
-              }`}
-              title="展开/收起多脸联动特写抽屉 [F]"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>特写 ({currentPhoto.faces.length})</span>
-              {currentPhoto.faces.some((f) => f.eye_open_score < 0.35) && (
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-              )}
-            </button>
-          )}
-
-          {photos.length > 0 && chapters.length > 0 && (
-            <button
-              onClick={() => setChaptersModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-dark-750 hover:bg-dark-700 text-slate-300 border-dark-600 transition-all cursor-pointer"
-              title="打开活动/演出流程分章与交付配额看板"
-            >
-              <Layers className="w-3.5 h-3.5 text-brand-400" />
-              <span>流程配额</span>
-              {chapters.some((c) => {
-                const picked = photos.slice(c.startIndex, c.endIndex + 1).filter((p) => p.pick_status === 'Pick').length;
-                return picked === 0 && c.photoCount > 0;
-              }) ? (
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" title="存在未选片环节空缺预警" />
-              ) : (
-                <span className="text-[10px] font-mono text-slate-400">
-                  {photos.filter((p) => p.pick_status === 'Pick').length}/{chapters.reduce((a, b) => a + b.targetQuota, 0)}
-                </span>
-              )}
-            </button>
-          )}
-
-          {photos.length >= 2 && (
-            <button
-              onClick={() => toggleCompareMode()}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
-                isCompareMode
-                  ? 'bg-brand-600 text-white border-brand-500 shadow-sm'
-                  : 'bg-dark-750 hover:bg-dark-700 text-slate-300 border-dark-600'
-              }`}
-              title="进入/退出双图分屏比对 [C]"
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
-              <span>对比 (C)</span>
             </button>
           )}
 
           {photos.length > 0 && (
             <button
               onClick={() => setExportModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow-emerald-500/20 transition-all cursor-pointer"
-              title="批量导出入选照片与 XMP 伴侣文件"
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-emerald-500/20 transition-all cursor-pointer"
+              title="批量导出入选原片或文件名清单"
             >
               <FolderOutput className="w-3.5 h-3.5" />
-              <span>导出选片</span>
-              {photos.filter((p) => p.pick_status === 'Pick').length > 0 && (
+              <span>导出所选照片</span>
+              {stats.selectedCount > 0 && (
                 <span className="bg-emerald-800/90 text-emerald-200 px-1.5 py-0.2 rounded-full font-mono text-[10px]">
-                  {photos.filter((p) => p.pick_status === 'Pick').length}
+                  {stats.selectedCount}
                 </span>
               )}
             </button>
@@ -296,91 +336,40 @@ export default function App() {
             <FolderOpen className="w-3.5 h-3.5" />
             <span>打开照片目录</span>
           </button>
+
+          <button
+            onClick={() => setIsShortcutsOpen(true)}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer"
+            title="查看快捷键帮助"
+            aria-label="查看快捷键帮助"
+          >
+            <Keyboard className="h-4 w-4" />
+          </button>
+
+          <button
+            onClick={() => setIsAboutOpen(true)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-dark-700 transition-colors cursor-pointer"
+            title="关于 QuickPick 与安全选片说明"
+          >
+            <Info className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
-      {writeStatus === 'error' && writeError && !xmpConflict && (
-        <div className="absolute top-14 right-4 z-50 max-w-md flex items-start space-x-2 rounded-lg border border-rose-500/40 bg-rose-950/95 px-3 py-2 text-xs text-rose-200 shadow-xl">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span className="whitespace-pre-line">{writeError}</span>
-          <button onClick={clearWriteError} className="p-0.5 rounded hover:bg-rose-500/20" title="关闭错误提示">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
+      {/* 视图过滤条 */}
+      {photos.length > 0 && (
+        <FilterToolbar onOpenReviewCenter={() => setIsReviewCenterOpen(true)} />
       )}
-
-      {xmpConflict && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-amber-500/35 bg-dark-800 p-5 shadow-2xl shadow-black/50">
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-amber-500/15 p-2.5 text-amber-300">
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-slate-100">检测到 XMP 外部修改</h2>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">{xmpConflict.message}</p>
-                <p className="mt-2 truncate rounded bg-dark-900/70 px-2 py-1.5 font-mono text-[11px] text-slate-300" title={xmpConflict.localPhoto.path}>
-                  {xmpConflict.localPhoto.filename}
-                </p>
-              </div>
-              <button
-                onClick={dismissXmpConflict}
-                disabled={writeStatus === 'saving'}
-                className="rounded p-1 text-slate-500 hover:bg-dark-700 hover:text-slate-200 disabled:opacity-40"
-                title="稍后处理"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <p className="mt-4 text-[11px] leading-relaxed text-amber-200/80">
-              QuickPick 已阻止自动覆盖。请选择如何处理本次本地打标结果。
-            </p>
-            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <button
-                onClick={() => resolveXmpConflict('reload')}
-                disabled={writeStatus === 'saving'}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-dark-600 bg-dark-700 px-3 py-2 text-xs text-slate-200 hover:bg-dark-600 disabled:opacity-50"
-                title="放弃本次本地修改，读取磁盘上的最新 XMP"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                重新载入
-              </button>
-              <button
-                onClick={() => resolveXmpConflict('copy')}
-                disabled={writeStatus === 'saving'}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/20 disabled:opacity-50"
-                title="保留磁盘 XMP，并把本地结果写入独立副本"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                另存副本
-              </button>
-              <button
-                onClick={() => resolveXmpConflict('overwrite')}
-                disabled={writeStatus === 'saving'}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/20 disabled:opacity-50"
-                title="明确使用 QuickPick 本地结果覆盖磁盘 XMP"
-              >
-                <ShieldAlert className="h-3.5 w-3.5" />
-                保留本地并覆盖
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 视图过滤与智能批量操作条 */}
-      {photos.length > 0 && <FilterToolbar />}
 
       {/* 正在扫描目录时的加载动效 */}
       {isLoading && (
         <div className="absolute inset-0 bg-dark-900/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
           <div className="w-12 h-12 rounded-full border-3 border-brand-500 border-t-transparent animate-spin mb-4 shadow-lg shadow-brand-500/20" />
           <h3 className="text-sm font-semibold text-slate-100 mb-1">
-            正在极速扫描与构建相册索引...
+            正在读取照片列表...
           </h3>
           <p className="text-xs text-slate-400 font-mono">
-            读取 LibRaw 原生内嵌预览与 XMP 伴侣文件
+            列表就绪后即可选片，照片检查将在后台继续
           </p>
         </div>
       )}
@@ -393,60 +382,127 @@ export default function App() {
               <img src="/icon.png" alt="QuickPick App Icon" className="w-full h-full object-cover" />
             </div>
             <h2 className="text-xl font-bold text-slate-100 mb-2">
-              开启 60fps 极速照片粗选
+              本地安心选片，快速挑出满意照片
             </h2>
             <p className="text-xs text-slate-400 mb-6 leading-relaxed max-w-md">
-              选择包含 Sony ARW、Canon CR3、Nikon NEF 或 JPG 的拍摄文件夹。<br />
-              结合 LibRaw 动态原生解码、环形预取、XMP 哨兵锁与“可修/不可修”智能规则打标。
+              直接打开摄影师交付的 RAW 或 JPG 文件夹。<br />
+              原片全程保持只读，本地提示可能的闭眼、模糊与相似连拍，随时安全导出。
             </p>
             <button
               onClick={handleSelectFolder}
               className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-blue-500/20 transition-all flex items-center space-x-2 cursor-pointer"
             >
               <FolderOpen className="w-4 h-4" />
-              <span>选择照片文件夹开始初选</span>
+              <span>选择照片文件夹开始选片</span>
             </button>
+            <div className="mt-4 w-full rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-left text-[11px] leading-relaxed text-slate-400">
+              <span className="font-semibold text-emerald-300">原片目录保持只读。</span>{' '}
+              选择记录、查看进度和预览缓存保存在系统的 QuickPick 应用数据目录，不会在照片文件夹中创建项目文件、缓存或锁。
+            </div>
+            {scanError && failedFolderPath && (
+              <div
+                className="mt-4 w-full rounded-xl border border-rose-500/35 bg-rose-500/10 p-3 text-left"
+                role="alert"
+              >
+                <div className="flex items-start gap-2 text-xs text-rose-200">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 break-words">{scanError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void retryOpenFolder()}
+                  className="mt-2 rounded-lg bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25"
+                >
+                  重试打开
+                </button>
+              </div>
+            )}
+            {recentProjects.length > 0 && (
+              <div className="mt-6 w-full border-t border-dark-700/80 pt-4 text-left">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-slate-400">
+                  <History className="h-3.5 w-3.5" />
+                  <span>继续最近项目</span>
+                </div>
+                <div className="space-y-1.5">
+                  {recentProjects.slice(0, 3).map((project) => (
+                    <button
+                      key={project.project_id}
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => void handleContinueProject(project)}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-dark-700 bg-dark-800/80 px-3 py-2 text-left transition-colors hover:border-blue-500/40 hover:bg-dark-700 disabled:cursor-not-allowed disabled:opacity-45"
+                      title={
+                        project.source_available
+                          ? project.source_root
+                          : `原文件夹不可用；点击选择移动后的同一文件夹：${project.source_root}`
+                      }
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium text-slate-200">
+                          {project.display_name}
+                        </span>
+                        <span className="block truncate text-[10px] text-slate-500">
+                          {project.photo_count} 张 · 已查看 {project.viewed_count} · 已选 {project.selected_count}
+                        </span>
+                        <span className="block truncate text-[10px] text-slate-600">
+                          {formatRecentTime(project.updated_at)} · {project.source_available ? '继续上次进度' : '点击重新定位'}
+                        </span>
+                      </span>
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-8 flex items-center space-x-4 text-[11px] text-slate-500">
               <span className="flex items-center space-x-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>智能可修性诊断</span>
+                <span>本地闭眼与模糊辅助提示</span>
               </span>
               <span>•</span>
               <span className="flex items-center space-x-1">
                 <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
-                <span>Pixi.js WebGL 视口</span>
+                <span>双图分屏对比挑优</span>
               </span>
             </div>
           </div>
         ) : isCompareMode ? (
-          <SplitCompareView />
+          <Suspense fallback={<LoadingPanel />}>
+            <SplitCompareView />
+          </Suspense>
         ) : (
           <div className="w-full h-full relative">
             {/* Pixi.js 硬件加速照片视口 */}
-            <PixiCanvas
-              imageUrl={currentPreviewUrl}
-              filename={currentPhoto ? currentPhoto.filename : ''}
-              previewStatus={previewStatus}
-              previewError={previewError}
-              onRetryPreview={() => void retryCurrentPreview()}
-            />
+            <Suspense fallback={<LoadingPanel />}>
+              <PixiCanvas
+                imageUrl={currentPreviewUrl}
+                filename={currentPhoto ? currentPhoto.filename : ''}
+                previewStatus={previewStatus}
+                previewError={previewError}
+                onRetryPreview={retryCurrentPreview}
+              />
+            </Suspense>
 
-            {/* 视口左上方：相机机身、镜头与拍摄参数 HUD */}
+            {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
             <div className="absolute top-4 left-4 z-20">
               <PhotoInfoHud />
             </div>
 
-            {/* 视口上方：AI '可修/不可修' 智能诊断与换脸提示药丸 */}
+            {/* 视口上方：本地辅助提示药丸 */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
               <DefectBadge />
             </div>
 
             {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
-            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
-              <FaceLoupe />
-            </div>
+            {isFaceLoupeOpen && (
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
+                <Suspense fallback={null}>
+                  <FaceLoupe />
+                </Suspense>
+              </div>
+            )}
 
-            {/* 视口下方：摄影师键盘/鼠标选片打标工具条 */}
+            {/* 视口下方：选片操作条 (Space 选择 / M 待考虑) */}
             <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20">
               <TriageControls />
             </div>
@@ -454,25 +510,51 @@ export default function App() {
         )}
       </main>
 
-      {/* 底部胶片缩略图轮播栏 */}
+      {/* 底部缩略图轮播栏 */}
       {photos.length > 0 && (
         <footer className="h-20 border-t border-dark-700 bg-dark-800/95 flex items-center shrink-0 z-20">
           <Filmstrip />
         </footer>
       )}
 
-      {/* 选片结果批量导出弹窗 */}
-      <ExportModal />
+      {/* 选片结果导出弹窗 */}
+      {isExportModalOpen && (
+        <Suspense fallback={null}>
+          <ExportModal />
+        </Suspense>
+      )}
 
-      {/* 关于 QuickPick 与开源合规弹窗 */}
-      <AboutModal
-        isOpen={isAboutOpen}
-        onClose={() => setIsAboutOpen(false)}
-        librawVersion={engineInfo?.libraw_version}
-      />
+      {/* 关于与安全说明弹窗 */}
+      {isAboutOpen && (
+        <Suspense fallback={null}>
+          <AboutModal
+            isOpen={isAboutOpen}
+            onClose={() => setIsAboutOpen(false)}
+            librawVersion={engineVersion}
+          />
+        </Suspense>
+      )}
 
-      {/* 活动/演出流程时间轴分章与交付配额看板 */}
-      <TimelineQuotasModal />
+      {/* 快捷键帮助弹窗 */}
+      {isShortcutsOpen && (
+        <Suspense fallback={null}>
+          <ShortcutsModal onClose={() => setIsShortcutsOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* 集中复核未查看、待考虑、相似连拍与辅助提示 */}
+      {isReviewCenterOpen && (
+        <Suspense fallback={null}>
+          <ReviewCenterModal onClose={() => setIsReviewCenterOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* 拍摄场景与选片目标弹窗 */}
+      {isScenesModalOpen && (
+        <Suspense fallback={null}>
+          <TimelineQuotasModal />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,66 +1,76 @@
 import { useEffect } from 'react';
-import { usePhotoStore } from '../store/photoStore';
+import { useAlbumStore } from '../store/albumStore';
+import { useSelectionStore } from '../store/selectionStore';
+import { useCompareStore } from '../store/compareStore';
+import { useInsightStore } from '../store/insightStore';
 
 export function useKeyboardShortcuts() {
-  const {
-    photos,
-    currentIndex,
-    nextPhoto,
-    prevPhoto,
-    setRating,
-    setColorLabel,
-    setPickStatus,
-    isCompareMode,
-    toggleCompareMode,
-    exitCompareMode,
-    swapComparePhotos,
-    nextCompareCandidate,
-    prevCompareCandidate,
-    toggleFaceLoupe,
-    undoLast,
-    pickBurstWinner,
-    resetFilter,
-    jumpToFirstMatching,
-    jumpToLastMatching,
-    activeFilter,
-    selectedCamera,
-    selectedLens,
-  } = usePhotoStore();
+  const { photos, currentIndex, nextPhoto, prevPhoto, resetFilter, jumpToFirstMatching, jumpToLastMatching } = useAlbumStore();
+  const { toggleSelect, setMaybe, setSkipped, undoLast } = useSelectionStore();
+  const { isCompareMode, toggleCompareMode, exitCompareMode, swapComparePhotos, nextCompareCandidate, prevCompareCandidate } = useCompareStore();
+  const { toggleFaceLoupe } = useInsightStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // 避免在输入框中触发
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        (e.target instanceof HTMLElement &&
+          (e.target.isContentEditable ||
+            e.target.closest('[contenteditable]:not([contenteditable="false"])') !== null)) ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
       ) {
         return;
       }
 
+      // 撤销操作: Cmd/Ctrl + Z
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        void undoLast();
+        undoLast();
         return;
       }
 
       if (photos.length === 0) return;
 
+      const currentPhoto = photos[currentIndex];
+
       switch (e.key) {
-        // 连拍定优 [W]：定为连拍最佳胜出并排除同组其余照片
-        case 'w':
-        case 'W':
+        // 选择 / 取消选择 [空格 Space]
+        case ' ':
           e.preventDefault();
-          void pickBurstWinner(currentIndex);
+          if (currentPhoto) {
+            toggleSelect(currentPhoto.id);
+          }
           break;
 
-        // 多脸联动特写抽屉切换 [F]
+        // 加入待考虑 [M]
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          if (currentPhoto) {
+            setMaybe(currentPhoto.id);
+          }
+          break;
+
+        // 明确标记为不选 [N]
+        case 'n':
+        case 'N':
+          e.preventDefault();
+          if (currentPhoto) {
+            setSkipped(currentPhoto.id);
+          }
+          break;
+
+        // 查看人脸特写抽屉 [F]
         case 'f':
         case 'F':
           e.preventDefault();
           toggleFaceLoupe();
           break;
 
-        // 双图分屏对比切换 [C]
+        // 双图分屏比对 [C]
         case 'c':
         case 'C':
           e.preventDefault();
@@ -81,24 +91,13 @@ export function useKeyboardShortcuts() {
           if (isCompareMode) {
             e.preventDefault();
             exitCompareMode();
-          } else if (activeFilter !== 'all' || selectedCamera !== null || selectedLens !== null) {
+          } else {
             e.preventDefault();
             resetFilter();
           }
           break;
 
-        // 快速跳转至首张/末张匹配照片 [Home / End]
-        case 'Home':
-          e.preventDefault();
-          jumpToFirstMatching();
-          break;
-
-        case 'End':
-          e.preventDefault();
-          jumpToLastMatching();
-          break;
-
-        // 翻页导航 (对比模式下微调候选片，单图模式下常规翻页)
+        // 翻页导航
         case 'ArrowRight':
         case 'j':
         case 'J':
@@ -121,55 +120,15 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // 星级评定 (0-5)
-        case '0':
+        // 首尾快速跳转 [Home / End]
+        case 'Home':
           e.preventDefault();
-          setRating(0);
-          break;
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-          e.preventDefault();
-          setRating(parseInt(e.key, 10));
+          jumpToFirstMatching();
           break;
 
-        // 色标评定 (6-9)
-        case '6':
+        case 'End':
           e.preventDefault();
-          setColorLabel('Red');
-          break;
-        case '7':
-          e.preventDefault();
-          setColorLabel('Yellow');
-          break;
-        case '8':
-          e.preventDefault();
-          setColorLabel('Green');
-          break;
-        case '9':
-          e.preventDefault();
-          setColorLabel('Blue');
-          break;
-
-        // 采纳/排除状态标记 (P / X / U)
-        case 'p':
-        case 'P':
-          e.preventDefault();
-          setPickStatus('Pick');
-          break;
-
-        case 'x':
-        case 'X':
-          e.preventDefault();
-          setPickStatus('Reject');
-          break;
-
-        case 'u':
-        case 'U':
-          e.preventDefault();
-          setPickStatus('None');
+          jumpToLastMatching();
           break;
 
         default:
@@ -182,13 +141,14 @@ export function useKeyboardShortcuts() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [
-    photos.length,
+    photos,
     currentIndex,
     nextPhoto,
     prevPhoto,
-    setRating,
-    setColorLabel,
-    setPickStatus,
+    toggleSelect,
+    setMaybe,
+    setSkipped,
+    undoLast,
     isCompareMode,
     toggleCompareMode,
     exitCompareMode,
@@ -196,13 +156,8 @@ export function useKeyboardShortcuts() {
     nextCompareCandidate,
     prevCompareCandidate,
     toggleFaceLoupe,
-    undoLast,
-    pickBurstWinner,
     resetFilter,
     jumpToFirstMatching,
     jumpToLastMatching,
-    activeFilter,
-    selectedCamera,
-    selectedLens,
   ]);
 }

@@ -1,41 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
-import { open, ask, message } from '@tauri-apps/plugin-dialog';
+import { open, ask, message, save } from '@tauri-apps/plugin-dialog';
+import type { ExifMetadata, FaceInfo } from '../types/photo';
 
-export type RetouchStatus = 'clean' | 'fixable' | 'fatal' | 'pending' | 'failed';
+export type { ExifMetadata, FaceInfo } from '../types/photo';
 
 export interface DefectTag {
   id: string;
-  category: 'clean' | 'fixable' | 'fatal';
+  category: 'info' | 'warning';
   label: string;
   confidence: number;
   hint?: string;
-}
-
-export interface FaceInfo {
-  id: string;
-  x: number;              // 归一化 0.0 ~ 1.0 (左上角)
-  y: number;
-  width: number;
-  height: number;
-  eye_open_score: number; // 0.0 (完全闭眼) ~ 1.0 (完全睁开)
-  sharpness: number;      // 0 ~ 100 局部锐度
-  is_pinned: boolean;     // 摄影师主角钉选
-  priority: number;       // 归一化优先级
-  label?: string;
-}
-
-export interface ExifMetadata {
-  camera_make?: string;
-  camera_model?: string;
-  lens_model?: string;
-  lens_make?: string;
-  focal_length?: number;
-  focal_length_35mm?: number;
-  aperture?: number;
-  shutter_speed?: string;
-  shutter_speed_value?: number;
-  iso?: number;
-  date_time_original?: string;
 }
 
 export interface PhotoItem {
@@ -44,17 +18,19 @@ export interface PhotoItem {
   filename: string;
   file_size: u64;
   is_raw: boolean;
-  rating: number;          // 0~5
-  color_label: string;     // "", "Red", "Yellow", "Green", "Blue", "Purple"
-  pick_status: string;     // "None", "Pick", "Reject"
   thumb_width?: number;
   thumb_height?: number;
-  retouch_status: RetouchStatus;
-  defect_tags: DefectTag[];
   burst_group_id?: string;
-  faces: FaceInfo[];
   exif?: ExifMetadata;
-  xmp_source_hash?: string;
+}
+
+export interface PhotoAnalysisResult {
+  exif?: ExifMetadata | null;
+  analysis_status: 'pending' | 'no_issues' | 'needs_check' | 'failed';
+  defect_tags: DefectTag[];
+  faces: FaceInfo[];
+  preview_width?: number | null;
+  preview_height?: number | null;
 }
 
 type u64 = number;
@@ -62,6 +38,58 @@ type u64 = number;
 export interface EngineInfo {
   libraw_version: string;
   status: string;
+}
+
+export interface StartupHealth {
+  previous_session_unclean: boolean;
+  database_recovered: boolean;
+  database_error?: string;
+  recovered_export_jobs: number;
+  cleaned_export_temp_files: number;
+  export_recovery_error?: string;
+}
+
+export interface PersistedSelection {
+  photo_id: string;
+  state: 'unreviewed' | 'selected' | 'maybe' | 'skipped';
+  note?: string;
+  updated_at: string;
+}
+
+export interface ProjectState {
+  project_id: string;
+  selections: PersistedSelection[];
+  viewed_photo_ids: string[];
+  backup_warning?: string;
+  current_photo_id?: string;
+  target_count?: number;
+  active_filter: string;
+  selected_scene_id?: string;
+  scenes_json: string;
+  photo_id_remaps: Record<string, string>;
+}
+
+export interface PersistenceOutcome {
+  backup_warning?: string;
+}
+
+export interface ProjectViewStateInput {
+  current_photo_id?: string;
+  target_count?: number;
+  active_filter: string;
+  selected_scene_id?: string;
+  scenes_json: string;
+}
+
+export interface RecentProject {
+  project_id: string;
+  source_root: string;
+  display_name: string;
+  updated_at: string;
+  photo_count: number;
+  viewed_count: number;
+  selected_count: number;
+  source_available: boolean;
 }
 
 // 检查是否在 Tauri 原生桌面环境中运行
@@ -74,6 +102,18 @@ export async function fetchEngineInfo(): Promise<EngineInfo> {
     return { libraw_version: 'Web Mock 0.22.2', status: 'Web Dev Mode' };
   }
   return await invoke<EngineInfo>('get_engine_info');
+}
+
+export async function fetchStartupHealth(): Promise<StartupHealth> {
+  if (!isTauri()) {
+    return {
+      previous_session_unclean: false,
+      database_recovered: false,
+      recovered_export_jobs: 0,
+      cleaned_export_temp_files: 0,
+    };
+  }
+  return await invoke<StartupHealth>('get_startup_health');
 }
 
 export async function selectFolder(): Promise<string | null> {
@@ -100,18 +140,9 @@ export async function detectPhotoFaces(path: string): Promise<FaceInfo[]> {
   return await invoke<FaceInfo[]>('detect_photo_faces', { path });
 }
 
-export async function generateFolderCache(folderPath: string): Promise<number> {
-  if (!isTauri()) {
-    // 浏览器模拟模式
-    await new Promise((res) => setTimeout(res, 1200));
-    return 5;
-  }
-  return await invoke<number>('generate_folder_cache', { path: folderPath });
-}
-
 export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
   if (!isTauri()) {
-    // Mock 数据：覆盖优质主片、连拍可换脸可修片、不可修硬伤片、8人合影闭眼
+    // 浏览器模拟扫描仅返回只读文件元数据；分析结果由后台分析接口单独返回。
     return [
       {
         id: 'mock-1',
@@ -119,46 +150,7 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
         filename: '_DSC0001.ARW',
         file_size: 42800000,
         is_raw: true,
-        rating: 5,
-        color_label: 'Green',
-        pick_status: 'Pick',
-        retouch_status: 'clean',
         burst_group_id: 'burst-grp-001',
-        defect_tags: [
-          {
-            id: 'clean_prime',
-            category: 'clean',
-            label: '完美原片',
-            confidence: 0.96,
-            hint: '眼神锐利、曝光自然平衡，无可见瑕疵，建议直接采纳',
-          },
-        ],
-        faces: [
-          {
-            id: 'face_1',
-            x: 0.38,
-            y: 0.26,
-            width: 0.16,
-            height: 0.22,
-            eye_open_score: 0.96,
-            sharpness: 96.0,
-            is_pinned: true,
-            priority: 10.85,
-            label: '新娘主角',
-          },
-          {
-            id: 'face_2',
-            x: 0.55,
-            y: 0.28,
-            width: 0.15,
-            height: 0.21,
-            eye_open_score: 0.92,
-            sharpness: 92.0,
-            is_pinned: false,
-            priority: 0.78,
-            label: '新郎主角',
-          },
-        ],
         exif: {
           camera_make: 'SONY',
           camera_model: 'ILCE-7RM5',
@@ -179,46 +171,7 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
         filename: '_DSC0002.ARW',
         file_size: 43100000,
         is_raw: true,
-        rating: 0,
-        color_label: '',
-        pick_status: 'None',
-        retouch_status: 'fixable',
         burst_group_id: 'burst-grp-001',
-        defect_tags: [
-          {
-            id: 'fixable_burst_swap',
-            category: 'fixable',
-            label: '连拍可换脸/换眼',
-            confidence: 0.95,
-            hint: '新郎微闭眼，但同组候选底片 [_DSC0001.ARW] 睁眼极佳，推荐使用 Face Loupe 眼神替换',
-          },
-        ],
-        faces: [
-          {
-            id: 'face_1',
-            x: 0.38,
-            y: 0.26,
-            width: 0.16,
-            height: 0.22,
-            eye_open_score: 0.95,
-            sharpness: 94.0,
-            is_pinned: true,
-            priority: 10.84,
-            label: '新娘主角',
-          },
-          {
-            id: 'face_2',
-            x: 0.55,
-            y: 0.28,
-            width: 0.15,
-            height: 0.21,
-            eye_open_score: 0.22, // 闭眼
-            sharpness: 90.0,
-            is_pinned: false,
-            priority: 0.77,
-            label: '新郎 (闭眼)',
-          },
-        ],
         exif: {
           camera_make: 'SONY',
           camera_model: 'ILCE-7RM5',
@@ -239,33 +192,6 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
         filename: '_DSC0003.ARW',
         file_size: 41900000,
         is_raw: true,
-        rating: 0,
-        color_label: '',
-        pick_status: 'None',
-        retouch_status: 'fatal',
-        defect_tags: [
-          {
-            id: 'fatal_severe_blur',
-            category: 'fatal',
-            label: '严重脱焦/拖影',
-            confidence: 0.94,
-            hint: '焦点落在背景，人物面部双向拉丝模糊，商业客照无法真实还原',
-          },
-        ],
-        faces: [
-          {
-            id: 'face_1',
-            x: 0.42,
-            y: 0.30,
-            width: 0.18,
-            height: 0.24,
-            eye_open_score: 0.40,
-            sharpness: 18.0, // 模糊
-            is_pinned: false,
-            priority: 0.65,
-            label: '脱焦人物',
-          },
-        ],
         exif: {
           camera_make: 'SONY',
           camera_model: 'ILCE-7RM5',
@@ -286,119 +212,6 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
         filename: '_DSC0004.ARW',
         file_size: 44200000,
         is_raw: true,
-        rating: 0,
-        color_label: '',
-        pick_status: 'None',
-        retouch_status: 'fixable',
-        defect_tags: [
-          {
-            id: 'group_photo_blink',
-            category: 'fixable',
-            label: '大合影闭眼 (1人)',
-            confidence: 0.92,
-            hint: '伴郎 C 闭眼，其余全员睁眼，可借同组连拍换眼解决',
-          },
-        ],
-        // 8 人大合影场景：测试 Top 6 截断与闭眼一票否决
-        faces: [
-          {
-            id: 'face_1',
-            x: 0.42,
-            y: 0.35,
-            width: 0.10,
-            height: 0.14,
-            eye_open_score: 0.95,
-            sharpness: 96.0,
-            is_pinned: true,
-            priority: 10.6,
-            label: '新娘 (主角)',
-          },
-          {
-            id: 'face_2',
-            x: 0.52,
-            y: 0.34,
-            width: 0.10,
-            height: 0.14,
-            eye_open_score: 0.94,
-            sharpness: 94.0,
-            is_pinned: true,
-            priority: 10.5,
-            label: '新郎 (主角)',
-          },
-          {
-            id: 'face_3',
-            x: 0.32,
-            y: 0.36,
-            width: 0.08,
-            height: 0.12,
-            eye_open_score: 0.90,
-            sharpness: 90.0,
-            is_pinned: false,
-            priority: 0.52,
-            label: '伴娘 A',
-          },
-          {
-            id: 'face_4',
-            x: 0.62,
-            y: 0.36,
-            width: 0.08,
-            height: 0.12,
-            eye_open_score: 0.91,
-            sharpness: 89.0,
-            is_pinned: false,
-            priority: 0.51,
-            label: '伴郎 A',
-          },
-          {
-            id: 'face_5',
-            x: 0.22,
-            y: 0.37,
-            width: 0.07,
-            height: 0.11,
-            eye_open_score: 0.88,
-            sharpness: 88.0,
-            is_pinned: false,
-            priority: 0.42,
-            label: '伴娘 B',
-          },
-          {
-            id: 'face_6',
-            x: 0.72,
-            y: 0.37,
-            width: 0.07,
-            height: 0.11,
-            eye_open_score: 0.89,
-            sharpness: 87.0,
-            is_pinned: false,
-            priority: 0.41,
-            label: '伴郎 B',
-          },
-          // 第 7, 8 位属于背景人物 (超出 Top 6)
-          {
-            id: 'face_7',
-            x: 0.12,
-            y: 0.38,
-            width: 0.06,
-            height: 0.10,
-            eye_open_score: 0.85,
-            sharpness: 82.0,
-            is_pinned: false,
-            priority: 0.30,
-            label: '伴娘 C',
-          },
-          {
-            id: 'face_8',
-            x: 0.82,
-            y: 0.38,
-            width: 0.06,
-            height: 0.10,
-            eye_open_score: 0.18, // 闭眼！触发气泡警告
-            sharpness: 81.0,
-            is_pinned: false,
-            priority: 0.29,
-            label: '伴郎 C (闭眼)',
-          },
-        ],
         exif: {
           camera_make: 'Canon',
           camera_model: 'EOS R5',
@@ -419,33 +232,6 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
         filename: '_DSC0005.ARW',
         file_size: 43500000,
         is_raw: true,
-        rating: 4,
-        color_label: '',
-        pick_status: 'None',
-        retouch_status: 'clean',
-        defect_tags: [
-          {
-            id: 'clean_prime',
-            category: 'clean',
-            label: '完美原片',
-            confidence: 0.93,
-            hint: '合焦准确无拖影，自然漫反射光影，人物笑容舒展',
-          },
-        ],
-        faces: [
-          {
-            id: 'face_1',
-            x: 0.45,
-            y: 0.32,
-            width: 0.14,
-            height: 0.18,
-            eye_open_score: 0.94,
-            sharpness: 95.0,
-            is_pinned: false,
-            priority: 0.82,
-            label: '单人特写',
-          },
-        ],
         exif: {
           camera_make: 'Nikon',
           camera_model: 'Z 8',
@@ -465,93 +251,164 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
   return await invoke<PhotoItem[]>('scan_folder', { path: folderPath });
 }
 
-export async function getPhotoPreview(photoPath: string): Promise<string> {
+export async function openProjectState(
+  folderPath: string,
+  photos: PhotoItem[],
+): Promise<ProjectState> {
+  if (!isTauri()) {
+    return {
+      project_id: `web:${folderPath}`,
+      selections: [],
+      viewed_photo_ids: [],
+      backup_warning: undefined,
+      current_photo_id: undefined,
+      target_count: undefined,
+      active_filter: 'all',
+      selected_scene_id: undefined,
+      scenes_json: '[]',
+      photo_id_remaps: Object.fromEntries(photos.map((photo) => [photo.id, photo.id])),
+    };
+  }
+  return await invoke<ProjectState>('open_project', {
+    folderPath,
+    photos: photos.map((photo) => ({
+      photo_id: photo.id,
+      path: photo.path,
+      filename: photo.filename,
+      file_size: photo.file_size,
+      format: photo.is_raw
+        ? 'raw'
+        : photo.filename.split('.').pop()?.toLowerCase() || 'unknown',
+      captured_at: photo.exif?.date_time_original,
+    })),
+  });
+}
+
+export async function relocateProjectState(
+  projectId: string,
+  folderPath: string,
+  photos: PhotoItem[],
+): Promise<ProjectState> {
+  if (!isTauri()) return await openProjectState(folderPath, photos);
+  return await invoke<ProjectState>('relocate_project', {
+    projectId,
+    folderPath,
+    photos: photos.map((photo) => ({
+      photo_id: photo.id,
+      path: photo.path,
+      filename: photo.filename,
+      file_size: photo.file_size,
+      format: photo.is_raw
+        ? 'raw'
+        : photo.filename.split('.').pop()?.toLowerCase() || 'unknown',
+      captured_at: photo.exif?.date_time_original,
+    })),
+  });
+}
+
+export async function persistSelection(
+  projectId: string,
+  selection: PersistedSelection,
+): Promise<PersistenceOutcome> {
+  if (!isTauri()) return {};
+  return await invoke<PersistenceOutcome>('save_selection', { projectId, selection });
+}
+
+export async function persistSelections(
+  projectId: string,
+  selections: PersistedSelection[],
+): Promise<PersistenceOutcome> {
+  if (!isTauri()) return {};
+  return await invoke<PersistenceOutcome>('save_selections', { projectId, selections });
+}
+
+export async function persistViewedPhoto(
+  projectId: string,
+  photoId: string,
+): Promise<PersistenceOutcome> {
+  if (!isTauri()) return {};
+  return await invoke<PersistenceOutcome>('mark_photo_viewed', { projectId, photoId });
+}
+
+export async function persistProjectViewState(
+  projectId: string,
+  state: ProjectViewStateInput,
+): Promise<PersistenceOutcome> {
+  if (!isTauri()) return {};
+  return await invoke<PersistenceOutcome>('save_project_view_state', { projectId, state });
+}
+
+export async function listRecentProjects(): Promise<RecentProject[]> {
+  if (!isTauri()) return [];
+  return await invoke<RecentProject[]>('list_recent_projects');
+}
+
+export async function getPhotoPreview(photoPath: string, photoId?: string): Promise<string> {
   if (!isTauri()) {
     // 生成带文件名的动态 SVG 占位图
     const filename = photoPath.split('/').pop() || 'photo';
     return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1066" viewBox="0 0 1600 1066"><rect width="100%" height="100%" fill="%231e2430"/><circle cx="800" cy="500" r="180" fill="%232b3344"/><text x="800" y="530" font-family="sans-serif" font-size="36" fill="%2394a3b8" text-anchor="middle">${filename}</text><text x="800" y="580" font-family="sans-serif" font-size="20" fill="%2364748b" text-anchor="middle">QuickPick 60fps Native WebGL Preview</text></svg>`;
   }
-  return await invoke<string>('get_photo_preview', { path: photoPath });
+  return await invoke<string>('get_photo_preview', { path: photoPath, photoId });
 }
 
-export async function analyzePhoto(
+export async function analyzePhotoDetails(
   path: string,
   index: number,
-): Promise<[RetouchStatus, DefectTag[]]> {
+  photoId?: string,
+  scene?: string,
+): Promise<PhotoAnalysisResult> {
   if (!isTauri()) {
-    return ['clean', []];
+    return {
+      analysis_status: 'no_issues',
+      defect_tags: [],
+      faces: [],
+      preview_width: 1600,
+      preview_height: 1066,
+    };
   }
-  return await invoke<[RetouchStatus, DefectTag[]]>('analyze_photo', { path, index });
-}
-
-export async function updatePhotoTriage(
-  path: string,
-  rating: number,
-  colorLabel: string,
-  pickStatus: string,
-  retouchStatus?: string,
-  defectTags?: string,
-  burstGroupId?: string,
-  expectedSourceHash?: string,
-  force = false,
-): Promise<string> {
-  if (!isTauri()) {
-    console.log(`[Mock XMP Write] ${path} -> Rating: ${rating}, Label: ${colorLabel}, Pick: ${pickStatus}`);
-    return `mock-${Date.now()}-${Math.random()}`;
-  }
-  return await invoke<string>('update_triage', {
+  return await invoke<PhotoAnalysisResult>('analyze_photo_details', {
     path,
-    rating,
-    colorLabel,
-    pickStatus,
-    retouchStatus,
-    defectTags,
-    burstGroupId,
-    expectedSourceHash,
-    force,
-  });
-}
-
-export async function savePhotoTriageConflictCopy(
-  path: string,
-  rating: number,
-  colorLabel: string,
-  pickStatus: string,
-  retouchStatus?: string,
-  defectTags?: string,
-  burstGroupId?: string,
-): Promise<string> {
-  if (!isTauri()) {
-    return `${path}.quickpick-local-${Date.now()}.xmp`;
-  }
-  return await invoke<string>('save_triage_conflict_copy', {
-    path,
-    rating,
-    colorLabel,
-    pickStatus,
-    retouchStatus,
-    defectTags,
-    burstGroupId,
+    index,
+    photoId,
+    scene,
   });
 }
 
 export interface ExportOptions {
   photo_paths: string[];
   target_dir: string;
-  is_move: boolean;
   include_xmp: boolean;
-  overwrite: boolean;
   open_after_export: boolean;
 }
 
 export interface ExportResult {
+  job_id: string;
   total: number;
   success_photos: number;
   success_xmps: number;
   skipped: number;
   failed: number;
+  unprocessed: number;
+  cancelled: boolean;
   target_directory: string;
   errors: string[];
+}
+
+export interface ExportConflict {
+  source_path: string;
+  target_path: string;
+  reason: string;
+}
+
+export interface ExportPreflight {
+  total_photos: number;
+  total_files: number;
+  total_bytes: number;
+  required_bytes: number;
+  available_bytes: number;
+  has_enough_space: boolean;
+  conflicts: ExportConflict[];
 }
 
 export async function selectDirectory(title = '选择导出目标文件夹'): Promise<string | null> {
@@ -570,20 +427,76 @@ export async function selectDirectory(title = '选择导出目标文件夹'): Pr
   return null;
 }
 
-export async function exportPhotos(options: ExportOptions): Promise<ExportResult> {
+export async function saveManifestFile(
+  content: string,
+  extension: 'txt' | 'csv' | 'json',
+): Promise<string | null> {
+  if (!isTauri()) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `QuickPick_Selected_List.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return link.download;
+  }
+  const selected = await save({
+    title: '保存选片清单',
+    defaultPath: `QuickPick_Selected_List.${extension}`,
+    filters: [{ name: `${extension.toUpperCase()} 清单`, extensions: [extension] }],
+  });
+  if (!selected) return null;
+  await invoke('save_manifest_file', { path: selected, content });
+  return selected;
+}
+
+export async function exportPhotos(options: ExportOptions, jobId: string): Promise<ExportResult> {
   if (!isTauri()) {
     await new Promise((resolve) => setTimeout(resolve, 600));
     return {
+      job_id: jobId,
       total: options.photo_paths.length,
       success_photos: options.photo_paths.length,
       success_xmps: options.include_xmp ? options.photo_paths.length : 0,
       skipped: 0,
       failed: 0,
+      unprocessed: 0,
+      cancelled: false,
       target_directory: options.target_dir,
       errors: [],
     };
   }
-  return await invoke<ExportResult>('export_photos', { options });
+  return await invoke<ExportResult>('export_photos', { options, jobId });
+}
+
+export async function cancelExport(jobId: string): Promise<boolean> {
+  if (!isTauri()) return true;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const accepted = await invoke<boolean>('cancel_export', { jobId });
+    if (accepted) return true;
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  return false;
+}
+
+export async function preflightExportPhotos(options: ExportOptions): Promise<ExportPreflight> {
+  if (!isTauri()) {
+    return {
+      total_photos: options.photo_paths.length,
+      total_files: options.photo_paths.length,
+      total_bytes: 0,
+      required_bytes: 1024 * 1024,
+      available_bytes: 1024 * 1024 * 1024 * 100,
+      has_enough_space: true,
+      conflicts: [],
+    };
+  }
+  return await invoke<ExportPreflight>('preflight_export_photos', { options });
 }
 
 export async function revealDirectory(path: string): Promise<void> {
@@ -594,18 +507,117 @@ export async function revealDirectory(path: string): Promise<void> {
   await invoke('reveal_directory', { path });
 }
 
+function renderWebDialog(
+  msg: string,
+  title: string,
+  isConfirm: boolean,
+): Promise<boolean> {
+  if (typeof document === 'undefined') {
+    return Promise.resolve(true);
+  }
+  return new Promise<boolean>((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.zIndex = '999999';
+    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
+    overlay.style.backdropFilter = 'blur(4px)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+
+    const box = document.createElement('div');
+    box.style.backgroundColor = '#1e293b';
+    box.style.color = '#f8fafc';
+    box.style.borderRadius = '12px';
+    box.style.border = '1px solid #334155';
+    box.style.padding = '20px 24px';
+    box.style.maxWidth = '420px';
+    box.style.width = '90%';
+    box.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.5)';
+
+    const titleEl = document.createElement('div');
+    titleEl.innerText = title;
+    titleEl.style.fontSize = '16px';
+    titleEl.style.fontWeight = '600';
+    titleEl.style.marginBottom = '10px';
+    titleEl.style.color = '#38bdf8';
+
+    const msgEl = document.createElement('div');
+    msgEl.innerText = msg;
+    msgEl.style.fontSize = '14px';
+    msgEl.style.color = '#cbd5e1';
+    msgEl.style.lineHeight = '1.5';
+    msgEl.style.marginBottom = '20px';
+    msgEl.style.wordBreak = 'break-word';
+
+    const btnRow = document.createElement('div');
+    btnRow.style.display = 'flex';
+    btnRow.style.justifyContent = 'flex-end';
+    btnRow.style.gap = '10px';
+
+    const cleanup = (res: boolean) => {
+      document.removeEventListener('keydown', keyHandler);
+      if (document.body.contains(overlay)) {
+        document.body.removeChild(overlay);
+      }
+      resolve(res);
+    };
+
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cleanup(false);
+      if (e.key === 'Enter') cleanup(true);
+    };
+    document.addEventListener('keydown', keyHandler);
+
+    if (isConfirm) {
+      const cancelBtn = document.createElement('button');
+      cancelBtn.innerText = '取消';
+      cancelBtn.style.padding = '6px 14px';
+      cancelBtn.style.borderRadius = '6px';
+      cancelBtn.style.border = '1px solid #475569';
+      cancelBtn.style.backgroundColor = '#334155';
+      cancelBtn.style.color = '#e2e8f0';
+      cancelBtn.style.cursor = 'pointer';
+      cancelBtn.style.fontSize = '13px';
+      cancelBtn.onclick = () => cleanup(false);
+      btnRow.appendChild(cancelBtn);
+    }
+
+    const okBtn = document.createElement('button');
+    okBtn.innerText = '确定';
+    okBtn.style.padding = '6px 16px';
+    okBtn.style.borderRadius = '6px';
+    okBtn.style.border = 'none';
+    okBtn.style.backgroundColor = '#0284c7';
+    okBtn.style.color = '#ffffff';
+    okBtn.style.cursor = 'pointer';
+    okBtn.style.fontSize = '13px';
+    okBtn.style.fontWeight = '500';
+    okBtn.onclick = () => cleanup(true);
+    btnRow.appendChild(okBtn);
+
+    box.appendChild(titleEl);
+    box.appendChild(msgEl);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    okBtn.focus();
+  });
+}
+
 export async function confirmAction(msg: string, title = '操作确认'): Promise<boolean> {
   if (!isTauri()) {
-    return window.confirm(msg);
+    return renderWebDialog(msg, title, true);
   }
   return await ask(msg, { title, kind: 'warning' });
 }
 
 export async function showAlert(msg: string, title = '提示'): Promise<void> {
   if (!isTauri()) {
-    window.alert(msg);
+    await renderWebDialog(msg, title, false);
     return;
   }
   await message(msg, { title, kind: 'info' });
 }
-

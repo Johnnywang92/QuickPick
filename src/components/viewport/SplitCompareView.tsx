@@ -1,37 +1,34 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container } from 'pixi.js';
-import { usePhotoStore } from '../../store/photoStore';
+import { useAlbumStore } from '../../store/albumStore';
+import { useCompareStore } from '../../store/compareStore';
+import { useSelectionStore } from '../../store/selectionStore';
+import { usePreviewStore } from '../../store/previewStore';
+import { useInsightStore } from '../../store/insightStore';
 import {
   ArrowRightLeft,
   X,
   Check,
-  Star,
-  Maximize2,
-  Lock,
-  Unlock,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
   AlertTriangle,
-  Wand2,
   Loader2,
   RefreshCw,
-  Crown,
-  Eye,
   Layers,
+  HelpCircle,
+  Eye,
+  Lock,
+  Unlock,
+  Maximize2,
 } from 'lucide-react';
 
 export const SplitCompareView: React.FC = () => {
+  const { photos, currentIndex } = useAlbumStore();
   const {
-    photos,
-    currentIndex,
     compareScope,
     setCompareScope,
     compareTargetIndex,
-    currentPreviewUrl,
     comparePreviewUrl,
-    previewStatus,
-    previewError,
     comparePreviewStatus,
     comparePreviewError,
     syncZoomAndPan,
@@ -40,14 +37,16 @@ export const SplitCompareView: React.FC = () => {
     exitCompareMode,
     nextCompareCandidate,
     prevCompareCandidate,
-    setRating,
-    setPickStatus,
-    setComparePhotoRating,
-    setComparePhotoPickStatus,
-    pickBurstWinner,
-    retryCurrentPreview,
     retryComparePreview,
-  } = usePhotoStore();
+    chooseLeft,
+    chooseRight,
+    chooseBoth,
+    deferBoth,
+    nextSimilarGroup,
+  } = useCompareStore();
+  const { selections } = useSelectionStore();
+  const { currentPreviewUrl, previewStatus, previewError, retryCurrentPreview } = usePreviewStore();
+  const { getInsight } = useInsightStore();
 
   const leftContainerRef = useRef<HTMLDivElement>(null);
   const rightContainerRef = useRef<HTMLDivElement>(null);
@@ -80,17 +79,32 @@ export const SplitCompareView: React.FC = () => {
   const leftPhoto = photos[currentIndex];
   const rightPhoto = compareTargetIndex !== null ? photos[compareTargetIndex] : null;
 
+  const leftBurstId = leftPhoto?.burstGroupId;
+
+  const leftSelection = leftPhoto ? selections[leftPhoto.id]?.state || 'unreviewed' : 'unreviewed';
+  const rightSelection = rightPhoto ? selections[rightPhoto.id]?.state || 'unreviewed' : 'unreviewed';
+
+  const leftInsight = leftPhoto ? getInsight(leftPhoto.id) : null;
+  const rightInsight = rightPhoto ? getInsight(rightPhoto.id) : null;
+
   const burstPhotos = React.useMemo(() => {
-    if (!leftPhoto?.burst_group_id) return [];
-    return photos.filter((p) => p.burst_group_id === leftPhoto.burst_group_id);
-  }, [photos, leftPhoto?.burst_group_id]);
+    if (!leftBurstId) return [];
+    return photos.filter((photo) => photo.burstGroupId === leftBurstId);
+  }, [photos, leftBurstId]);
 
   const burstTotalCount = burstPhotos.length;
+  const similarGroupIds = React.useMemo(
+    () => Array.from(new Set(photos.flatMap((photo) => (photo.burstGroupId ? [photo.burstGroupId] : [])))),
+    [photos],
+  );
+  const currentSimilarGroupPosition = leftBurstId
+    ? similarGroupIds.indexOf(leftBurstId) + 1
+    : 0;
   const burstCandidatePosition = React.useMemo(() => {
-    if (!rightPhoto || !leftPhoto?.burst_group_id) return 1;
+    if (!rightPhoto || !leftBurstId) return 1;
     const idx = burstPhotos.findIndex((p) => p.path === rightPhoto.path);
     return idx >= 0 ? idx + 1 : 1;
-  }, [burstPhotos, rightPhoto]);
+  }, [burstPhotos, rightPhoto, leftBurstId]);
 
   // 瞬时闪烁比对按键监听 (按住 B 临时切换左图为右图)
   useEffect(() => {
@@ -591,6 +605,9 @@ export const SplitCompareView: React.FC = () => {
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
                 <span className="font-semibold text-emerald-400">主选片 #{currentIndex + 1}</span>
                 <span className="text-slate-300">{leftPhoto.filename}</span>
+                {leftPhoto.isRaw && (
+                  <span className="text-[10px] text-amber-300">内嵌预览 · 非完整 RAW 像素</span>
+                )}
                 {leftPhoto.exif && (leftPhoto.exif.shutter_speed || leftPhoto.exif.aperture) && (
                   <span className="text-amber-300/90 pl-1.5 border-l border-dark-700 text-[11px]">
                     {leftPhoto.exif.focal_length ? `${Math.round(leftPhoto.exif.focal_length)}mm ` : ''}
@@ -603,75 +620,32 @@ export const SplitCompareView: React.FC = () => {
             <span className="text-slate-500">{leftZoom}%</span>
           </div>
 
-          {/* 左侧 AI 诊断微标 */}
-          <div className="absolute top-3 right-3 z-20">
+          {/* 左侧状态徽标与本地分析提示 */}
+          <div className="absolute top-3 right-3 z-20 flex items-center space-x-1.5">
             <span
-              className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold flex items-center space-x-1 ${
-                leftPhoto.retouch_status === 'clean'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                  : leftPhoto.retouch_status === 'fixable'
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                  : leftPhoto.retouch_status === 'fatal'
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                  : leftPhoto.retouch_status === 'failed'
-                  ? 'bg-orange-500/20 text-orange-300 border-orange-500/30'
-                  : 'bg-slate-700/50 text-slate-300 border-slate-600'
+              className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${
+                leftSelection === 'selected'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : leftSelection === 'maybe'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : leftSelection === 'skipped'
+                  ? 'bg-slate-600/50 text-slate-200 border-slate-500'
+                  : 'bg-dark-700/60 text-slate-400 border-dark-600'
               }`}
             >
-              {leftPhoto.retouch_status === 'clean' && <Sparkles className="w-3 h-3" />}
-              {leftPhoto.retouch_status === 'fixable' && <Wand2 className="w-3 h-3" />}
-              {leftPhoto.retouch_status === 'fatal' && <AlertTriangle className="w-3 h-3" />}
-              {leftPhoto.retouch_status === 'failed' && <AlertTriangle className="w-3 h-3" />}
-              <span>{leftPhoto.retouch_status === 'clean' ? '未见明显问题' : leftPhoto.retouch_status === 'fixable' ? '可修解决' : leftPhoto.retouch_status === 'fatal' ? '不可修硬伤' : leftPhoto.retouch_status === 'failed' ? '分析失败' : '待分析'}</span>
+              {leftSelection === 'selected'
+                ? '已选'
+                : leftSelection === 'maybe'
+                ? '待考虑'
+                : leftSelection === 'skipped'
+                ? '不选'
+                : '未决定'}
             </span>
-          </div>
-
-          {/* 左侧独立定夺工具栏 */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-dark-700 shadow-xl text-xs">
-            {leftPhoto.burst_group_id && (
-              <button
-                onClick={() => void pickBurstWinner(currentIndex)}
-                title="将当前主选片定为连拍优胜 (打5星及Pick)，并自动将同组其余照片标记为排除 (Reject) [快捷键 W]"
-                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-all shadow-sm"
-              >
-                <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>连拍胜出 [W]</span>
-              </button>
+            {leftInsight?.reasons && leftInsight.reasons.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-dark-800/80 border border-dark-700 text-[10px] text-slate-300">
+                {leftInsight.reasons[0]}
+              </span>
             )}
-
-            <button
-              onClick={() => setPickStatus('Pick')}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                leftPhoto.pick_status === 'Pick'
-                  ? 'bg-emerald-600 text-white'
-                  : 'hover:bg-dark-700 text-slate-300'
-              }`}
-            >
-              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>采纳左图 [P]</span>
-            </button>
-            <button
-              onClick={() => setPickStatus('Reject')}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                leftPhoto.pick_status === 'Reject'
-                  ? 'bg-rose-600 text-white'
-                  : 'hover:bg-dark-700 text-slate-300'
-              }`}
-            >
-              <X className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>排除左图 [X]</span>
-            </button>
-            <div className="flex items-center space-x-0.5 border-l border-dark-700 pl-1.5">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setRating(leftPhoto.rating === s ? 0 : s)}
-                  className={`p-1 ${s <= leftPhoto.rating ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'}`}
-                >
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                </button>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -714,11 +688,14 @@ export const SplitCompareView: React.FC = () => {
           <div className="absolute top-3 left-3 z-20 flex items-center space-x-2 bg-dark-800/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-dark-700 text-xs font-mono">
             <span className="w-2 h-2 rounded-full bg-blue-400" />
             <span className="font-semibold text-blue-400">
-              {compareScope === 'burst' && leftPhoto?.burst_group_id
+              {compareScope === 'burst' && leftBurstId
                 ? `连拍候选 [${burstCandidatePosition}/${burstTotalCount}]`
                 : `对比候选 #${compareTargetIndex! + 1}`}
             </span>
             <span className="text-slate-300">{rightPhoto.filename}</span>
+            {rightPhoto.isRaw && (
+              <span className="text-[10px] text-amber-300">内嵌预览 · 非完整 RAW 像素</span>
+            )}
             {rightPhoto.exif && (rightPhoto.exif.shutter_speed || rightPhoto.exif.aperture) && (
               <span className="text-amber-300/90 pl-1.5 border-l border-dark-700 text-[11px]">
                 {rightPhoto.exif.focal_length ? `${Math.round(rightPhoto.exif.focal_length)}mm ` : ''}
@@ -748,77 +725,100 @@ export const SplitCompareView: React.FC = () => {
             </div>
           </div>
 
-          {/* 右侧 AI 诊断微标 */}
-          <div className="absolute top-3 right-3 z-20">
-            <span
-              className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold flex items-center space-x-1 ${
-                rightPhoto.retouch_status === 'clean'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                  : rightPhoto.retouch_status === 'fixable'
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                  : rightPhoto.retouch_status === 'fatal'
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                  : rightPhoto.retouch_status === 'failed'
-                  ? 'bg-orange-500/20 text-orange-300 border-orange-500/30'
-                  : 'bg-slate-700/50 text-slate-300 border-slate-600'
-              }`}
-            >
-              {rightPhoto.retouch_status === 'clean' && <Sparkles className="w-3 h-3" />}
-              {rightPhoto.retouch_status === 'fixable' && <Wand2 className="w-3 h-3" />}
-              {rightPhoto.retouch_status === 'fatal' && <AlertTriangle className="w-3 h-3" />}
-              {rightPhoto.retouch_status === 'failed' && <AlertTriangle className="w-3 h-3" />}
-              <span>{rightPhoto.retouch_status === 'clean' ? '未见明显问题' : rightPhoto.retouch_status === 'fixable' ? '可修解决' : rightPhoto.retouch_status === 'fatal' ? '不可修硬伤' : rightPhoto.retouch_status === 'failed' ? '分析失败' : '待分析'}</span>
-            </span>
-          </div>
-
-          {/* 右侧独立定夺工具栏 */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-dark-700 shadow-xl text-xs">
-            {rightPhoto.burst_group_id && (
-              <button
-                onClick={() => void pickBurstWinner(compareTargetIndex!)}
-                title="将右侧候选片定为连拍优胜 (打5星及Pick)，并自动将同组其余照片标记为排除 (Reject)"
-                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-all shadow-sm"
+          {/* 右侧状态徽标与本地分析提示 */}
+          {rightPhoto && (
+            <div className="absolute top-3 right-3 z-20 flex items-center space-x-1.5">
+              <span
+                className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${
+                  rightSelection === 'selected'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : rightSelection === 'maybe'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : rightSelection === 'skipped'
+                    ? 'bg-slate-600/50 text-slate-200 border-slate-500'
+                    : 'bg-dark-700/60 text-slate-400 border-dark-600'
+                }`}
               >
-                <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>连拍胜出</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setComparePhotoPickStatus('Pick')}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                rightPhoto.pick_status === 'Pick'
-                  ? 'bg-emerald-600 text-white'
-                  : 'hover:bg-dark-700 text-slate-300'
-              }`}
-            >
-              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>采纳右图</span>
-            </button>
-            <button
-              onClick={() => setComparePhotoPickStatus('Reject')}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                rightPhoto.pick_status === 'Reject'
-                  ? 'bg-rose-600 text-white'
-                  : 'hover:bg-dark-700 text-slate-300'
-              }`}
-            >
-              <X className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>排除右图</span>
-            </button>
-            <div className="flex items-center space-x-0.5 border-l border-dark-700 pl-1.5">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setComparePhotoRating(rightPhoto.rating === s ? 0 : s)}
-                  className={`p-1 ${s <= rightPhoto.rating ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'}`}
-                >
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                </button>
-              ))}
+                {rightSelection === 'selected'
+                  ? '已选'
+                  : rightSelection === 'maybe'
+                  ? '待考虑'
+                  : rightSelection === 'skipped'
+                  ? '不选'
+                  : '未决定'}
+              </span>
+              {rightInsight?.reasons && rightInsight.reasons.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-dark-800/80 border border-dark-700 text-[10px] text-slate-300">
+                  {rightInsight.reasons[0]}
+                </span>
+              )}
             </div>
-          </div>
+          )}
         </div>
+      </div>
+
+      {/* 底部居中：面向普通用户的双图决策操作坞 */}
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center space-x-2 bg-dark-850/95 backdrop-blur-md px-4 py-2 rounded-2xl border border-dark-700 shadow-2xl text-xs select-none">
+        <button
+          onClick={chooseLeft}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+            leftSelection === 'selected'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'bg-dark-750 hover:bg-dark-700 text-slate-200 border border-dark-600'
+          }`}
+          title="选择左侧照片"
+        >
+          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>选择左图</span>
+        </button>
+
+        <button
+          onClick={chooseRight}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+            rightSelection === 'selected'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'bg-dark-750 hover:bg-dark-700 text-slate-200 border border-dark-600'
+          }`}
+          title="选择右侧照片"
+        >
+          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>选择右图</span>
+        </button>
+
+        <div className="h-4 w-[1px] bg-dark-700 mx-0.5" />
+
+        <button
+          onClick={chooseBoth}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all cursor-pointer"
+          title="两张都很喜欢，全部加入已选"
+        >
+          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>两张都选</span>
+        </button>
+
+        <button
+          onClick={deferBoth}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium bg-dark-750 hover:bg-dark-700 text-amber-300 border border-dark-600 transition-all cursor-pointer"
+          title="两张都拿不准，保留在待考虑"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+          <span>两张都暂不决定</span>
+        </button>
+
+        <div className="h-4 w-[1px] bg-dark-700 mx-0.5" />
+
+        <button
+          onClick={nextSimilarGroup}
+          disabled={similarGroupIds.length <= 1}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+          title={similarGroupIds.length <= 1 ? '没有其它相似组' : '对比下一组连拍或相似照片'}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>
+            下一相似组
+            {currentSimilarGroupPosition > 0 && ` (${currentSimilarGroupPosition}/${similarGroupIds.length})`}
+          </span>
+        </button>
       </div>
     </div>
   );

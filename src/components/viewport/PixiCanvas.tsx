@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container } from 'pixi.js';
 import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
-import { usePhotoStore } from '../../store/photoStore';
+import { useInsightStore } from '../../store/insightStore';
 
 interface PixiCanvasProps {
   imageUrl: string | null;
@@ -23,7 +23,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const imageContainerRef = useRef<Container | null>(null);
   const spriteRef = useRef<Sprite | null>(null);
 
-  const focusedFace = usePhotoStore((state) => state.focusedFace);
+  const focusedFace = useInsightStore((state) => state.focusedFace);
 
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isPanning, setIsPanning] = useState<boolean>(false);

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { usePhotoStore } from '../../store/photoStore';
-import { FaceInfo } from '../../services/tauriBridge';
+import { useAlbumStore } from '../../store/albumStore';
+import { useInsightStore } from '../../store/insightStore';
+import { usePreviewStore } from '../../store/previewStore';
+import { FaceInfo } from '../../types/photo';
 import {
   Users,
   Pin,
@@ -171,18 +173,17 @@ const FaceCropCard: React.FC<FaceCropProps> = ({
 };
 
 export const FaceLoupe: React.FC = () => {
+  const { photos, currentIndex } = useAlbumStore();
+  const { currentPreviewUrl } = usePreviewStore();
   const {
-    photos,
-    currentIndex,
-    currentPreviewUrl,
     isFaceLoupeOpen,
     toggleFaceLoupe,
-    activeScenePreset,
-    setScenePreset,
+    faceReviewPreset,
+    setFaceReviewPreset,
     focusedFace,
     focusFace,
     togglePinFace,
-  } = usePhotoStore();
+  } = useInsightStore();
 
   const currentPhoto = photos[currentIndex];
   if (!currentPhoto) return null;
@@ -227,9 +228,9 @@ export const FaceLoupe: React.FC = () => {
           {/* 3 大场景预设微调切换 */}
           <div className="flex items-center space-x-1 bg-dark-800 p-0.5 rounded-lg border border-dark-700 text-[11px]">
             <button
-              onClick={() => setScenePreset('group')}
+              onClick={() => setFaceReviewPreset('group')}
               className={`flex items-center space-x-1 px-2 py-0.5 rounded transition-all ${
-                activeScenePreset === 'group'
+                faceReviewPreset === 'group'
                   ? 'bg-brand-600 text-white font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -240,9 +241,9 @@ export const FaceLoupe: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setScenePreset('candid')}
+              onClick={() => setFaceReviewPreset('candid')}
               className={`flex items-center space-x-1 px-2 py-0.5 rounded transition-all ${
-                activeScenePreset === 'candid'
+                faceReviewPreset === 'candid'
                   ? 'bg-brand-600 text-white font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -253,9 +254,9 @@ export const FaceLoupe: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setScenePreset('portrait')}
+              onClick={() => setFaceReviewPreset('portrait')}
               className={`flex items-center space-x-1 px-2 py-0.5 rounded transition-all ${
-                activeScenePreset === 'portrait'
+                faceReviewPreset === 'portrait'
                   ? 'bg-brand-600 text-white font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -302,7 +303,7 @@ export const FaceLoupe: React.FC = () => {
             onFocus={() => focusFace(face)}
             onTogglePin={(e) => {
               e.stopPropagation();
-              togglePinFace(face.id);
+              togglePinFace(currentPhoto.id, face.id);
             }}
           />
         ))}

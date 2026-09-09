@@ -1,0 +1,529 @@
+import { create } from 'zustand';
+import {
+  FilterCategory,
+  LocalPhoto,
+  PhotoInsight,
+  SceneChapter,
+  UserSelection,
+} from '../types/photo';
+import {
+  persistProjectViewState,
+  ProjectViewStateInput,
+  relocateProjectState,
+  scanFolder as tauriScanFolder,
+  PhotoItem,
+} from '../services/tauriBridge';
+import { useSelectionStore } from './selectionStore';
+import { useInsightStore } from './insightStore';
+import { usePreviewStore } from './previewStore';
+
+export const SCENE_COLORS = [
+  '#3b82f6', // blue
+  '#8b5cf6', // purple
+  '#ec4899', // pink
+  '#f59e0b', // amber
+  '#10b981', // emerald
+  '#06b6d4', // cyan
+  '#6366f1', // indigo
+  '#14b8a6', // teal
+];
+
+export const DEFAULT_SCENE_NAMES = [
+  '第一套造型',
+  '第二套造型',
+  '室内抓拍',
+  '外景特写',
+  '亲友合影',
+  '重要仪式',
+  '欢庆宴会',
+  '花絮留念',
+];
+
+function filenameSequence(filename: string): number | null {
+  const digits = filename.match(/\d+/g)?.join('');
+  if (!digits) return null;
+  const value = Number.parseInt(digits, 10);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+export function withUpdatedBurstGroups(photos: LocalPhoto[]): LocalPhoto[] {
+  const next: LocalPhoto[] = photos.map((photo) => ({ ...photo, burstGroupId: undefined }));
+  let groupStart = 0;
+
+  const commitGroup = (endExclusive: number) => {
+    if (endExclusive - groupStart < 2) return;
+    const groupId = `burst:${next[groupStart].id}`;
+    for (let index = groupStart; index < endExclusive; index += 1) {
+      next[index] = { ...next[index], burstGroupId: groupId };
+    }
+  };
+
+  for (let index = 1; index < next.length; index += 1) {
+    const previous = next[index - 1];
+    const current = next[index];
+    const previousTime = parseTimestamp(previous);
+    const currentTime = parseTimestamp(current);
+    const previousSequence = filenameSequence(previous.filename);
+    const currentSequence = filenameSequence(current.filename);
+    const sequenceGap =
+      previousSequence !== null && currentSequence !== null
+        ? Math.abs(currentSequence - previousSequence)
+        : null;
+    const consecutive =
+      previousTime !== null && currentTime !== null
+        ? Math.abs(currentTime - previousTime) <= 2 && (sequenceGap === null || sequenceGap <= 5)
+        : sequenceGap === 1;
+
+    if (!consecutive) {
+      commitGroup(index);
+      groupStart = index;
+    }
+  }
+  commitGroup(next.length);
+  return next;
+}
+
+export function photoMatchesFilter(
+  photo: LocalPhoto,
+  index: number,
+  filter: FilterCategory,
+  selectedSceneId: string | null,
+  scenes: SceneChapter[],
+  selections: Record<string, UserSelection>,
+  viewedPhotoIds: Record<string, boolean>,
+  insights: Record<string, PhotoInsight>,
+): boolean {
+  const selectedScene = selectedSceneId
+    ? scenes.find((scene) => scene.id === selectedSceneId)
+    : undefined;
+  if (selectedScene && (index < selectedScene.startIndex || index > selectedScene.endIndex)) {
+    return false;
+  }
+
+  const selectionState = selections[photo.id]?.state || 'unreviewed';
+  if (filter === 'unreviewed') return !viewedPhotoIds[photo.id];
+  if (filter === 'selected') return selectionState === 'selected';
+  if (filter === 'maybe') return selectionState === 'maybe';
+  if (filter === 'burst') return Boolean(photo.burstGroupId);
+  if (filter === 'needs_check') {
+    const insight = insights[photo.id];
+    return Boolean(
+      insight &&
+        (insight.analysisStatus === 'needs_check' ||
+          insight.possibleBlur! > 40 ||
+          (insight.possibleClosedEyes !== undefined && insight.possibleClosedEyes < 0.4)),
+    );
+  }
+  return true;
+}
+
+function matchingPhotoIndexes(state: AlbumStore): number[] {
+  const { selections, viewedPhotoIds } = useSelectionStore.getState();
+  const { insights } = useInsightStore.getState();
+  return state.photos.flatMap((photo, index) =>
+    photoMatchesFilter(
+      photo,
+      index,
+      state.activeFilter,
+      state.selectedSceneId,
+      state.scenes,
+      selections,
+      viewedPhotoIds,
+      insights,
+    )
+      ? [index]
+      : [],
+  );
+}
+
+const parseTimestamp = (photo: LocalPhoto): number | null => {
+  const dtStr = photo.exif?.date_time_original || photo.capturedAt;
+  if (!dtStr) return null;
+  const normalized = dtStr.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(/-/g, '/');
+  const ts = Date.parse(normalized);
+  return isNaN(ts) ? null : ts / 1000;
+};
+
+export const clusterPhotosIntoScenes = (
+  photos: LocalPhoto[],
+  minGapMinutes = 10,
+): SceneChapter[] => {
+  if (photos.length === 0) return [];
+  const minGapSeconds = Math.max(60, minGapMinutes * 60);
+  const splitIndices: number[] = [0];
+
+  let lastTs = parseTimestamp(photos[0]);
+
+  for (let i = 1; i < photos.length; i++) {
+    const currTs = parseTimestamp(photos[i]);
+    if (lastTs !== null && currTs !== null) {
+      const diff = currTs - lastTs;
+      if (diff >= minGapSeconds) {
+        splitIndices.push(i);
+      }
+    }
+    if (currTs !== null) {
+      lastTs = currTs;
+    }
+  }
+
+  const scenes: SceneChapter[] = [];
+  const numSplits = splitIndices.length;
+
+  for (let idx = 0; idx < numSplits; idx++) {
+    const startIdx = splitIndices[idx];
+    const endIdx = idx + 1 < numSplits ? splitIndices[idx + 1] - 1 : photos.length - 1;
+    const count = endIdx - startIdx + 1;
+    const color = SCENE_COLORS[idx % SCENE_COLORS.length];
+    const name = idx < DEFAULT_SCENE_NAMES.length ? DEFAULT_SCENE_NAMES[idx] : `场景 ${idx + 1}`;
+
+    scenes.push({
+      id: `scene-${idx + 1}-${Date.now()}`,
+      name,
+      startIndex: startIdx,
+      endIndex: endIdx,
+      startPath: photos[startIdx].path,
+      endPath: photos[endIdx].path,
+      photoCount: count,
+      color,
+    });
+  }
+
+  return scenes;
+};
+
+interface AlbumStore {
+  folderPath: string | null;
+  photos: LocalPhoto[];
+  currentIndex: number;
+  isLoading: boolean;
+  scanError: string | null;
+  failedFolderPath: string | null;
+  scenes: SceneChapter[];
+  selectedSceneId: string | null;
+  targetGoal: number | null; // 用户自设选片目标 (如 100 张)
+  activeFilter: FilterCategory;
+  isScenesModalOpen: boolean;
+
+  // Actions
+  openFolder: (path: string, relocateProjectId?: string) => Promise<void>;
+  retryOpenFolder: () => Promise<void>;
+  selectIndex: (index: number) => void;
+  nextPhoto: () => void;
+  prevPhoto: () => void;
+  selectPhotoByFilename: (filename: string) => void;
+  setActiveFilter: (filter: FilterCategory) => void;
+  setSelectedSceneId: (id: string | null) => void;
+  setTargetGoal: (goal: number | null) => void;
+  setScenesModalOpen: (open: boolean) => void;
+  updateScene: (sceneId: string, patch: Partial<SceneChapter>) => void;
+  reclusterScenes: (minGapMinutes?: number) => void;
+  resetFilter: () => void;
+  jumpToFirstMatching: () => void;
+  jumpToLastMatching: () => void;
+}
+
+const VALID_FILTERS = new Set<FilterCategory>([
+  'all',
+  'unreviewed',
+  'selected',
+  'maybe',
+  'needs_check',
+  'burst',
+]);
+
+let pendingViewState: { projectId: string; state: ProjectViewStateInput } | null = null;
+let viewStateTimer: ReturnType<typeof setTimeout> | null = null;
+let viewStateQueue: Promise<void> = Promise.resolve();
+
+function projectViewState(state: AlbumStore): ProjectViewStateInput {
+  return {
+    current_photo_id: state.photos[state.currentIndex]?.id,
+    target_count: state.targetGoal ?? undefined,
+    active_filter: state.activeFilter,
+    selected_scene_id: state.selectedSceneId ?? undefined,
+    scenes_json: JSON.stringify(state.scenes),
+  };
+}
+
+function drainPendingViewState(): Promise<void> {
+  if (viewStateTimer) {
+    clearTimeout(viewStateTimer);
+    viewStateTimer = null;
+  }
+  const pending = pendingViewState;
+  pendingViewState = null;
+  if (!pending) return viewStateQueue;
+
+  const save = async () => {
+    try {
+      const outcome = await persistProjectViewState(pending.projectId, pending.state);
+      if (outcome.backup_warning) {
+        useSelectionStore
+          .getState()
+          .reportPersistenceWarning(`项目状态已保存，但安全备份暂时失败：${outcome.backup_warning}`);
+      }
+    } catch (error) {
+      useSelectionStore
+        .getState()
+        .reportPersistenceError(
+          `浏览位置和筛选状态未能保存：${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
+  };
+  viewStateQueue = viewStateQueue.then(save, save);
+  return viewStateQueue;
+}
+
+function scheduleViewState(state: AlbumStore): void {
+  const projectId = useSelectionStore.getState().currentProjectId;
+  if (!projectId) return;
+  pendingViewState = { projectId, state: projectViewState(state) };
+  if (viewStateTimer) clearTimeout(viewStateTimer);
+  viewStateTimer = setTimeout(() => void drainPendingViewState(), 350);
+}
+
+function restoredScenes(scenesJson: string, photos: LocalPhoto[]): SceneChapter[] {
+  try {
+    const value: unknown = JSON.parse(scenesJson);
+    if (!Array.isArray(value) || value.length === 0) return clusterPhotosIntoScenes(photos, 10);
+    const scenes = value.filter((scene): scene is SceneChapter => {
+      if (!scene || typeof scene !== 'object') return false;
+      const candidate = scene as Partial<SceneChapter>;
+      return (
+        typeof candidate.id === 'string' &&
+        typeof candidate.name === 'string' &&
+        Number.isInteger(candidate.startIndex) &&
+        Number.isInteger(candidate.endIndex) &&
+        candidate.startIndex! >= 0 &&
+        candidate.endIndex! >= candidate.startIndex! &&
+        candidate.endIndex! < photos.length
+      );
+    });
+    if (scenes.length === 0) return clusterPhotosIntoScenes(photos, 10);
+    return scenes.map((scene) => ({
+      ...scene,
+      startPath: photos[scene.startIndex].path,
+      endPath: photos[scene.endIndex].path,
+      photoCount: scene.endIndex - scene.startIndex + 1,
+    }));
+  } catch {
+    return clusterPhotosIntoScenes(photos, 10);
+  }
+}
+
+export const useAlbumStore = create<AlbumStore>((set, get) => ({
+  folderPath: null,
+  photos: [],
+  currentIndex: 0,
+  isLoading: false,
+  scanError: null,
+  failedFolderPath: null,
+  scenes: [],
+  selectedSceneId: null,
+  targetGoal: null,
+  activeFilter: 'all',
+  isScenesModalOpen: false,
+
+  openFolder: async (path: string, relocateProjectId?: string) => {
+    await drainPendingViewState();
+    useInsightStore.getState().cancelBackgroundAnalysis();
+    usePreviewStore.getState().clearCache();
+    set({
+      isLoading: true,
+      scanError: null,
+      failedFolderPath: null,
+      folderPath: path,
+      photos: [],
+      currentIndex: 0,
+      scenes: [],
+    });
+    try {
+      const items: PhotoItem[] = await tauriScanFolder(path);
+
+      // 数据库将本次扫描的临时路径 ID 关联到跨重命名稳定的 photo_key。
+      const project = relocateProjectId
+        ? await relocateProjectState(relocateProjectId, path, items)
+        : await useSelectionStore.getState().openProject(path, items);
+      const mappedItems = items.map((item) => ({
+        ...item,
+        id: project.photo_id_remaps[item.id] || item.id,
+      }));
+
+      // 转换为面向普通用户的 LocalPhoto 实体与 PhotoInsight 实体
+      const localPhotos: LocalPhoto[] = withUpdatedBurstGroups(mappedItems.map((it) => ({
+        id: it.id,
+        path: it.path,
+        filename: it.filename,
+        fileSize: it.file_size,
+        format: it.is_raw ? 'raw' : it.filename.toLowerCase().endsWith('.png') ? 'png' : 'jpeg',
+        isRaw: it.is_raw,
+        previewWidth: it.thumb_width,
+        previewHeight: it.thumb_height,
+        capturedAt: it.exif?.date_time_original,
+        burstGroupId: it.burst_group_id,
+        faces: [],
+        exif: it.exif,
+      })));
+
+      const photoIds = localPhotos.map((p) => p.id);
+      useSelectionStore.getState().initSelections(project, photoIds);
+
+      // 初始化与用户选择相互独立的本地分析提示
+      useInsightStore.getState().initInsightsFromItems(
+        mappedItems.map((item, index) => ({
+          ...item,
+          burst_group_id: localPhotos[index].burstGroupId,
+        })),
+      );
+
+      const scenes = restoredScenes(project.scenes_json, localPhotos);
+      const restoredIndex = project.current_photo_id
+        ? localPhotos.findIndex((photo) => photo.id === project.current_photo_id)
+        : -1;
+      const currentIndex = restoredIndex >= 0 ? restoredIndex : 0;
+      const activeFilter = VALID_FILTERS.has(project.active_filter as FilterCategory)
+        ? (project.active_filter as FilterCategory)
+        : 'all';
+      const selectedSceneId = scenes.some((scene) => scene.id === project.selected_scene_id)
+        ? project.selected_scene_id || null
+        : null;
+
+      set({
+        photos: localPhotos,
+        currentIndex,
+        scenes,
+        activeFilter,
+        selectedSceneId,
+        targetGoal: project.target_count ?? null,
+        isLoading: false,
+        scanError: null,
+        failedFolderPath: null,
+      });
+      scheduleViewState(get());
+
+      // 恢复上次位置；首次打开时从首张开始。
+      if (localPhotos.length > 0) {
+        const currentPhoto = localPhotos[currentIndex];
+        useSelectionStore.getState().markAsViewed(currentPhoto.id);
+        usePreviewStore.getState().loadPreviewForCurrent(currentPhoto, localPhotos);
+        useInsightStore.getState().startBackgroundAnalysis(localPhotos);
+      }
+    } catch (e) {
+      console.error('Failed to scan folder:', e);
+      useInsightStore.getState().cancelBackgroundAnalysis();
+      useSelectionStore
+        .getState()
+        .reportPersistenceError(e instanceof Error ? e.message : String(e));
+      set({
+        isLoading: false,
+        folderPath: null,
+        photos: [],
+        scenes: [],
+        failedFolderPath: path,
+        scanError: `无法打开照片文件夹：${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  },
+
+  retryOpenFolder: async () => {
+    const failedFolderPath = get().failedFolderPath;
+    if (failedFolderPath) await get().openFolder(failedFolderPath);
+  },
+
+  selectIndex: (index: number) => {
+    const { photos, currentIndex } = get();
+    if (index < 0 || index >= photos.length || index === currentIndex) return;
+
+    set({ currentIndex: index });
+    scheduleViewState(get());
+    const target = photos[index];
+    if (target) {
+      useSelectionStore.getState().markAsViewed(target.id);
+      usePreviewStore.getState().loadPreviewForCurrent(target, photos);
+    }
+  },
+
+  nextPhoto: () => {
+    const state = get();
+    const nextIndex = matchingPhotoIndexes(state).find((index) => index > state.currentIndex);
+    if (nextIndex !== undefined) state.selectIndex(nextIndex);
+  },
+
+  prevPhoto: () => {
+    const state = get();
+    const previousIndex = matchingPhotoIndexes(state)
+      .filter((index) => index < state.currentIndex)
+      .at(-1);
+    if (previousIndex !== undefined) state.selectIndex(previousIndex);
+  },
+
+  selectPhotoByFilename: (filename: string) => {
+    const { photos, selectIndex } = get();
+    const idx = photos.findIndex((p) => p.filename === filename);
+    if (idx >= 0) {
+      selectIndex(idx);
+    }
+  },
+
+  setActiveFilter: (filter: FilterCategory) => {
+    set({ activeFilter: filter });
+    scheduleViewState(get());
+    const state = get();
+    const matches = matchingPhotoIndexes(state);
+    if (!matches.includes(state.currentIndex) && matches[0] !== undefined) {
+      state.selectIndex(matches[0]);
+    }
+  },
+
+  setSelectedSceneId: (id: string | null) => {
+    set({ selectedSceneId: id });
+    scheduleViewState(get());
+    const state = get();
+    const matches = matchingPhotoIndexes(state);
+    if (!matches.includes(state.currentIndex) && matches[0] !== undefined) {
+      state.selectIndex(matches[0]);
+    }
+  },
+
+  setTargetGoal: (goal: number | null) => {
+    set({ targetGoal: goal });
+    scheduleViewState(get());
+  },
+
+  setScenesModalOpen: (open: boolean) => {
+    set({ isScenesModalOpen: open });
+  },
+
+  updateScene: (sceneId: string, patch: Partial<SceneChapter>) => {
+    const { scenes } = get();
+    set({
+      scenes: scenes.map((s) => (s.id === sceneId ? { ...s, ...patch } : s)),
+    });
+    scheduleViewState(get());
+  },
+
+  reclusterScenes: (minGapMinutes = 10) => {
+    const { photos } = get();
+    const newScenes = clusterPhotosIntoScenes(photos, minGapMinutes);
+    set({ scenes: newScenes });
+    scheduleViewState(get());
+  },
+
+  resetFilter: () => {
+    set({ activeFilter: 'all', selectedSceneId: null });
+    scheduleViewState(get());
+  },
+
+  jumpToFirstMatching: () => {
+    const state = get();
+    const firstIndex = matchingPhotoIndexes(state)[0];
+    if (firstIndex !== undefined) state.selectIndex(firstIndex);
+  },
+
+  jumpToLastMatching: () => {
+    const state = get();
+    const lastIndex = matchingPhotoIndexes(state).at(-1);
+    if (lastIndex !== undefined) state.selectIndex(lastIndex);
+  },
+}));

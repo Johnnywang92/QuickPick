@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { usePhotoStore, isPhotoMatchingFilter, getPhotoUncertainty } from '../../store/photoStore';
-import { Check, X, Star, Scale } from 'lucide-react';
+import { photoMatchesFilter, useAlbumStore } from '../../store/albumStore';
+import { useCompareStore } from '../../store/compareStore';
+import { useInsightStore } from '../../store/insightStore';
+import { usePreviewStore } from '../../store/previewStore';
+import { useSelectionStore } from '../../store/selectionStore';
+import { Check, MessageSquare, AlertCircle } from 'lucide-react';
 
 const ITEM_WIDTH = 112; // w-28 = 7rem = 112px
 const ITEM_GAP = 8; // space-x-2 = 0.5rem = 8px
@@ -13,17 +17,14 @@ export const Filmstrip: React.FC = () => {
     photos,
     currentIndex,
     activeFilter,
-    selectedCamera,
-    selectedLens,
-    reviewOnlyUnadjudicated,
     selectIndex,
-    previewCache,
-    isCompareMode,
-    compareTargetIndex,
-    activeWorkflowScene,
-    chapters,
-    selectedChapterId,
-  } = usePhotoStore();
+    scenes,
+    selectedSceneId,
+  } = useAlbumStore();
+  const { previewCache } = usePreviewStore();
+  const { isCompareMode, compareTargetIndex } = useCompareStore();
+  const { insights } = useInsightStore();
+  const { selections, viewedPhotoIds } = useSelectionStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [containerWidth, setContainerWidth] = useState(1200);
@@ -50,25 +51,21 @@ export const Filmstrip: React.FC = () => {
   // 预计算筛选匹配项的相对序号映射表（仅当存在活动筛选时计算）
   const filteredIndexMap = React.useMemo(() => {
     const isFiltered =
-      activeFilter !== 'all' ||
-      selectedCamera !== null ||
-      selectedLens !== null ||
-      selectedChapterId !== null;
+      activeFilter !== 'all' || selectedSceneId !== null;
     if (!isFiltered) return null;
     const map = new Map<string, number>();
     let count = 0;
     photos.forEach((p, i) => {
       if (
-        isPhotoMatchingFilter(
+        photoMatchesFilter(
           p,
-          activeFilter,
-          selectedCamera,
-          selectedLens,
-          reviewOnlyUnadjudicated,
-          activeWorkflowScene,
-          selectedChapterId,
-          chapters,
           i,
+          activeFilter,
+          selectedSceneId,
+          scenes,
+          selections,
+          viewedPhotoIds,
+          insights,
         )
       ) {
         count++;
@@ -79,12 +76,11 @@ export const Filmstrip: React.FC = () => {
   }, [
     photos,
     activeFilter,
-    selectedCamera,
-    selectedLens,
-    reviewOnlyUnadjudicated,
-    activeWorkflowScene,
-    selectedChapterId,
-    chapters,
+    selectedSceneId,
+    scenes,
+    selections,
+    viewedPhotoIds,
+    insights,
   ]);
 
   // 自动平滑居中当前选中的缩略图卡片
@@ -140,19 +136,22 @@ export const Filmstrip: React.FC = () => {
         {visiblePhotos.map(({ photo, idx }) => {
           const isCurrent = idx === currentIndex;
           const isCompare = isCompareMode && idx === compareTargetIndex;
-          const matchesFilter = isPhotoMatchingFilter(
+          const isFilterMatch = photoMatchesFilter(
             photo,
-            activeFilter,
-            selectedCamera,
-            selectedLens,
-            reviewOnlyUnadjudicated,
-            activeWorkflowScene,
-            selectedChapterId,
-            chapters,
             idx,
+            activeFilter,
+            selectedSceneId,
+            scenes,
+            selections,
+            viewedPhotoIds,
+            insights,
           );
-          const uncertainty = getPhotoUncertainty(photo, activeWorkflowScene);
-          const chapterStart = chapters.find((c) => c.startIndex === idx);
+          const insight = insights[photo.id];
+          const uncertaintyReasons = (insight?.reasons || []).filter(
+            (reason) =>
+              reason.includes('眼睛') || reason.includes('模糊') || reason.includes('相似'),
+          );
+          const chapterStart = scenes.find((scene) => scene.startIndex === idx);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
 
@@ -174,7 +173,7 @@ export const Filmstrip: React.FC = () => {
                   ? 'border-brand-500 ring-2 ring-brand-500/40 bg-dark-700 z-10'
                   : isCompare
                   ? 'border-blue-500 ring-2 ring-blue-500/40 bg-dark-700 z-10'
-                  : matchesFilter
+                  : isFilterMatch
                   ? 'border-dark-700/80 hover:border-slate-500 bg-dark-800'
                   : 'border-dark-800/40 bg-dark-900/50 opacity-40 hover:opacity-80'
               }`}
@@ -213,43 +212,39 @@ export const Filmstrip: React.FC = () => {
                         {chapterStart.name}
                       </span>
                     )}
-                    {/* 智能诊断状态指示点 */}
+                    {/* 本地分析提示状态指示点 */}
                     <span
-                      title={`AI 诊断: ${
-                        photo.retouch_status === 'clean'
+                      title={`辅助提示: ${
+                        insight?.analysisStatus === 'no_issues'
                           ? '未见明显问题'
-                          : photo.retouch_status === 'fixable'
-                          ? '可修解决'
-                          : photo.retouch_status === 'fatal'
-                          ? '不可修硬伤'
-                          : photo.retouch_status === 'failed'
+                          : insight?.analysisStatus === 'needs_check'
+                          ? '建议人工检查'
+                          : insight?.analysisStatus === 'failed'
                           ? '分析失败，可重试'
                           : '待分析'
                       }`}
                       className={`w-1.5 h-1.5 rounded-full ${
-                        photo.retouch_status === 'clean'
+                        insight?.analysisStatus === 'no_issues'
                           ? 'bg-emerald-400'
-                          : photo.retouch_status === 'fixable'
-                          ? 'bg-amber-400'
-                          : photo.retouch_status === 'fatal'
+                          : insight?.analysisStatus === 'needs_check'
                           ? 'bg-rose-400'
-                          : photo.retouch_status === 'failed'
+                          : insight?.analysisStatus === 'failed'
                           ? 'bg-orange-400'
                           : 'bg-slate-400'
                       }`}
                     />
-                    {photo.burst_group_id && (
+                    {photo.burstGroupId && (
                       <span className="text-[8px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono">
                         连拍
                       </span>
                     )}
-                    {uncertainty.isUncertain && (
+                    {uncertaintyReasons.length > 0 && (
                       <span
-                        title={`待定复核: ${uncertainty.reasons.join(' · ')}`}
+                        title={`建议检查: ${uncertaintyReasons.join(' · ')}`}
                         className="text-[8px] px-0.5 py-0.2 rounded bg-indigo-500/30 text-indigo-200 font-mono flex items-center"
                       >
-                        <Scale className="w-2 h-2 mr-0.5 shrink-0" />
-                        复核
+                        <AlertCircle className="w-2 h-2 mr-0.5 shrink-0" />
+                        检查
                       </span>
                     )}
                     {isCompareMode && isCurrent && (
@@ -264,15 +259,23 @@ export const Filmstrip: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Pick / Reject 标记 */}
-                  {photo.pick_status === 'Pick' && (
-                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500/20 text-emerald-400">
-                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  {/* 用户选择状态徽标 */}
+                  {selections[photo.id]?.state === 'selected' && (
+                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-dark-900 font-bold shadow-sm">
+                      <Check className="w-2.5 h-2.5 stroke-[3.5]" />
                     </span>
                   )}
-                  {photo.pick_status === 'Reject' && (
-                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-rose-500/20 text-rose-400">
-                      <X className="w-2.5 h-2.5 stroke-[3]" />
+                  {selections[photo.id]?.state === 'maybe' && (
+                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-dark-900 font-bold text-[9px] shadow-sm">
+                      ?
+                    </span>
+                  )}
+                  {selections[photo.id]?.state === 'skipped' && (
+                    <span
+                      className="flex h-3.5 items-center justify-center rounded-full bg-slate-600 px-1 text-[8px] font-bold text-slate-100 shadow-sm"
+                      title="已明确标记为不选"
+                    >
+                      不选
                     </span>
                   )}
                 </div>
@@ -281,31 +284,16 @@ export const Filmstrip: React.FC = () => {
                   {photo.filename}
                 </div>
 
-                {/* 星级与色标底条 */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-0.5">
-                    {photo.rating > 0 ? (
-                      <span className="flex items-center text-[10px] text-amber-400 font-medium space-x-0.5">
-                        <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                        <span>{photo.rating}</span>
-                      </span>
-                    ) : (
-                      <span className="text-[9px] text-slate-600">未评</span>
-                    )}
-                  </div>
+                {/* 格式与用户备注底条 */}
+                <div className="flex items-center justify-between text-[9px] font-mono text-slate-500">
+                  <span className="text-[8px] bg-dark-750 px-1 py-0.2 rounded text-slate-400">
+                    {photo.isRaw ? 'RAW' : photo.format.toUpperCase()}
+                  </span>
 
-                  {photo.color_label && (
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        photo.color_label === 'Red'
-                          ? 'bg-rose-500'
-                          : photo.color_label === 'Yellow'
-                          ? 'bg-amber-400'
-                          : photo.color_label === 'Green'
-                          ? 'bg-emerald-500'
-                          : 'bg-blue-500'
-                      }`}
-                    />
+                  {selections[photo.id]?.note && (
+                    <span className="flex items-center text-amber-400" title={`备注: ${selections[photo.id]?.note}`}>
+                      <MessageSquare className="w-2.5 h-2.5" />
+                    </span>
                   )}
                 </div>
               </div>

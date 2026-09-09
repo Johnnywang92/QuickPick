@@ -29,10 +29,10 @@ export const AboutModal: React.FC<AboutModalProps> = ({
               <div className="flex items-center space-x-2">
                 <h2 className="text-base font-bold text-slate-100">QuickPick 极选</h2>
                 <span className="text-[10px] bg-brand-600/30 text-brand-300 border border-brand-500/30 px-1.5 py-0.2 rounded font-mono font-medium">
-                  v0.1.0 MVP
+                  v0.1.0
                 </span>
               </div>
-              <p className="text-xs text-slate-400">专为商业与婚礼摄影师打造的高性能 RAW 选片工作站</p>
+              <p className="text-xs text-slate-400">面向普通用户的本地选片工具，原片全程只读安全无忧</p>
             </div>
           </div>
 
@@ -88,6 +88,23 @@ export const AboutModal: React.FC<AboutModalProps> = ({
         <div className="p-6 overflow-y-auto text-xs text-slate-300 space-y-4 font-sans leading-relaxed select-text">
           {activeTab === 'overview' && (
             <div className="space-y-4">
+              {/* 原片安全只读红线卡片 */}
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
+                <div className="flex items-center space-x-2 text-emerald-300 font-semibold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>原片绝对只读安全保障</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  QuickPick 是面向普通用户的本地选片工具，帮助用户从摄影师交付的上千张 RAW/JPEG 原片中快速找出自己满意的照片，并在不修改、不移动、不删除原片的前提下安全导出选片结果。闭眼、模糊和相似度仅作为可能需要人工复核的提示。
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-1 text-[10px] text-slate-400">
+                  <div>🔒 绝不移动、删除或覆盖原片</div>
+                  <div>💾 选片记录独立隔离保存</div>
+                  <div>🛡️ 默认不在照片目录写入 XMP</div>
+                  <div>🚀 支持原片校验复制与清单导出</div>
+                </div>
+              </div>
+
               {/* 核心引擎信息卡片 */}
               <div className="p-4 rounded-xl bg-dark-800/90 border border-dark-700 space-y-3">
                 <div className="flex items-center justify-between">
