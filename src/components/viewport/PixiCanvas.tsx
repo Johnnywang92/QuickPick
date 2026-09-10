@@ -19,7 +19,7 @@ interface PixiCanvasProps {
 
 export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   imageUrl,
-  filename,
+  filename: _filename,
   previewStatus = 'loaded',
   previewError = null,
   onRetryPreview,
@@ -458,12 +458,6 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         >
           <ZoomOut className="w-3.5 h-3.5" />
         </button>
-      </div>
-
-      {/* 照片名称信息浮标 */}
-      <div className="absolute bottom-4 left-4 z-10 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-3 py-1.5 rounded-lg shadow-md text-xs text-slate-300 font-mono flex items-center space-x-2">
-        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-        <span>{filename}</span>
       </div>
     </div>
   );

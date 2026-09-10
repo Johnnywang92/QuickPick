@@ -37,7 +37,7 @@ export const PhotoInfoHud: React.FC = () => {
 
         {currentPhoto.isRaw && (
           <span
-            className="rounded bg-amber-500/15 px-1.5 py-0.2 font-sans text-[9px] text-amber-300"
+            className="rounded bg-amber-500/15 px-1.5 py-0.2 font-sans text-[9px] text-amber-700 dark:text-amber-300 font-medium"
             title="当前显示相机写入 RAW 文件的内嵌预览，不是完整 RAW 传感器像素；请勿据此判断最终可输出分辨率"
           >
             内嵌预览
@@ -60,7 +60,7 @@ export const PhotoInfoHud: React.FC = () => {
         )}
 
         {burstPhotos.length > 1 && (
-          <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1 py-0.2 rounded font-mono">
+          <span className="text-[9px] bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-1 py-0.2 rounded font-mono font-medium">
             连拍 [{burstIndex}/{burstPhotos.length}]
           </span>
         )}

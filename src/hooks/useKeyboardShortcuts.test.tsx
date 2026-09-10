@@ -63,4 +63,21 @@ describe('useKeyboardShortcuts', () => {
     fireEvent.keyDown(window, { key: ' ' });
     expect(toggleSelect).toHaveBeenCalledWith('current');
   });
+
+  it('toggles tag and auto-selects with number key 1', () => {
+    const setAnnotation = vi.fn();
+    const setSelectionState = vi.fn();
+    useSelectionStore.setState({
+      getAnnotation: () => ({ comment: '', presetTags: [], pins: [] }),
+      setAnnotation,
+      getSelection: () => ({ photoId: 'current', state: 'unreviewed', updatedAt: '' }),
+      setSelectionState,
+    });
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(window, { key: '1' });
+
+    expect(setAnnotation).toHaveBeenCalled();
+    expect(setSelectionState).toHaveBeenCalledWith('current', 'selected');
+  });
 });

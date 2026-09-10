@@ -71,9 +71,9 @@ export const QuickTagBar: React.FC = () => {
         <span>标签</span>
       </div>
 
-      {/* 快捷常驻标签列表 */}
+      {/* 快捷常驻标签列表 (支持数字键 1~5 盲打) */}
       <div className="flex items-center gap-1">
-        {quickDisplayTags.map((tag) => {
+        {quickDisplayTags.map((tag, idx) => {
           const isActive = activeTags.includes(tag);
           const isRetouch = tag === '要修图';
           const isStraight = tag === '原图直出';
@@ -82,9 +82,13 @@ export const QuickTagBar: React.FC = () => {
             <button
               key={tag}
               onClick={() => handleToggleTag(tag)}
-              title={isActive ? `取消标签: ${tag}` : `为当前照片打上 [${tag}] 标签`}
+              title={
+                isActive
+                  ? `取消标签: ${tag} [快捷键 ${idx + 1}]`
+                  : `打上 [${tag}] 标签 [快捷键 ${idx + 1}]`
+              }
               className={clsx(
-                'flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-all cursor-pointer',
+                'flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-all cursor-pointer select-none',
                 isActive
                   ? isRetouch
                     ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
@@ -94,6 +98,14 @@ export const QuickTagBar: React.FC = () => {
                   : 'bg-dark-800/80 hover:bg-dark-750 text-slate-300 hover:text-slate-100 border-dark-700',
               )}
             >
+              <span
+                className={clsx(
+                  'text-[9px] font-mono font-bold px-1 py-0.2 rounded',
+                  isActive ? 'bg-white/25 text-white' : 'bg-dark-750 text-slate-400',
+                )}
+              >
+                {idx + 1}
+              </span>
               {isActive && <Check className="w-2.5 h-2.5 stroke-[3]" />}
               <span>{tag}</span>
             </button>

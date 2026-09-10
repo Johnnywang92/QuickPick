@@ -32,6 +32,12 @@ export interface SelectionStats {
 
 export type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+export interface TriageFeedback {
+  photoId: string;
+  state: SelectionState;
+  timestamp: number;
+}
+
 interface SelectionStore {
   selections: Record<string, UserSelection>;
   viewedPhotoIds: Record<string, boolean>;
@@ -41,6 +47,7 @@ interface SelectionStore {
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
   persistenceWarning: string | null;
+  lastTriageFeedback: TriageFeedback | null;
 
   initSelections: (project: ProjectState, photoIds: string[]) => void;
   openProject: (
@@ -130,6 +137,7 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
   persistenceStatus: 'idle',
   persistenceError: null,
   persistenceWarning: null,
+  lastTriageFeedback: null,
 
   openProject: (folderPath, photos) => openProjectState(folderPath, photos),
 
@@ -237,9 +245,15 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
     if (changes.length === 0) return;
     const undoItem: SelectionUndoItem = { changes, label };
 
+    const feedback: TriageFeedback | null =
+      changes.length === 1
+        ? { photoId: changes[0].photoId, state: changes[0].nextState, timestamp: Date.now() }
+        : null;
+
     set({
       selections: nextSelections,
       undoStack: [...undoStack.slice(-50), undoItem],
+      ...(feedback ? { lastTriageFeedback: feedback } : {}),
     });
 
     enqueuePersistence(
@@ -320,10 +334,16 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
       revertedSelections[change.photoId] = reverted;
       revertedRecords.push(reverted);
     }
+    const feedback: TriageFeedback | null =
+      last.changes.length === 1
+        ? { photoId: last.changes[0].photoId, state: last.changes[0].previousState, timestamp: Date.now() }
+        : null;
+
     set({
       isUndoing: true,
       selections: revertedSelections,
       undoStack: undoStack.slice(0, -1),
+      ...(feedback ? { lastTriageFeedback: feedback } : {}),
     });
     enqueuePersistence(
       () => persistSelections(currentProjectId, revertedRecords.map(asPersistedSelection)),

@@ -3,6 +3,7 @@ import { useAlbumStore } from '../store/albumStore';
 import { useSelectionStore } from '../store/selectionStore';
 import { useCompareStore } from '../store/compareStore';
 import { useInsightStore } from '../store/insightStore';
+import { useTagStore } from '../store/tagStore';
 
 interface KeyboardShortcutsOptions {
   onToggleRetouch?: () => void;
@@ -10,7 +11,16 @@ interface KeyboardShortcutsOptions {
 
 export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
   const { photos, currentIndex, nextPhoto, prevPhoto, resetFilter, jumpToFirstMatching, jumpToLastMatching } = useAlbumStore();
-  const { toggleSelect, setMaybe, setSkipped, undoLast } = useSelectionStore();
+  const {
+    toggleSelect,
+    setMaybe,
+    setSkipped,
+    undoLast,
+    getAnnotation,
+    setAnnotation,
+    getSelection,
+    setSelectionState,
+  } = useSelectionStore();
   const {
     isCompareMode,
     isPkMode,
@@ -97,6 +107,35 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
             setSkipped(currentPhoto.id);
           }
           break;
+
+        // 快捷数字键 1~5 对应前 5 个高频标签打标
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5': {
+          if (currentPhoto && !isCompareMode) {
+            const index = parseInt(e.key, 10) - 1;
+            const availableTags = useTagStore.getState().availableTags;
+            const tag = availableTags[index];
+            if (tag) {
+              e.preventDefault();
+              const ann = getAnnotation(currentPhoto.id);
+              const active = ann.presetTags || [];
+              const next = active.includes(tag)
+                ? active.filter((t) => t !== tag)
+                : [...active, tag];
+              setAnnotation(currentPhoto.id, {
+                ...ann,
+                presetTags: next,
+              });
+              if (getSelection(currentPhoto.id).state === 'unreviewed' && next.length > 0) {
+                setSelectionState(currentPhoto.id, 'selected');
+              }
+            }
+          }
+          break;
+        }
 
         // 查看人脸特写抽屉 [F]
         case 'f':

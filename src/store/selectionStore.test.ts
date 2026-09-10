@@ -91,4 +91,18 @@ describe('selectionStore', () => {
     expect(useSelectionStore.getState().undoStack).toHaveLength(0);
     expect(useSelectionStore.getState().persistenceError).toContain('database is read-only');
   });
+
+  it('updates lastTriageFeedback when setting individual selection state and undoing', () => {
+    useSelectionStore.getState().setSelectionState('left', 'selected');
+    expect(useSelectionStore.getState().lastTriageFeedback).toMatchObject({
+      photoId: 'left',
+      state: 'selected',
+    });
+
+    useSelectionStore.getState().undoLast();
+    expect(useSelectionStore.getState().lastTriageFeedback).toMatchObject({
+      photoId: 'left',
+      state: 'unreviewed',
+    });
+  });
 });

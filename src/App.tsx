@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import clsx from 'clsx';
 import { useAlbumStore } from './store/albumStore';
 import { useSelectionStore } from './store/selectionStore';
 import { usePreviewStore } from './store/previewStore';
@@ -53,6 +54,7 @@ const BurstKnockoutView = lazy(() =>
   })),
 );
 import { RetouchPanel } from './components/triage/RetouchPanel';
+import { TriageFeedbackOverlay } from './components/viewport/TriageFeedbackOverlay';
 import { createPin } from './utils/annotationUtils';
 const FaceLoupe = lazy(() =>
   import('./components/loupe/FaceLoupe').then((module) => ({ default: module.FaceLoupe })),
@@ -116,6 +118,8 @@ export default function App() {
     scanError,
     failedFolderPath,
     isScenesModalOpen,
+    setScenesModalOpen,
+    targetGoal,
     openFolder,
     retryOpenFolder,
   } = useAlbumStore();
@@ -255,10 +259,36 @@ export default function App() {
               <span>{photos.length}</span>
             </div>
 
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
+            <div
+              onClick={() => targetGoal && setScenesModalOpen(true)}
+              className={clsx(
+                'flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono select-none',
+                targetGoal && 'cursor-pointer hover:border-dark-600 transition-colors',
+              )}
+              title={targetGoal ? `选片目标：${targetGoal} 张 (点击管理目标与场景配额)` : undefined}
+            >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
               <span>已选</span>
-              <span className="font-bold text-emerald-600 dark:text-emerald-400">{stats.selectedCount}</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                {stats.selectedCount}
+              </span>
+              {targetGoal && targetGoal > 0 && (
+                <>
+                  <span className="text-slate-500">/</span>
+                  <span className="text-slate-400 text-[11px]" title={`选片总目标：${targetGoal} 张`}>
+                    目标 {targetGoal}
+                  </span>
+                  {stats.selectedCount >= targetGoal ? (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded font-sans font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                      达标
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-sans">
+                      (差{targetGoal - stats.selectedCount})
+                    </span>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
@@ -572,6 +602,9 @@ export default function App() {
                   }}
                 />
               </Suspense>
+
+              {/* 画布中央瞬态操作微反馈 */}
+              <TriageFeedbackOverlay currentPhotoId={currentPhoto?.id} />
 
               {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
               <div className="absolute top-4 left-4 z-20">

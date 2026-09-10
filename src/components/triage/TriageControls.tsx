@@ -98,7 +98,7 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
           title="拿不准时先放入待考虑 [快捷键 M]"
           className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer select-none ${
             isMaybe
-              ? 'bg-amber-500 text-dark-900 font-bold shadow-md shadow-amber-500/20'
+              ? 'bg-amber-500 text-amber-950 font-bold shadow-md shadow-amber-500/20'
               : 'hover:bg-dark-700/90 text-slate-300 hover:text-amber-300'
           }`}
         >
