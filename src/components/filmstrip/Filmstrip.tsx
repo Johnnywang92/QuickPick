@@ -5,6 +5,7 @@ import { useInsightStore } from '../../store/insightStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { parseAnnotation } from '../../utils/annotationUtils';
+import { calculateDockScale } from '../../utils/dockEffect';
 import { Check, MessageSquare, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -32,6 +33,41 @@ export const Filmstrip: React.FC = () => {
   const [scrollLeft, setScrollLeft] = useState(0);
   const [containerWidth, setContainerWidth] = useState(1200);
 
+  // macOS Dock 鱼眼悬停放大光标绝对位置跟踪
+  const [hoverContentX, setHoverContentX] = useState<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const lastClientXRef = useRef<number | null>(null);
+
+  // 组件卸载时清理未完成的帧调度
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  const updateHoverX = (clientX: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const contentX = clientX - rect.left + containerRef.current.scrollLeft;
+    setHoverContentX(contentX);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    lastClientXRef.current = e.clientX;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      if (lastClientXRef.current !== null) {
+        updateHoverX(lastClientXRef.current);
+      }
+    });
+  };
+
+  const handleMouseLeave = () => {
+    lastClientXRef.current = null;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    setHoverContentX(null);
+  };
+
   // 监听容器实际宽度变化 (自适应各类屏幕宽度)
   useEffect(() => {
     const el = containerRef.current;
@@ -49,6 +85,9 @@ export const Filmstrip: React.FC = () => {
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     setScrollLeft(e.currentTarget.scrollLeft);
+    if (lastClientXRef.current !== null) {
+      updateHoverX(lastClientXRef.current);
+    }
   };
 
   // 预计算筛选匹配项的相对序号映射表（仅当存在活动筛选时计算）
@@ -146,7 +185,9 @@ export const Filmstrip: React.FC = () => {
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="h-20 border-t border-dark-700/80 bg-dark-850 overflow-x-auto overflow-y-hidden select-none relative scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-transparent"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className="h-full w-full bg-dark-850 overflow-x-auto overflow-y-hidden select-none relative scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-transparent"
     >
       {/* 虚拟占位画布宽度 */}
       <div
@@ -175,6 +216,22 @@ export const Filmstrip: React.FC = () => {
           const thumbnailUrl = previewCache.get(photo.path);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
+          const cardCenterX = leftPos + ITEM_WIDTH / 2;
+          const { scale, factor, zIndexBoost } = calculateDockScale(
+            hoverContentX,
+            cardCenterX,
+            { radius: 260, maxScale: 0.30 },
+          );
+
+          const isHovered = hoverContentX !== null;
+          const baseZIndex = isCurrent ? 15 : isCompare ? 12 : 2;
+          const finalZIndex = baseZIndex + zIndexBoost;
+
+          const dynamicShadow = factor > 0.05
+            ? isCurrent
+              ? '0 12px 28px -4px rgba(0, 0, 0, 0.75), 0 0 16px rgba(59, 130, 246, 0.45)'
+              : '0 12px 24px -4px rgba(0, 0, 0, 0.65), 0 4px 10px -2px rgba(0, 0, 0, 0.45)'
+            : undefined;
 
           return (
             <div
@@ -183,19 +240,29 @@ export const Filmstrip: React.FC = () => {
               style={{
                 position: 'absolute',
                 left: `${leftPos}px`,
-                top: '8px',
+                bottom: '8px',
                 width: `${ITEM_WIDTH}px`,
                 height: '64px',
+                transformOrigin: 'bottom center',
+                transform: `scale(${scale.toFixed(3)})`,
+                zIndex: finalZIndex,
+                boxShadow: dynamicShadow,
+                transition: isHovered
+                  ? 'transform 75ms cubic-bezier(0.2, 0, 0.2, 1), box-shadow 150ms ease'
+                  : 'transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease',
+                willChange: isHovered ? 'transform' : undefined,
                 borderLeftColor: chapterStart ? chapterStart.color : undefined,
                 borderLeftWidth: chapterStart ? '3px' : undefined,
               }}
-              className={`group cursor-pointer rounded-md border overflow-hidden transition-all duration-150 ${
+              className={`group cursor-pointer rounded-md border overflow-hidden transition-colors duration-150 ${
                 isCurrent
-                  ? 'border-brand-500 ring-2 ring-brand-500/50 bg-dark-800 shadow-md shadow-brand-500/20 z-10'
+                  ? 'border-brand-500 ring-2 ring-brand-500/50 bg-dark-800'
                   : isCompare
-                  ? 'border-blue-500 ring-2 ring-blue-500/50 bg-dark-800 z-10'
+                  ? 'border-blue-500 ring-2 ring-blue-500/50 bg-dark-800'
                   : isFilterMatch
-                  ? 'border-dark-700/80 hover:border-slate-400 bg-dark-850'
+                  ? factor > 0.15
+                    ? 'border-slate-400/90 bg-dark-800'
+                    : 'border-dark-700/80 hover:border-slate-400 bg-dark-850'
                   : 'border-dark-800/40 bg-dark-900/60 opacity-40 hover:opacity-80'
               }`}
             >

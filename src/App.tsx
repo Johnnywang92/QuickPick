@@ -665,9 +665,9 @@ export default function App() {
         )}
       </main>
 
-      {/* 底部缩略图轮播栏 */}
+      {/* 底部缩略图轮播栏 (支持 macOS Dock 鱼眼悬停放大) */}
       {photos.length > 0 && (
-        <footer className="h-20 border-t border-dark-700 bg-dark-800/95 flex items-center shrink-0 z-20">
+        <footer className="h-24 border-t border-dark-700 bg-dark-800/95 flex items-center shrink-0 z-20">
           <Filmstrip />
         </footer>
       )}
