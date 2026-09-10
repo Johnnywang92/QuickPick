@@ -132,7 +132,6 @@ export default function App() {
     activeTagFilter,
     setActiveTagFilter,
     scenes,
-    selectIndex,
   } = useAlbumStore();
   const {
     getStats,
@@ -237,6 +236,7 @@ export default function App() {
         viewedPhotoIds,
         insights,
         activeTagFilter,
+        currentIndex,
       )
         ? [index]
         : [],
@@ -250,22 +250,8 @@ export default function App() {
     viewedPhotoIds,
     insights,
     activeTagFilter,
+    currentIndex,
   ]);
-
-  // 当活动筛选条件下的匹配照片发生变化（如在“已选择”分类中取消勾选某照片），
-  // 如果当前选中的照片已不再符合当前筛选条件，自动将焦点平滑切换至下一张符合条件的照片
-  useEffect(() => {
-    if (photos.length === 0) return;
-    if (matchingIndexes.length > 0 && !matchingIndexes.includes(currentIndex)) {
-      const nextMatch =
-        matchingIndexes.find((idx) => idx > currentIndex) ??
-        matchingIndexes.filter((idx) => idx < currentIndex).at(-1) ??
-        matchingIndexes[0];
-      if (nextMatch !== undefined) {
-        selectIndex(nextMatch);
-      }
-    }
-  }, [matchingIndexes, currentIndex, selectIndex, photos.length]);
 
   const albumName = folderPath ? folderPath.split('/').filter(Boolean).pop() || folderPath : '';
 

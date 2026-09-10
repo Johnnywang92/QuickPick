@@ -86,6 +86,7 @@ export function photoMatchesFilter(
   viewedPhotoIds: Record<string, boolean>,
   insights: Record<string, PhotoInsight>,
   tagFilter?: string | null,
+  currentIndex?: number,
 ): boolean {
   if (tagFilter) {
     const note = selections[photo.id]?.note;
@@ -102,7 +103,9 @@ export function photoMatchesFilter(
   }
 
   const selectionState = selections[photo.id]?.state || 'unreviewed';
-  if (filter === 'unreviewed') return !viewedPhotoIds[photo.id];
+  if (filter === 'unreviewed') {
+    return !viewedPhotoIds[photo.id] || (currentIndex !== undefined && index === currentIndex);
+  }
   if (filter === 'selected') return selectionState === 'selected';
   if (filter === 'maybe') return selectionState === 'maybe';
   if (filter === 'skipped') return selectionState === 'skipped';
@@ -133,6 +136,7 @@ function matchingPhotoIndexes(state: AlbumStore): number[] {
       viewedPhotoIds,
       insights,
       state.activeTagFilter,
+      state.currentIndex,
     )
       ? [index]
       : [],

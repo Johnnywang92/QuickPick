@@ -95,6 +95,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
       viewedPhotoIds,
       insights,
       activeTagFilter,
+      currentIndex,
     )
       ? [index]
       : [],

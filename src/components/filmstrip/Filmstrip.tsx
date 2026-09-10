@@ -105,6 +105,7 @@ export const Filmstrip: React.FC = () => {
           viewedPhotoIds,
           insights,
           activeTagFilter,
+          currentIndex,
         )
       ) {
         list.push({ photo, originalIndex: index });
@@ -120,6 +121,7 @@ export const Filmstrip: React.FC = () => {
     viewedPhotoIds,
     insights,
     activeTagFilter,
+    currentIndex,
   ]);
 
   const isFiltered = activeFilter !== 'all' || selectedSceneId !== null || activeTagFilter !== null;

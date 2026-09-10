@@ -57,6 +57,8 @@ describe('albumStore filter navigation', () => {
     expect(photoMatchesFilter(photos[1], 1, 'unreviewed', null, [], selections, viewed, insights)).toBe(false);
     expect(photoMatchesFilter(photos[2], 2, 'unreviewed', null, [], selections, viewed, insights)).toBe(true);
     expect(photoMatchesFilter(photos[3], 3, 'unreviewed', null, [], selections, viewed, insights)).toBe(true);
+    // When photos[1] is the current active photo, it should remain matching to prevent disappearing from filmstrip
+    expect(photoMatchesFilter(photos[1], 1, 'unreviewed', null, [], selections, viewed, insights, null, 1)).toBe(true);
   });
 
   it('filters photos by skipped state correctly', () => {
