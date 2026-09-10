@@ -1,5 +1,6 @@
 import { LocalPhoto, SceneChapter, UserSelection } from '../types/photo';
 import { parseAnnotation } from './annotationUtils';
+import { generateRetouchAdvice } from './aiRetouchAdvisor';
 
 export interface ReportPhotoItem {
   photo: LocalPhoto;
@@ -78,6 +79,8 @@ export function generateRetouchHtmlReport(
         )
         .join('');
 
+      const advice = generateRetouchAdvice(item.photo, null, 'general');
+
       return `
       <article class="photo-card ${hasRequirement ? 'has-retouch' : ''}" data-has-req="${hasRequirement ? '1' : '0'}" data-scene="${escapeHtml(item.scene?.name || '全部')}">
         <header class="card-header">
@@ -102,6 +105,20 @@ export function generateRetouchHtmlReport(
 
           <div class="info-container">
             ${exifList ? `<div class="exif-row">${escapeHtml(exifList)}</div>` : ''}
+
+            <div class="ai-advice-row">
+              <div class="ai-summary">
+                <span class="badge ai-badge">✨ AI 修图基准</span>
+                <span class="ai-summary-text">${escapeHtml(advice.summary)}</span>
+              </div>
+              <div class="ai-lr-chips">
+                <span class="lr-chip">曝光 ${escapeHtml(advice.lightroomParams.exposure)}</span>
+                <span class="lr-chip">高光 ${advice.lightroomParams.highlights}</span>
+                <span class="lr-chip">阴影 +${advice.lightroomParams.shadows}</span>
+                <span class="lr-chip">纹理 +${advice.lightroomParams.texture}</span>
+                <span class="lr-chip">清晰度 +${advice.lightroomParams.clarity}</span>
+              </div>
+            </div>
 
             ${
               hasTags
@@ -334,6 +351,45 @@ export function generateRetouchHtmlReport(
       background: rgba(56, 189, 248, 0.15);
       color: var(--primary);
       border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .ai-advice-row {
+      padding: 8px 10px;
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ai-summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ai-badge {
+      background: rgba(99, 102, 241, 0.2);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    .ai-summary-text {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .ai-lr-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .lr-chip {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      color: #cbd5e1;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 10.5px;
     }
     .row-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; display: block; }
     .pins-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }

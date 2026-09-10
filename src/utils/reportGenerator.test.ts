@@ -37,6 +37,7 @@ describe('reportGenerator', () => {
     expect(html).toContain('面部微调');
     expect(html).toContain('右脸颊轻微修饰');
     expect(html).toContain('不要过度磨皮');
+    expect(html).toContain('AI 修图基准');
   });
 
   it('keeps filenames with quotes out of inline JavaScript string literals', () => {
