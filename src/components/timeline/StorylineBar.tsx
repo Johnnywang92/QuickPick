@@ -117,8 +117,8 @@ export const StorylineBar: React.FC<StorylineBarProps> = ({
           <span className="text-sm">{currentPreset.icon}</span>
           <span className="hidden sm:inline font-semibold">{currentPreset.name}</span>
           {detectedPreset?.presetId === activePresetId && detectedPreset.confidence >= 0.5 && (
-            <span className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-normal text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full">
-              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+            <span className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-medium text-amber-600 dark:text-amber-300 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25 dark:border-amber-500/30 rounded-full">
+              <Sparkles className="w-2.5 h-2.5 text-amber-500 dark:text-amber-400" />
               智能匹配
             </span>
           )}
@@ -130,18 +130,19 @@ export const StorylineBar: React.FC<StorylineBarProps> = ({
           detectedPreset.confidence >= 0.6 && (
             <button
               onClick={() => setScenesModalOpen(true)}
-              className="hidden lg:flex items-center space-x-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] hover:bg-amber-500/25 transition-colors cursor-pointer shrink-0"
+              className="hidden lg:flex items-center space-x-1 px-2 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/25 dark:border-amber-500/30 text-[10px] hover:bg-amber-500/20 dark:hover:bg-amber-500/25 transition-colors cursor-pointer shrink-0"
               title={`系统推荐更贴切模板: ${getStorylinePreset(detectedPreset.presetId).name}\n依据: ${detectedPreset.reasons.join('; ')}\n点击打开故事线配置一键切换`}
             >
-              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+              <Sparkles className="w-2.5 h-2.5 text-amber-500 dark:text-amber-400" />
               <span>建议: {getStorylinePreset(detectedPreset.presetId).name}</span>
             </button>
           )}
 
         {/* 章节过滤聚焦状态提醒 */}
         {activeScene && (
-          <div className="flex items-center space-x-1 shrink-0 px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 text-[10px]">
-            <span>聚焦: {activeScene.name}</span>
+          <div className="flex items-center space-x-1 shrink-0 px-2 py-0.5 rounded-full bg-dark-750 border border-dark-700 text-slate-200 text-[10px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0" />
+            <span className="font-medium">聚焦: {activeScene.name}</span>
             <button
               onClick={handlePrevScene}
               disabled={activeSceneIndex === 0}
@@ -228,9 +229,9 @@ export const StorylineBar: React.FC<StorylineBarProps> = ({
           <button
             onClick={onOpenFamilyRadar}
             title="核心人物/主体出场记分板：检查主角、关键人物是否漏选"
-            className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-purple-300 border border-dark-700 text-[11px] font-medium transition-colors cursor-pointer"
+            className="group flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-slate-100 border border-dark-700 text-[11px] font-medium transition-colors cursor-pointer"
           >
-            <Users2 className="w-3.5 h-3.5 text-purple-400" />
+            <Users2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-300 dark:group-hover:text-slate-100" />
             <span className="hidden md:inline">角色出场雷达</span>
           </button>
         )}
@@ -240,9 +241,9 @@ export const StorylineBar: React.FC<StorylineBarProps> = ({
           <button
             onClick={onOpenMerge}
             title="合并他人选片文件 (.qppick)，快速找出双方共识照片与待讨论分歧"
-            className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-emerald-300 border border-dark-700 text-[11px] font-medium transition-colors cursor-pointer"
+            className="group flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-slate-100 border border-dark-700 text-[11px] font-medium transition-colors cursor-pointer"
           >
-            <GitMerge className="w-3.5 h-3.5 text-emerald-400" />
+            <GitMerge className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-300 dark:group-hover:text-slate-100" />
             <span className="hidden md:inline">双人合并</span>
           </button>
         )}
@@ -252,9 +253,9 @@ export const StorylineBar: React.FC<StorylineBarProps> = ({
           <button
             onClick={onOpenAlbumPreview}
             title="虚拟实体画册跨页排版模拟：像翻阅精装画册一样预览入选照片排版"
-            className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-amber-300 border border-dark-700 text-[11px] font-medium transition-colors cursor-pointer"
+            className="group flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-slate-100 border border-dark-700 text-[11px] font-medium transition-colors cursor-pointer"
           >
-            <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+            <BookOpen className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-300 dark:group-hover:text-slate-100" />
             <span className="hidden md:inline">画册排版</span>
           </button>
         )}

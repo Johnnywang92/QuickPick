@@ -157,9 +157,9 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
           <button
             onClick={() => startBurstPk(currentPhoto.burstGroupId)}
             title="两两淘汰对决，快速选出连拍最佳 [快捷键 P]"
-            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition-all cursor-pointer select-none"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium hover:bg-dark-700 text-slate-300 hover:text-amber-500 dark:hover:text-amber-300 transition-all cursor-pointer select-none"
           >
-            <Zap className="w-3.5 h-3.5 fill-amber-400/30" />
+            <Zap className="w-3.5 h-3.5 text-slate-400" />
             <span>连拍 PK (P)</span>
           </button>
         )}

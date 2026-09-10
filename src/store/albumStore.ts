@@ -26,6 +26,7 @@ import { useSelectionStore } from './selectionStore';
 import { useInsightStore } from './insightStore';
 import { usePreviewStore } from './previewStore';
 import { arePhotosBurstConsecutive } from '../utils/phashUtils';
+import { parseAnnotation } from '../utils/annotationUtils';
 
 export const SCENE_COLORS = [
   '#3b82f6', // blue
@@ -84,7 +85,15 @@ export function photoMatchesFilter(
   selections: Record<string, UserSelection>,
   viewedPhotoIds: Record<string, boolean>,
   insights: Record<string, PhotoInsight>,
+  tagFilter?: string | null,
 ): boolean {
+  if (tagFilter) {
+    const note = selections[photo.id]?.note;
+    const ann = parseAnnotation(note);
+    const tags = ann.presetTags || [];
+    if (!tags.includes(tagFilter)) return false;
+  }
+
   const selectedScene = selectedSceneId
     ? scenes.find((scene) => scene.id === selectedSceneId)
     : undefined;
@@ -96,6 +105,7 @@ export function photoMatchesFilter(
   if (filter === 'unreviewed') return !viewedPhotoIds[photo.id];
   if (filter === 'selected') return selectionState === 'selected';
   if (filter === 'maybe') return selectionState === 'maybe';
+  if (filter === 'skipped') return selectionState === 'skipped';
   if (filter === 'burst') return Boolean(photo.burstGroupId);
   if (filter === 'needs_check') {
     const insight = insights[photo.id];
@@ -122,6 +132,7 @@ function matchingPhotoIndexes(state: AlbumStore): number[] {
       selections,
       viewedPhotoIds,
       insights,
+      state.activeTagFilter,
     )
       ? [index]
       : [],
@@ -214,6 +225,7 @@ interface AlbumStore {
   selectedSceneId: string | null;
   targetGoal: number | null; // 用户自设选片目标 (如 100 张)
   activeFilter: FilterCategory;
+  activeTagFilter: string | null;
   isScenesModalOpen: boolean;
   detectedPreset: DetectedPresetResult | null;
 
@@ -225,6 +237,7 @@ interface AlbumStore {
   prevPhoto: () => void;
   selectPhotoByFilename: (filename: string) => void;
   setActiveFilter: (filter: FilterCategory) => void;
+  setActiveTagFilter: (tag: string | null) => void;
   setSelectedSceneId: (id: string | null) => void;
   setActivePresetId: (presetId: WorkflowScene) => void;
   applyScenePreset: (presetId: WorkflowScene, overwriteNames?: boolean) => void;
@@ -245,6 +258,7 @@ const VALID_FILTERS = new Set<FilterCategory>([
   'unreviewed',
   'selected',
   'maybe',
+  'skipped',
   'needs_check',
   'burst',
 ]);
@@ -351,6 +365,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   selectedSceneId: null,
   targetGoal: null,
   activeFilter: 'all',
+  activeTagFilter: null,
   isScenesModalOpen: false,
   detectedPreset: null,
 
@@ -528,6 +543,15 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   setActiveFilter: (filter: FilterCategory) => {
     set({ activeFilter: filter });
     scheduleViewState(get());
+    const state = get();
+    const matches = matchingPhotoIndexes(state);
+    if (!matches.includes(state.currentIndex) && matches[0] !== undefined) {
+      state.selectIndex(matches[0]);
+    }
+  },
+
+  setActiveTagFilter: (tag: string | null) => {
+    set({ activeTagFilter: tag });
     const state = get();
     const matches = matchingPhotoIndexes(state);
     if (!matches.includes(state.currentIndex) && matches[0] !== undefined) {
@@ -747,7 +771,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   },
 
   resetFilter: () => {
-    set({ activeFilter: 'all', selectedSceneId: null });
+    set({ activeFilter: 'all', selectedSceneId: null, activeTagFilter: null });
     scheduleViewState(get());
   },
 

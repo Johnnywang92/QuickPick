@@ -16,6 +16,7 @@ import { Filmstrip } from './components/filmstrip/Filmstrip';
 import { TriageControls } from './components/triage/TriageControls';
 import { FilterToolbar } from './components/triage/FilterToolbar';
 import { DefectBadge } from './components/triage/DefectBadge';
+import { QuickTagBar } from './components/triage/QuickTagBar';
 import { PhotoInfoHud } from './components/viewport/PhotoInfoHud';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import {
@@ -26,6 +27,7 @@ import {
   Undo2,
   CheckCircle2,
   HelpCircle,
+  CircleSlash2,
   Eye,
   Info,
   Keyboard,
@@ -253,16 +255,22 @@ export default function App() {
               <span>{photos.length}</span>
             </div>
 
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
               <span>已选</span>
-              <span className="font-bold text-emerald-400">{stats.selectedCount}</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">{stats.selectedCount}</span>
             </div>
 
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono">
-              <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
+              <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
               <span>待考虑</span>
-              <span className="font-bold text-amber-400">{stats.maybeCount}</span>
+              <span className="font-bold text-amber-600 dark:text-amber-400">{stats.maybeCount}</span>
+            </div>
+
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
+              <CircleSlash2 className="w-3.5 h-3.5 text-slate-400" />
+              <span>已不选</span>
+              <span className="font-bold text-slate-500 dark:text-slate-400">{stats.skippedCount}</span>
             </div>
           </div>
         )}
@@ -371,9 +379,13 @@ export default function App() {
 
           <button
             onClick={handleSelectFolder}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium rounded-lg shadow-sm hover:shadow-brand-500/20 transition-all cursor-pointer"
+            className={
+              photos.length > 0
+                ? "flex items-center space-x-1.5 px-3 py-1.5 bg-dark-750 hover:bg-dark-700 text-slate-200 border border-dark-650/80 text-xs font-medium rounded-lg shadow-sm transition-all cursor-pointer"
+                : "flex items-center space-x-1.5 px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow-brand-500/20 transition-all cursor-pointer"
+            }
           >
-            <FolderOpen className="w-3.5 h-3.5" />
+            <FolderOpen className="w-3.5 h-3.5 text-slate-400 dark:text-slate-400" />
             <span>打开照片目录</span>
           </button>
 
@@ -580,8 +592,9 @@ export default function App() {
                 </div>
               )}
 
-              {/* 视口下方：选片操作条 (Space 选择 / M 待考虑) */}
-              <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20">
+              {/* 视口下方：快捷打标签与核心选片操作条 */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
+                <QuickTagBar />
                 <TriageControls
                   onToggleRetouch={() => setIsRetouchOpen((v) => !v)}
                   isRetouchOpen={isRetouchOpen}

@@ -51,15 +51,15 @@ export const DefectBadge: React.FC = () => {
   return (
     <div className="flex items-center space-x-2 bg-dark-900/90 backdrop-blur-md border border-dark-700/80 px-3 py-1 rounded-full shadow-lg select-none text-xs">
       {hasBlink && (
-        <span className="flex items-center space-x-1 text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-medium">
-          <AlertCircle className="w-3 h-3 text-amber-400" />
+        <span className="flex items-center space-x-1 text-amber-700 dark:text-amber-300 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 dark:border-amber-500/30 px-2.5 py-0.5 rounded-full font-medium">
+          <AlertCircle className="w-3 h-3 text-amber-500 dark:text-amber-400" />
           <span>建议检查眼睛</span>
         </span>
       )}
 
       {hasBlur && (
-        <span className="flex items-center space-x-1 text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 rounded-full font-medium">
-          <AlertCircle className="w-3 h-3 text-rose-400" />
+        <span className="flex items-center space-x-1 text-rose-700 dark:text-rose-300 bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/20 dark:border-rose-500/30 px-2.5 py-0.5 rounded-full font-medium">
+          <AlertCircle className="w-3 h-3 text-rose-500 dark:text-rose-400" />
           <span>可能轻微脱焦</span>
         </span>
       )}
@@ -68,18 +68,18 @@ export const DefectBadge: React.FC = () => {
         <span
           className={
             isBestPick
-              ? 'flex items-center space-x-1 text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-medium shadow-[0_0_8px_rgba(16,185,129,0.25)]'
-              : 'flex items-center space-x-1 text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-0.5 rounded-full font-medium'
+              ? 'flex items-center space-x-1 text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 dark:bg-emerald-500/20 border border-emerald-500/30 dark:border-emerald-500/40 px-2.5 py-0.5 rounded-full font-medium shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+              : 'flex items-center space-x-1 text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 dark:bg-indigo-500/15 border border-indigo-500/20 dark:border-indigo-500/30 px-2.5 py-0.5 rounded-full font-medium'
           }
         >
           {isBestPick ? (
             <>
-              <Sparkles className="w-3 h-3 text-emerald-400" />
+              <Sparkles className="w-3 h-3 text-emerald-500 dark:text-emerald-400" />
               <span>★ 连拍推荐最佳 (按 C 比对)</span>
             </>
           ) : (
             <>
-              <Layers className="w-3 h-3 text-indigo-400" />
+              <Layers className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
               <span>相似连拍 (按 C 比对)</span>
             </>
           )}
@@ -87,8 +87,8 @@ export const DefectBadge: React.FC = () => {
       )}
 
       {!hasBlink && !hasBlur && !hasBurst && (
-        <span className="flex items-center space-x-1 text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-medium">
-          <Sparkles className="w-3 h-3 text-emerald-400" />
+        <span className="flex items-center space-x-1 text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 dark:border-emerald-500/30 px-2.5 py-0.5 rounded-full font-medium">
+          <Sparkles className="w-3 h-3 text-emerald-500 dark:text-emerald-400" />
           <span>清晰度良好</span>
         </span>
       )}

@@ -2,9 +2,36 @@ import { create } from 'zustand';
 import { getPhotoPreview } from '../services/tauriBridge';
 import { LocalPhoto } from '../types/photo';
 
-const MAX_CACHE_ENTRIES = 40;
+const MAX_CACHE_ENTRIES = 180;
 let previewGeneration = 0;
 const inFlightPreviews = new Map<string, Promise<string>>();
+
+let prefetchQueue: LocalPhoto[] = [];
+let activePrefetchWorkers = 0;
+const MAX_CONCURRENT_PREFETCH = 4;
+
+function pumpPrefetchQueue(storeGet: () => PreviewStore) {
+  const currentGen = previewGeneration;
+  while (activePrefetchWorkers < MAX_CONCURRENT_PREFETCH && prefetchQueue.length > 0) {
+    const nextPhoto = prefetchQueue.shift();
+    if (!nextPhoto) break;
+    if (currentGen !== previewGeneration) {
+      prefetchQueue = [];
+      break;
+    }
+    if (storeGet().previewCache.has(nextPhoto.path)) continue;
+    activePrefetchWorkers++;
+    storeGet()
+      .getPreview(nextPhoto)
+      .catch(() => undefined)
+      .finally(() => {
+        activePrefetchWorkers--;
+        if (currentGen === previewGeneration) {
+          pumpPrefetchQueue(storeGet);
+        }
+      });
+  }
+}
 
 function releasePreviewTexture(url: string): void {
   void import('pixi.js')
@@ -23,6 +50,7 @@ interface PreviewStore {
   // Actions
   getPreview: (photo: LocalPhoto) => Promise<string>;
   loadPreviewForCurrent: (photo: LocalPhoto, photos?: LocalPhoto[]) => Promise<void>;
+  prefetchPhotos: (photos: LocalPhoto[]) => void;
   retryCurrentPreview: () => Promise<void>;
   clearCache: () => void;
 }
@@ -128,6 +156,22 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
     }
   },
 
+  prefetchPhotos: (photos: LocalPhoto[]) => {
+    const currentCache = get().previewCache;
+    const uncached = photos.filter((p) => p && p.path && !currentCache.has(p.path));
+    if (uncached.length === 0) return;
+
+    // 将新进入视口的照片排在前面优先加载，去重过滤
+    const remaining = prefetchQueue.filter(
+      (q) => !uncached.some((u) => u.path === q.path),
+    );
+    prefetchQueue = [...uncached, ...remaining];
+    if (prefetchQueue.length > 60) {
+      prefetchQueue = prefetchQueue.slice(0, 60);
+    }
+    pumpPrefetchQueue(get);
+  },
+
   retryCurrentPreview: async () => {
     const { currentPhoto } = get();
     if (!currentPhoto) return;
@@ -141,6 +185,7 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
 
   clearCache: () => {
     previewGeneration += 1;
+    prefetchQueue = [];
     inFlightPreviews.clear();
     for (const url of get().previewCache.values()) releasePreviewTexture(url);
     set({

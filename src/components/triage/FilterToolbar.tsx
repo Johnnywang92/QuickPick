@@ -2,19 +2,24 @@ import React, { useState, useRef, useEffect } from 'react';
 import { photoMatchesFilter, useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { useInsightStore } from '../../store/insightStore';
+import { useTagStore } from '../../store/tagStore';
+import { parseAnnotation } from '../../utils/annotationUtils';
 import { FilterCategory } from '../../types/photo';
 import {
   Image,
   EyeOff,
   CheckCircle2,
   HelpCircle,
+  CircleSlash2,
   AlertCircle,
   Layers,
   Sparkles,
   ChevronDown,
   Target,
   ListChecks,
+  Tag,
 } from 'lucide-react';
+import clsx from 'clsx';
 
 interface FilterToolbarProps {
   onOpenReviewCenter: () => void;
@@ -25,6 +30,8 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
     photos,
     activeFilter,
     setActiveFilter,
+    activeTagFilter,
+    setActiveTagFilter,
     scenes,
     selectedSceneId,
     setSelectedSceneId,
@@ -35,16 +42,22 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
 
   const { getStats, selections, viewedPhotoIds } = useSelectionStore();
   const { insights } = useInsightStore();
+  const { availableTags } = useTagStore();
 
   const [showSceneDropdown, setShowSceneDropdown] = useState(false);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [showAiHelperDropdown, setShowAiHelperDropdown] = useState(false);
   const sceneDropdownRef = useRef<HTMLDivElement>(null);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
   const aiHelperDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (sceneDropdownRef.current && !sceneDropdownRef.current.contains(e.target as Node)) {
         setShowSceneDropdown(false);
+      }
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+        setShowTagDropdown(false);
       }
       if (aiHelperDropdownRef.current && !aiHelperDropdownRef.current.contains(e.target as Node)) {
         setShowAiHelperDropdown(false);
@@ -81,6 +94,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
       selections,
       viewedPhotoIds,
       insights,
+      activeTagFilter,
     )
       ? [index]
       : [],
@@ -91,54 +105,69 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
     total: matchingIndexes.length,
   };
 
+  const tagCounts: Record<string, number> = {};
+  photos.forEach((p) => {
+    const ann = parseAnnotation(selections[p.id]?.note);
+    (ann.presetTags || []).forEach((t) => {
+      tagCounts[t] = (tagCounts[t] || 0) + 1;
+    });
+  });
+
   const filterTabs: {
     id: FilterCategory;
     label: string;
     icon: React.FC<any>;
     count: number;
-    activeClass: string;
+    iconColor: string;
   }[] = [
     {
       id: 'all',
       label: '全部照片',
       icon: Image,
       count: photos.length,
-      activeClass: 'bg-dark-700 text-slate-100 border-slate-600',
+      iconColor: 'text-slate-400',
     },
     {
       id: 'unreviewed',
       label: '未查看',
       icon: EyeOff,
       count: stats.unreviewedCount,
-      activeClass: 'bg-slate-700/60 text-slate-200 border-slate-500',
+      iconColor: 'text-slate-400',
     },
     {
       id: 'selected',
       label: '已选择',
       icon: CheckCircle2,
       count: stats.selectedCount,
-      activeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50',
+      iconColor: 'text-emerald-500 dark:text-emerald-400',
     },
     {
       id: 'maybe',
       label: '待考虑',
       icon: HelpCircle,
       count: stats.maybeCount,
-      activeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/50',
+      iconColor: 'text-amber-500 dark:text-amber-400',
+    },
+    {
+      id: 'skipped',
+      label: '已不选',
+      icon: CircleSlash2,
+      count: stats.skippedCount,
+      iconColor: 'text-slate-400',
     },
     {
       id: 'needs_check',
       label: '建议检查',
       icon: AlertCircle,
       count: needsCheckCount,
-      activeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/50',
+      iconColor: 'text-rose-500 dark:text-rose-400',
     },
     {
       id: 'burst',
       label: '相似连拍',
       icon: Layers,
       count: burstCount,
-      activeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
+      iconColor: 'text-indigo-500 dark:text-indigo-400',
     },
   ];
 
@@ -146,8 +175,8 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
 
   return (
     <div className="h-11 bg-dark-850 border-b border-dark-700 px-4 flex items-center justify-between z-20 shrink-0 text-xs">
-      {/* 左侧：面向普通用户的核心分类过滤卡片 */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto scrollbar-none">
+      {/* 左侧：专业分段控制器 (Segmented Control) 风格 */}
+      <div className="flex items-center p-0.5 rounded-xl bg-dark-800 border border-dark-750 space-x-0.5 overflow-x-auto scrollbar-none">
         {filterTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeFilter === tab.id;
@@ -155,17 +184,19 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
             <button
               key={tab.id}
               onClick={() => setActiveFilter(tab.id)}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg border font-medium transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
                 isActive
-                  ? `${tab.activeClass} shadow-sm font-semibold`
-                  : 'bg-dark-800/80 hover:bg-dark-750 text-slate-400 hover:text-slate-200 border-dark-700'
+                  ? 'bg-white dark:bg-dark-700 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200/80 dark:border-dark-600/80 font-semibold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-dark-750/60 border border-transparent'
               }`}
             >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <Icon className={`w-3.5 h-3.5 shrink-0 ${tab.iconColor}`} />
               <span>{tab.label}</span>
               <span
                 className={`text-[11px] font-mono px-1.5 py-0.2 rounded-full ${
-                  isActive ? 'bg-black/30' : 'bg-dark-700 text-slate-400'
+                  isActive
+                    ? 'bg-slate-100 dark:bg-dark-800 text-slate-700 dark:text-slate-200 font-semibold'
+                    : 'bg-dark-750/80 text-slate-400'
                 }`}
               >
                 {tab.count}
@@ -188,10 +219,10 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
         <button
           type="button"
           onClick={onOpenReviewCenter}
-          className="flex items-center space-x-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 px-2.5 py-1 font-semibold text-brand-300 transition-colors hover:bg-brand-500/20"
+          className="flex items-center space-x-1.5 rounded-lg border border-dark-700 bg-dark-800 px-2.5 py-1 font-medium text-slate-300 hover:text-slate-100 hover:bg-dark-750 transition-colors cursor-pointer"
           title="集中检查未查看、待考虑、相似连拍和辅助提示"
         >
-          <ListChecks className="h-3.5 w-3.5" />
+          <ListChecks className="h-3.5 w-3.5 text-slate-400" />
           <span>复核中心</span>
         </button>
 
@@ -272,16 +303,100 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
           </div>
         )}
 
+        {/* 标签下拉筛选器 */}
+        <div className="relative" ref={tagDropdownRef}>
+          <button
+            onClick={() => setShowTagDropdown(!showTagDropdown)}
+            className={clsx(
+              'flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs transition-colors cursor-pointer',
+              activeTagFilter
+                ? 'bg-brand-600/20 text-brand-300 border-brand-500/50 font-semibold shadow-sm'
+                : 'bg-dark-800 hover:bg-dark-750 border-dark-700 text-slate-300 hover:text-slate-100',
+            )}
+            title="按照片标签筛选"
+          >
+            <Tag className={clsx('w-3.5 h-3.5', activeTagFilter ? 'text-brand-400' : 'text-slate-400')} />
+            <span className="max-w-[90px] truncate">{activeTagFilter ? activeTagFilter : '标签'}</span>
+            {activeTagFilter && (
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-brand-500/30 text-brand-200">
+                {tagCounts[activeTagFilter] || 0}
+              </span>
+            )}
+            <ChevronDown className="w-3 h-3 text-slate-500" />
+          </button>
+
+          {showTagDropdown && (
+            <div className="absolute right-0 top-full mt-1.5 w-52 bg-dark-850 border border-dark-700 rounded-xl shadow-2xl py-1.5 z-40 text-xs">
+              <div className="px-3 py-1 text-[11px] text-slate-400 font-medium border-b border-dark-750 flex items-center justify-between">
+                <span>按照片标签筛选</span>
+                {activeTagFilter && (
+                  <button
+                    onClick={() => {
+                      setActiveTagFilter(null);
+                      setShowTagDropdown(false);
+                    }}
+                    className="text-[10px] text-brand-400 hover:underline cursor-pointer"
+                  >
+                    重置
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setActiveTagFilter(null);
+                  setShowTagDropdown(false);
+                }}
+                className={clsx(
+                  'w-full text-left px-3 py-1.5 text-xs flex items-center justify-between cursor-pointer',
+                  activeTagFilter === null
+                    ? 'bg-brand-600/20 text-brand-300 font-semibold'
+                    : 'text-slate-300 hover:bg-dark-750',
+                )}
+              >
+                <span>全部照片 (不限标签)</span>
+                <span className="text-[10px] font-mono text-slate-500">{photos.length}</span>
+              </button>
+              <div className="h-[1px] bg-dark-750 my-1" />
+              <div className="max-h-56 overflow-y-auto">
+                {availableTags.map((tag) => {
+                  const count = tagCounts[tag] || 0;
+                  const isSelected = activeTagFilter === tag;
+                  return (
+                    <button
+                      key={tag}
+                      onClick={() => {
+                        setActiveTagFilter(isSelected ? null : tag);
+                        setShowTagDropdown(false);
+                      }}
+                      className={clsx(
+                        'w-full text-left px-3 py-1.5 text-xs flex items-center justify-between cursor-pointer',
+                        isSelected
+                          ? 'bg-brand-600/20 text-brand-300 font-semibold'
+                          : 'text-slate-300 hover:bg-dark-750',
+                      )}
+                    >
+                      <span className="truncate max-w-[130px]">{tag}</span>
+                      <span className={clsx('text-[10px] font-mono', count > 0 ? 'text-slate-300' : 'text-slate-600')}>
+                        {count} 张
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* 辅助提示筛选下拉按钮 */}
         <div className="relative" ref={aiHelperDropdownRef}>
           <button
             onClick={() => setShowAiHelperDropdown(!showAiHelperDropdown)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 border border-dark-700 text-indigo-300 transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 border border-dark-700 text-slate-300 hover:text-slate-100 transition-colors cursor-pointer"
             title="按本地辅助提示筛选照片"
           >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <Sparkles className="w-3.5 h-3.5 text-slate-400" />
             <span>辅助提示</span>
-            <ChevronDown className="w-3 h-3 text-indigo-400/60" />
+            <ChevronDown className="w-3 h-3 text-slate-500" />
           </button>
 
           {showAiHelperDropdown && (

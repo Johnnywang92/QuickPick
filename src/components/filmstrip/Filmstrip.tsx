@@ -4,24 +4,27 @@ import { useCompareStore } from '../../store/compareStore';
 import { useInsightStore } from '../../store/insightStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { useSelectionStore } from '../../store/selectionStore';
+import { parseAnnotation } from '../../utils/annotationUtils';
 import { Check, MessageSquare, AlertCircle } from 'lucide-react';
+import clsx from 'clsx';
 
 const ITEM_WIDTH = 112; // w-28 = 7rem = 112px
 const ITEM_GAP = 8; // space-x-2 = 0.5rem = 8px
 const ITEM_TOTAL = ITEM_WIDTH + ITEM_GAP; // 120px
 const CONTAINER_PADDING_X = 16; // px-4 = 16px
-const OVERSCAN = 5; // 前后各缓冲 5 个元素，滑动时平滑无白屏
+const OVERSCAN = 8; // 前后各缓冲 8 个元素，滑动时平滑无白屏提前预加载
 
 export const Filmstrip: React.FC = () => {
   const {
     photos,
     currentIndex,
     activeFilter,
+    activeTagFilter,
     selectIndex,
     scenes,
     selectedSceneId,
   } = useAlbumStore();
-  const { previewCache } = usePreviewStore();
+  const { previewCache, prefetchPhotos } = usePreviewStore();
   const { isCompareMode, compareTargetIndex } = useCompareStore();
   const { insights } = useInsightStore();
   const { selections, viewedPhotoIds } = useSelectionStore();
@@ -123,6 +126,22 @@ export const Filmstrip: React.FC = () => {
     visiblePhotos.push({ photo: photos[i], idx: i });
   }
 
+  // 视口动态加载：当可视窗口范围变化（向右/左滑动）时，自动触发视口内及边缘缓冲照片的清晰预览预加载
+  useEffect(() => {
+    if (photos.length === 0) return;
+    const screenCenterIdx = Math.floor(
+      (scrollLeft - CONTAINER_PADDING_X + containerWidth / 2) / ITEM_TOTAL,
+    );
+    const sorted = [...visiblePhotos]
+      .sort(
+        (a, b) =>
+          Math.abs(a.idx - screenCenterIdx) - Math.abs(b.idx - screenCenterIdx),
+      )
+      .map((item) => item.photo);
+
+    prefetchPhotos(sorted);
+  }, [startIdx, endIdx, photos, prefetchPhotos]);
+
   return (
     <div
       ref={containerRef}
@@ -145,6 +164,7 @@ export const Filmstrip: React.FC = () => {
             selections,
             viewedPhotoIds,
             insights,
+            activeTagFilter,
           );
           const insight = insights[photo.id];
           const uncertaintyReasons = (insight?.reasons || []).filter(
@@ -152,6 +172,7 @@ export const Filmstrip: React.FC = () => {
               reason.includes('眼睛') || reason.includes('模糊') || reason.includes('相似'),
           );
           const chapterStart = scenes.find((scene) => scene.startIndex === idx);
+          const thumbnailUrl = previewCache.get(photo.path);
 
           const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
 
@@ -170,22 +191,31 @@ export const Filmstrip: React.FC = () => {
               }}
               className={`group cursor-pointer rounded-md border overflow-hidden transition-all duration-150 ${
                 isCurrent
-                  ? 'border-brand-500 ring-2 ring-brand-500/40 bg-dark-700 z-10'
+                  ? 'border-brand-500 ring-2 ring-brand-500/50 bg-dark-800 shadow-md shadow-brand-500/20 z-10'
                   : isCompare
-                  ? 'border-blue-500 ring-2 ring-blue-500/40 bg-dark-700 z-10'
+                  ? 'border-blue-500 ring-2 ring-blue-500/50 bg-dark-800 z-10'
                   : isFilterMatch
-                  ? 'border-dark-700/80 hover:border-slate-500 bg-dark-800'
-                  : 'border-dark-800/40 bg-dark-900/50 opacity-40 hover:opacity-80'
+                  ? 'border-dark-700/80 hover:border-slate-400 bg-dark-850'
+                  : 'border-dark-800/40 bg-dark-900/60 opacity-40 hover:opacity-80'
               }`}
             >
-              {/* 背景轻量缩略图 (若在当前缓存中则显示，提升专业质感) */}
-              {previewCache.has(photo.path) && (
-                <img
-                  src={previewCache.get(photo.path)}
-                  alt=""
-                  loading="lazy"
-                  className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-35 pointer-events-none transition-opacity duration-150"
-                />
+              {/* 背景缩略图高清展示与滑动未加载时的优雅占位 */}
+              {thumbnailUrl ? (
+                <>
+                  <img
+                    src={thumbnailUrl}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none select-none"
+                  />
+                  {/* 顶部与底部半透明渐变，兼顾底图高清质感与文字信息可读性 */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/20 to-black/85 pointer-events-none" />
+                </>
+              ) : (
+                /* 滑动时未加载完成的占位动效（避免向右滑动时一片死黑） */
+                <div className="absolute inset-0 bg-dark-800/90 animate-pulse flex items-center justify-center pointer-events-none">
+                  <div className="w-4 h-4 rounded-full border border-slate-600/40 border-t-brand-400/80 animate-spin" />
+                </div>
               )}
 
               {/* 胶片卡片内容 */}
@@ -287,18 +317,42 @@ export const Filmstrip: React.FC = () => {
                   )}
                 </div>
 
-                <div className="truncate text-[10px] text-slate-300 font-mono">
+                <div className="truncate text-[10px] text-slate-100 font-mono font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                   {photo.filename}
                 </div>
 
-                {/* 格式与用户备注底条 */}
-                <div className="flex items-center justify-between text-[9px] font-mono text-slate-500">
-                  <span className="text-[8px] bg-dark-750 px-1 py-0.2 rounded text-slate-400">
-                    {photo.isRaw ? 'RAW' : photo.format.toUpperCase()}
-                  </span>
+                {/* 格式、标签与用户备注底条 */}
+                <div className="flex items-center justify-between text-[9px] font-mono text-slate-300">
+                  <div className="flex items-center space-x-1 overflow-hidden min-w-0 flex-1">
+                    <span className="text-[8px] bg-black/60 backdrop-blur-xs px-1 py-0.2 rounded text-slate-300 shrink-0 font-medium">
+                      {photo.isRaw ? 'RAW' : photo.format.toUpperCase()}
+                    </span>
+                    {(() => {
+                      const tags = parseAnnotation(selections[photo.id]?.note).presetTags || [];
+                      if (tags.length === 0) return null;
+                      const first = tags[0];
+                      const isRetouch = first === '要修图';
+                      const isStraight = first === '原图直出';
+                      return (
+                        <span
+                          className={clsx(
+                            'text-[8px] px-1 py-0.2 rounded font-sans truncate max-w-[48px] shadow-sm',
+                            isRetouch
+                              ? 'bg-indigo-600/70 text-indigo-100 font-semibold'
+                              : isStraight
+                              ? 'bg-teal-600/70 text-teal-100 font-semibold'
+                              : 'bg-brand-600/70 text-brand-100',
+                          )}
+                          title={`标签: ${tags.join(' · ')}`}
+                        >
+                          {first}
+                        </span>
+                      );
+                    })()}
+                  </div>
 
                   {selections[photo.id]?.note && (
-                    <span className="flex items-center text-amber-400" title={`备注: ${selections[photo.id]?.note}`}>
+                    <span className="flex items-center text-amber-300 shrink-0 ml-1 drop-shadow-sm" title={`备注: ${selections[photo.id]?.note}`}>
                       <MessageSquare className="w-2.5 h-2.5" />
                     </span>
                   )}

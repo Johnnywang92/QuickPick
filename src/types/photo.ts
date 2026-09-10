@@ -130,6 +130,7 @@ export type FilterCategory =
   | 'unreviewed'      // 未查看
   | 'selected'        // 已选
   | 'maybe'           // 待考虑
+  | 'skipped'         // 已不选
   | 'needs_check'     // 可能需要检查 (闭眼/模糊)
   | 'burst';          // 相似连拍
 

@@ -48,4 +48,21 @@ describe('previewStore async album navigation', () => {
     expect(usePreviewStore.getState().previewStatus).toBe('error');
     expect(usePreviewStore.getState().previewError).toContain('source file no longer exists');
   });
+
+  it('prefetches photos into previewCache without blocking or crashing', async () => {
+    getPhotoPreview.mockImplementation(async (path: string) => `data:image/jpeg;base64,mock_${path}`);
+    const photos = ['p1', 'p2', 'p3'].map((id) => photoFixture(id));
+
+    usePreviewStore.getState().prefetchPhotos(photos);
+
+    await vi.waitFor(() => {
+      expect(usePreviewStore.getState().previewCache.has(photos[0].path)).toBe(true);
+      expect(usePreviewStore.getState().previewCache.has(photos[1].path)).toBe(true);
+      expect(usePreviewStore.getState().previewCache.has(photos[2].path)).toBe(true);
+    });
+
+    expect(usePreviewStore.getState().previewCache.get(photos[0].path)).toBe(
+      `data:image/jpeg;base64,mock_${photos[0].path}`,
+    );
+  });
 });

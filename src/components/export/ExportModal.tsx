@@ -23,7 +23,11 @@ import {
   Smartphone,
   UserRound,
   X,
+  Tag,
 } from 'lucide-react';
+import { useTagStore } from '../../store/tagStore';
+import { parseAnnotation } from '../../utils/annotationUtils';
+import clsx from 'clsx';
 
 const manifestFormatOptions: Array<{
   value: ManifestFormat;
@@ -82,17 +86,29 @@ export const ExportModal: React.FC = () => {
     executeSocialExport,
     shareToPhone,
     resetExportState,
+    exportTagFilter,
+    setExportTagFilter,
   } = useExportStore();
 
   const [copied, setCopied] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [reviewWarningAcknowledged, setReviewWarningAcknowledged] = useState(false);
   const { photos } = useAlbumStore();
-  const { getStats } = useSelectionStore();
+  const { getStats, selections } = useSelectionStore();
+  const { availableTags } = useTagStore();
 
   if (!isExportModalOpen) return null;
 
   const selectedPhotos = getSelectedPhotos();
+  const allSelectedPhotos = photos.filter((p) => selections[p.id]?.state === 'selected');
+  const selectedTagCounts: Record<string, number> = {};
+  allSelectedPhotos.forEach((p) => {
+    const ann = parseAnnotation(selections[p.id]?.note);
+    (ann.presetTags || []).forEach((t) => {
+      selectedTagCounts[t] = (selectedTagCounts[t] || 0) + 1;
+    });
+  });
+  const tagsWithSelectedPhotos = availableTags.filter((t) => (selectedTagCounts[t] || 0) > 0);
   const reviewStats = getStats(photos.length);
   const hasPendingReview = reviewStats.unreviewedCount > 0 || reviewStats.maybeCount > 0;
   const canExport = !hasPendingReview || reviewWarningAcknowledged;
@@ -156,6 +172,42 @@ export const ExportModal: React.FC = () => {
 
         <div className="overflow-y-auto">
           <div className="space-y-5 p-5 sm:p-6">
+            {tagsWithSelectedPhotos.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 p-2.5 rounded-xl bg-dark-900/60 border border-dark-750 text-xs">
+                <span className="text-slate-400 text-[11px] font-medium flex items-center gap-1 shrink-0 mr-1">
+                  <Tag className="w-3.5 h-3.5 text-brand-400" />
+                  <span>按标签导出:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setExportTagFilter(null)}
+                  className={clsx(
+                    'px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer',
+                    exportTagFilter === null
+                      ? 'bg-emerald-600/30 border border-emerald-500 text-emerald-300 font-semibold shadow-sm'
+                      : 'bg-dark-800 text-slate-400 hover:text-slate-200 border border-dark-700',
+                  )}
+                >
+                  全部已选 ({allSelectedPhotos.length})
+                </button>
+                {tagsWithSelectedPhotos.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setExportTagFilter(exportTagFilter === t ? null : t)}
+                    className={clsx(
+                      'px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer',
+                      exportTagFilter === t
+                        ? 'bg-brand-600 text-white font-semibold shadow-sm border border-brand-500'
+                        : 'bg-dark-800 text-slate-300 hover:text-slate-100 border border-dark-700',
+                    )}
+                  >
+                    仅 [{t}] ({selectedTagCounts[t]})
+                  </button>
+                ))}
+              </div>
+            )}
+
             <section aria-labelledby="delivery-method-title">
               <div className="mb-2.5 flex items-center justify-between">
                 <h3 id="delivery-method-title" className="text-xs font-semibold text-slate-300">

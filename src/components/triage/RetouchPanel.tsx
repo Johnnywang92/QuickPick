@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { VisualPin } from '../../types/photo';
-import { PRESET_RETOUCH_TAGS, createPin } from '../../utils/annotationUtils';
+import { createPin } from '../../utils/annotationUtils';
+import { useTagStore } from '../../store/tagStore';
 import {
   X,
   Sparkles,
@@ -31,9 +32,11 @@ export const RetouchPanel: React.FC<RetouchPanelProps> = ({
 }) => {
   const { photos, currentIndex } = useAlbumStore();
   const { getAnnotation, setAnnotation } = useSelectionStore();
+  const { availableTags, addCustomTag } = useTagStore();
 
   const currentPhoto = photos[currentIndex];
   const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [newTagInput, setNewTagInput] = useState('');
 
   if (!isOpen || !currentPhoto) return null;
 
@@ -120,14 +123,16 @@ export const RetouchPanel: React.FC<RetouchPanelProps> = ({
 
       {/* 内容区域 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
-        {/* 高频需求快捷标签 */}
+        {/* 照片标签与需求 */}
         <div>
-          <div className="flex items-center space-x-1.5 mb-2 text-slate-300 font-semibold">
-            <Tag className="w-3.5 h-3.5 text-indigo-400" />
-            <span>高频修图标签 (点击勾选)</span>
+          <div className="flex items-center justify-between mb-2 text-slate-300 font-semibold">
+            <div className="flex items-center space-x-1.5">
+              <Tag className="w-3.5 h-3.5 text-indigo-400" />
+              <span>照片标签 (点击勾选)</span>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {PRESET_RETOUCH_TAGS.map((tag) => {
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {availableTags.map((tag) => {
               const isSelected = presetTags.includes(tag);
               return (
                 <button
@@ -145,6 +150,34 @@ export const RetouchPanel: React.FC<RetouchPanelProps> = ({
               );
             })}
           </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const trimmed = newTagInput.trim();
+              if (trimmed) {
+                addCustomTag(trimmed);
+                handleToggleTag(trimmed);
+                setNewTagInput('');
+              }
+            }}
+            className="flex items-center gap-1.5"
+          >
+            <input
+              type="text"
+              value={newTagInput}
+              onChange={(e) => setNewTagInput(e.target.value)}
+              placeholder="添加自定义标签..."
+              className="flex-1 px-2.5 py-1 bg-dark-900 border border-dark-700 rounded-lg text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              type="submit"
+              disabled={!newTagInput.trim()}
+              className="p-1 rounded-lg bg-dark-800 hover:bg-dark-750 border border-dark-700 text-slate-300 disabled:opacity-30 text-xs font-medium cursor-pointer"
+              title="添加新标签"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </form>
         </div>
 
         {/* 局部图上标注点 */}

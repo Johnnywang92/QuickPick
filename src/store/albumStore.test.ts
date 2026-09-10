@@ -59,6 +59,50 @@ describe('albumStore filter navigation', () => {
     expect(photoMatchesFilter(photos[3], 3, 'unreviewed', null, [], selections, viewed, insights)).toBe(true);
   });
 
+  it('filters photos by skipped state correctly', () => {
+    useSelectionStore.setState({
+      selections: {
+        one: { photoId: 'one', state: 'unreviewed', updatedAt: '' },
+        two: { photoId: 'two', state: 'skipped', updatedAt: '' },
+        three: { photoId: 'three', state: 'maybe', updatedAt: '' },
+        four: { photoId: 'four', state: 'selected', updatedAt: '' },
+      },
+    });
+    const selections = useSelectionStore.getState().selections;
+    const viewed = useSelectionStore.getState().viewedPhotoIds;
+    const insights = useInsightStore.getState().insights;
+
+    expect(photoMatchesFilter(photos[0], 0, 'skipped', null, [], selections, viewed, insights)).toBe(false);
+    expect(photoMatchesFilter(photos[1], 1, 'skipped', null, [], selections, viewed, insights)).toBe(true);
+
+    useAlbumStore.getState().setActiveFilter('skipped');
+    expect(useAlbumStore.getState().currentIndex).toBe(1);
+  });
+
+  it('filters photos by active tag filter correctly', () => {
+    useSelectionStore.setState({
+      selections: {
+        one: { photoId: 'one', state: 'selected', note: JSON.stringify({ presetTags: ['要修图'] }), updatedAt: '' },
+        two: { photoId: 'two', state: 'selected', note: JSON.stringify({ presetTags: ['原图直出'] }), updatedAt: '' },
+        three: { photoId: 'three', state: 'maybe', updatedAt: '' },
+        four: { photoId: 'four', state: 'selected', note: JSON.stringify({ presetTags: ['要修图', '相册排版'] }), updatedAt: '' },
+      },
+    });
+    const selections = useSelectionStore.getState().selections;
+    const viewed = useSelectionStore.getState().viewedPhotoIds;
+    const insights = useInsightStore.getState().insights;
+
+    expect(photoMatchesFilter(photos[0], 0, 'all', null, [], selections, viewed, insights, '要修图')).toBe(true);
+    expect(photoMatchesFilter(photos[1], 1, 'all', null, [], selections, viewed, insights, '要修图')).toBe(false);
+    expect(photoMatchesFilter(photos[3], 3, 'all', null, [], selections, viewed, insights, '要修图')).toBe(true);
+
+    useAlbumStore.getState().setActiveTagFilter('要修图');
+    expect(useAlbumStore.getState().currentIndex).toBe(0);
+
+    useAlbumStore.getState().nextPhoto();
+    expect(useAlbumStore.getState().currentIndex).toBe(3);
+  });
+
   describe('storyline chapter operations', () => {
     it('splits scene at given photo index', () => {
       useAlbumStore.setState({

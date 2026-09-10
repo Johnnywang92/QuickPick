@@ -17,6 +17,7 @@ import {
 import { useAlbumStore } from './albumStore';
 import { useSelectionStore } from './selectionStore';
 import { generateRetouchHtmlReport } from '../utils/reportGenerator';
+import { parseAnnotation } from '../utils/annotationUtils';
 
 function normalizePortablePath(path: string): string {
   const normalized = path.replace(/\\/g, '/');
@@ -75,6 +76,7 @@ interface ExportStore {
   errorMessage: string | null;
   manifestExportSuccess: boolean;
   renderedExportResult: RenderedExportResult | null;
+  exportTagFilter: string | null;
 
   // Actions
   setExportModalOpen: (open: boolean) => void;
@@ -84,6 +86,7 @@ interface ExportStore {
   setIncludeXmp: (include: boolean) => void;
   setOpenAfterExport: (open: boolean) => void;
   setManifestFormat: (fmt: ManifestFormat) => void;
+  setExportTagFilter: (tag: string | null) => void;
   browseTargetDir: () => Promise<void>;
   getSelectedPhotos: () => LocalPhoto[];
 
@@ -115,12 +118,14 @@ export const useExportStore = create<ExportStore>((set, get) => ({
   errorMessage: null,
   manifestExportSuccess: false,
   renderedExportResult: null,
+  exportTagFilter: null,
 
   setExportModalOpen: (open: boolean) => {
     set({
       isExportModalOpen: open,
       // 必须由用户显式选择源相册之外的已存在目录。
       targetDir: '',
+      exportTagFilter: null,
       errorMessage: null,
       exportResult: null,
       preflightResult: null,
@@ -170,6 +175,10 @@ export const useExportStore = create<ExportStore>((set, get) => ({
     set({ manifestFormat: fmt });
   },
 
+  setExportTagFilter: (tag: string | null) => {
+    set({ exportTagFilter: tag, preflightResult: null });
+  },
+
   browseTargetDir: async () => {
     const chosen = await selectDirectory('选择导出目标文件夹');
     if (chosen) {
@@ -180,7 +189,14 @@ export const useExportStore = create<ExportStore>((set, get) => ({
   getSelectedPhotos: () => {
     const { photos } = useAlbumStore.getState();
     const { selections } = useSelectionStore.getState();
-    return photos.filter((p) => selections[p.id]?.state === 'selected');
+    const { exportTagFilter } = get();
+    const selected = photos.filter((p) => selections[p.id]?.state === 'selected');
+    if (!exportTagFilter) return selected;
+    return selected.filter((p) => {
+      const note = selections[p.id]?.note;
+      const ann = parseAnnotation(note);
+      return (ann.presetTags || []).includes(exportTagFilter);
+    });
   },
 
   // 模式 A：复制所选原片 (安全红线：不移动、不覆盖、只复制、哈希校验)
