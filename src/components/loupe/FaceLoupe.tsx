@@ -83,9 +83,9 @@ const FaceCropCard: React.FC<FaceCropProps> = ({
     };
   }, [face, imageUrl]);
 
-  // 眼睛开合度语义状态
-  const isEyeClosed = face.eye_open_score < 0.35;
-  const isEyeSquint = face.eye_open_score >= 0.35 && face.eye_open_score < 0.70;
+  // 眼睛开合度语义状态 (0.0 ~ 0.40 为闭眼；0.40 ~ 0.70 为微闭/半睁；0.70 ~ 1.0 为充分睁眼)
+  const isEyeClosed = face.eye_open_score < 0.40;
+  const isEyeSquint = face.eye_open_score >= 0.40 && face.eye_open_score < 0.70;
 
   return (
     <div
@@ -281,7 +281,7 @@ export const FaceLoupe: React.FC = () => {
   // 严格归一化优先级 Top 6
   const topFaces = faces.slice(0, 6);
   const backgroundFaces = faces.slice(6);
-  const backgroundClosedEyeFace = backgroundFaces.find((f) => f.eye_open_score < 0.35);
+  const backgroundClosedEyeFace = backgroundFaces.find((f) => f.eye_open_score < 0.40);
 
   if (!isFaceLoupeOpen) {
     return (
@@ -292,7 +292,7 @@ export const FaceLoupe: React.FC = () => {
       >
         <Users className="w-4 h-4 text-brand-400 group-hover:scale-110 transition-transform" />
         <span className="font-semibold">人脸特写 ({faces.length})</span>
-        {faces.some((f) => f.eye_open_score < 0.35) && (
+        {faces.some((f) => f.eye_open_score < 0.40) && (
           <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
         )}
       </button>

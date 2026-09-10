@@ -139,7 +139,21 @@ export async function selectFolder(): Promise<string | null> {
 
 export async function detectPhotoFaces(path: string): Promise<FaceInfo[]> {
   if (!isTauri()) {
-    return [];
+    const isBlink = path.includes('_DSC0002');
+    return [
+      {
+        id: 'face_1',
+        x: 0.35,
+        y: 0.25,
+        width: 0.25,
+        height: 0.25,
+        eye_open_score: isBlink ? 0.18 : 0.94,
+        sharpness: 92,
+        is_pinned: true,
+        priority: 10,
+        label: '新娘',
+      },
+    ];
   }
   return await invoke<FaceInfo[]>('detect_photo_faces', { path });
 }
@@ -364,10 +378,34 @@ export async function analyzePhotoDetails(
   scene?: string,
 ): Promise<PhotoAnalysisResult> {
   if (!isTauri()) {
+    const isBlink = photoId === 'mock-2' || path.includes('_DSC0002');
     return {
-      analysis_status: 'no_issues',
-      defect_tags: [],
-      faces: [],
+      analysis_status: isBlink ? 'needs_check' : 'no_issues',
+      defect_tags: isBlink
+        ? [
+            {
+              id: 'group_photo_blink',
+              category: 'warning',
+              label: '大合影闭眼 (1人闭眼)',
+              confidence: 0.92,
+              hint: '检测到人物闭眼，建议调出同组连拍使用 Face Loupe 眼神替换',
+            },
+          ]
+        : [],
+      faces: [
+        {
+          id: 'face_1',
+          x: 0.35,
+          y: 0.25,
+          width: 0.25,
+          height: 0.25,
+          eye_open_score: isBlink ? 0.18 : 0.94,
+          sharpness: 92,
+          is_pinned: true,
+          priority: 10,
+          label: '新娘',
+        },
+      ],
       preview_width: 1600,
       preview_height: 1066,
       phash: '0000000000000000',

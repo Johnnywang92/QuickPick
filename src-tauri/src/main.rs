@@ -119,12 +119,23 @@ fn analyze_photo_details_blocking(
             sharpness: None,
         };
     };
-    let (status, defect_tags) = quickpick_lib::rules::evaluate_photo_analysis_with_scene(
+    let (mut status, mut defect_tags) = quickpick_lib::rules::evaluate_photo_analysis_with_scene(
         &metrics,
         None,
         index,
         workflow_scene,
     );
+
+    // 闭眼缺陷及合影睁闭眼分歧判定
+    if let Some(blink_tag) = quickpick_lib::rules::face::evaluate_group_eyes_with_scene(&faces, workflow_scene) {
+        defect_tags.push(blink_tag);
+        status = AnalysisStatus::NeedsCheck;
+    }
+    if let Some(conflict_tag) = quickpick_lib::rules::face::evaluate_group_eye_conflict_with_scene(&faces, workflow_scene) {
+        defect_tags.push(conflict_tag);
+        status = AnalysisStatus::NeedsCheck;
+    }
+
     let analysis_status = match status {
         AnalysisStatus::NoIssues => "no_issues",
         AnalysisStatus::NeedsCheck => "needs_check",

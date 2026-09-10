@@ -112,7 +112,7 @@ pub fn evaluate_group_eyes_with_scene(
 
     let closed_faces: Vec<&FaceInfo> = all_faces
         .iter()
-        .filter(|f| f.eye_open_score < 0.35)
+        .filter(|f| f.eye_open_score < 0.40)
         .collect();
 
     if closed_faces.is_empty() {
@@ -126,22 +126,35 @@ pub fn evaluate_group_eyes_with_scene(
         .clone()
         .unwrap_or_else(|| format!("人物 #{}", first_face.id));
 
-    let (label_prefix, confidence) = match scene {
-        WorkflowScene::Conference => ("商务大合影闭眼警告", 0.98),
-        WorkflowScene::Wedding => ("大合影闭眼待拯救", 0.92),
-        _ => ("大合影闭眼", 0.92),
-    };
+    if all_faces.len() == 1 {
+        Some(DefectTag {
+            id: "portrait_photo_blink".to_string(),
+            category: "warning".to_string(),
+            label: "可能闭眼".to_string(),
+            confidence: 0.90,
+            hint: Some(format!(
+                "检测到核心人物 [{}] 疑似闭眼或微闭，建议复核或从连拍中挑选最佳瞬间",
+                label_str
+            )),
+        })
+    } else {
+        let (label_prefix, confidence) = match scene {
+            WorkflowScene::Conference => ("商务大合影闭眼警告", 0.98),
+            WorkflowScene::Wedding => ("大合影闭眼待拯救", 0.92),
+            _ => ("大合影闭眼", 0.92),
+        };
 
-    Some(DefectTag {
-        id: "group_photo_blink".to_string(),
-        category: "warning".to_string(),
-        label: format!("{} ({}人)", label_prefix, count),
-        confidence,
-        hint: Some(format!(
-            "检测到 [{}] 等 {} 位人物闭眼，建议调出同组连拍使用 Face Loupe 进行眼神替换",
-            label_str, count
-        )),
-    })
+        Some(DefectTag {
+            id: "group_photo_blink".to_string(),
+            category: "warning".to_string(),
+            label: format!("{} ({}人)", label_prefix, count),
+            confidence,
+            hint: Some(format!(
+                "检测到 [{}] 等 {} 位人物闭眼，建议调出同组连拍使用 Face Loupe 进行眼神替换",
+                label_str, count
+            )),
+        })
+    }
 }
 
 /// 保持向后兼容的标准大合影闭眼判定
@@ -197,6 +210,73 @@ pub fn evaluate_group_eye_conflict(all_faces: &[FaceInfo]) -> Option<DefectTag> 
 
 /// 轻量化人脸特征区域提取（基于 YCbCr 肤色聚类与眼部高反差区域）
 /// 无需外部庞大网络权重，100% 离线、跨平台且毫秒级响应
+/// 精准计算眼部局部区域的开合度指标 (0.0 完全闭眼 ~ 1.0 充分睁眼)
+fn analyze_eye_region(
+    gray: &image::GrayImage,
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+) -> f32 {
+    let w = gray.width();
+    let h = gray.height();
+    let x_start = x0.min(w.saturating_sub(1));
+    let x_end = x1.min(w);
+    let y_start = y0.min(h.saturating_sub(1));
+    let y_end = y1.min(h);
+
+    if x_end <= x_start || y_end <= y_start {
+        return 0.85;
+    }
+
+    let mut sum: f64 = 0.0;
+    let mut sum_sq: f64 = 0.0;
+    let mut min_val: u8 = 255;
+    let mut max_val: u8 = 0;
+    let mut count: usize = 0;
+
+    for y in y_start..y_end {
+        for x in x_start..x_end {
+            let p = gray.get_pixel(x, y)[0];
+            sum += p as f64;
+            sum_sq += (p as f64) * (p as f64);
+            if p < min_val {
+                min_val = p;
+            }
+            if p > max_val {
+                max_val = p;
+            }
+            count += 1;
+        }
+    }
+
+    if count < 9 {
+        return 0.85;
+    }
+
+    let mean = sum / (count as f64);
+    let variance = (sum_sq / (count as f64)) - (mean * mean);
+    let std_dev = variance.max(0.0).sqrt() as f32;
+    let contrast = max_val.saturating_sub(min_val) as f32;
+
+    // 闭眼：对比度低 (< 24.0) 且标准差低 (< 9.0)，眼皮平滑
+    // 睁眼：有深色瞳孔与浅色眼白，对比度高 (>= 45.0)，标准差高 (>= 15.0)
+    let contrast_factor = (contrast / 55.0).clamp(0.12, 1.0);
+    let texture_factor = (std_dev / 16.0).clamp(0.15, 1.0);
+    let raw_score = contrast_factor * texture_factor;
+
+    if contrast < 24.0 || std_dev < 9.0 {
+        // 极低反差平滑皮肤，明确闭眼
+        (raw_score * 0.5).clamp(0.10, 0.28)
+    } else if contrast < 35.0 || std_dev < 12.5 {
+        // 微闭或半睁
+        (0.35 + (raw_score - 0.25) * 0.7).clamp(0.35, 0.65)
+    } else {
+        // 正常睁眼
+        (0.70 + (raw_score - 0.45) * 0.5).clamp(0.70, 0.98)
+    }
+}
+
 pub fn detect_faces_heuristic(img: &DynamicImage) -> Vec<FaceInfo> {
     let (width, height) = img.dimensions();
     if width < 50 || height < 50 {
@@ -262,7 +342,8 @@ pub fn detect_faces_heuristic(img: &DynamicImage) -> Vec<FaceInfo> {
     let gray = img.to_luma8();
 
     for (idx, (cx, cy, _count)) in valid_clusters.iter().enumerate() {
-        let face_size = (width.min(height) as f32 * 0.16).clamp(40.0, 300.0) as u32;
+        let max_dim = width.min(height) as f32;
+        let face_size = (max_dim * 0.20).clamp(40.0, (max_dim * 0.80).max(40.0)) as u32;
         let x0 = cx.saturating_sub(face_size / 2);
         let y0 = cy.saturating_sub(face_size / 2);
         let w = face_size.min(width - x0);
@@ -272,47 +353,34 @@ pub fn detect_faces_heuristic(img: &DynamicImage) -> Vec<FaceInfo> {
             continue;
         }
 
-        // 计算该人脸区域内的眼睛睁闭度近似 (上半部 1/4 ~ 1/2 区域的瞳孔反差)
-        let eye_y_start = y0 + h / 5;
-        let eye_y_end = y0 + (h * 3) / 5;
-        let eye_x_start = x0 + w / 5;
-        let eye_x_end = x0 + (w * 4) / 5;
+        // 双眼局部精细区域采样
+        let eye_y_start = y0 + (h * 28) / 100;
+        let eye_y_end = y0 + (h * 50) / 100;
+        let left_eye_x0 = x0 + (w * 18) / 100;
+        let left_eye_x1 = x0 + (w * 44) / 100;
+        let right_eye_x0 = x0 + (w * 56) / 100;
+        let right_eye_x1 = x0 + (w * 82) / 100;
 
-        let mut dark_pixels = 0;
-        let mut total_eye_pixels = 0;
+        let left_score = analyze_eye_region(&gray, left_eye_x0, left_eye_x1, eye_y_start, eye_y_end);
+        let right_score = analyze_eye_region(&gray, right_eye_x0, right_eye_x1, eye_y_start, eye_y_end);
+        // 单眼闭眼即视为闭眼
+        let eye_open_score = left_score.min(right_score);
+
+        // 局部眼部锐度检测
         let mut lap_sum = 0.0f32;
+        let mut total_eye_pixels = 0usize;
 
         for ey in eye_y_start..eye_y_end.min(height - 1) {
-            for ex in eye_x_start..eye_x_end.min(width - 1) {
-                let p = gray.get_pixel(ex, ey)[0];
-                if p < 65 {
-                    dark_pixels += 1;
-                }
-                total_eye_pixels += 1;
-
-                // 局部锐度
-                let c = p as f32;
+            for ex in left_eye_x0..right_eye_x1.min(width - 1) {
+                let c = gray.get_pixel(ex, ey)[0] as f32;
                 let up = gray.get_pixel(ex, ey.saturating_sub(1))[0] as f32;
                 let dn = gray.get_pixel(ex, (ey + 1).min(height - 1))[0] as f32;
                 let lf = gray.get_pixel(ex.saturating_sub(1), ey)[0] as f32;
                 let rt = gray.get_pixel((ex + 1).min(width - 1), ey)[0] as f32;
                 lap_sum += (4.0 * c - up - dn - lf - rt).abs();
+                total_eye_pixels += 1;
             }
         }
-
-        let eye_open_score = if total_eye_pixels > 0 {
-            let dark_ratio = dark_pixels as f32 / total_eye_pixels as f32;
-            // 瞳孔与睫毛黑色像素占比在 4%~15% 为正常睁眼；低于 2% 或过暗为闭眼/阴影
-            if dark_ratio > 0.03 && dark_ratio < 0.20 {
-                (0.65 + (dark_ratio - 0.03) * 3.0).clamp(0.65, 0.98)
-            } else if dark_ratio <= 0.02 {
-                0.20 // 闭眼
-            } else {
-                0.70
-            }
-        } else {
-            0.85
-        };
 
         let face_sharpness = if total_eye_pixels > 0 {
             (lap_sum / total_eye_pixels as f32 * 5.0).clamp(10.0, 100.0)

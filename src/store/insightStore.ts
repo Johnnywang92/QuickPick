@@ -23,7 +23,7 @@ function insightFromAnalysis(
   let possibleBlur: number | undefined;
   for (const tag of result.defect_tags) {
     if (tag.id.includes('blink') || tag.id.includes('eye')) {
-      reasons.push('建议检查眼睛');
+      reasons.push('可能闭眼');
     }
     if (tag.id.includes('blur') || tag.id.includes('focus')) {
       possibleBlur = Math.max(possibleBlur || 0, Math.round(tag.confidence * 100));
@@ -33,8 +33,8 @@ function insightFromAnalysis(
   const possibleClosedEyes = result.faces.length
     ? Math.min(...result.faces.map((face) => face.eye_open_score))
     : undefined;
-  if (possibleClosedEyes !== undefined && possibleClosedEyes < 0.35) {
-    reasons.push('建议检查眼睛');
+  if (possibleClosedEyes !== undefined && possibleClosedEyes < 0.40) {
+    reasons.push('可能闭眼');
   }
   if (similarityGroupId) reasons.push('与其他照片相似');
   if (result.analysis_status === 'failed') reasons.push('无法分析');
@@ -42,7 +42,7 @@ function insightFromAnalysis(
     reasons.push('未见明显问题');
   }
   const needsCheck = reasons.some(
-    (reason) => reason.includes('眼睛') || reason.includes('模糊'),
+    (reason) => reason.includes('闭眼') || reason.includes('眼睛') || reason.includes('模糊'),
   );
   return {
     photoId,
