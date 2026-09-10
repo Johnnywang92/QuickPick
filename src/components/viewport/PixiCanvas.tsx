@@ -55,6 +55,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [initAttempt, setInitAttempt] = useState(0);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [textureVersion, setTextureVersion] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const keepPinMarkersReadable = useCallback(() => {
@@ -164,9 +165,15 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     return () => observer.disconnect();
   }, [fitImageToViewport, pixiStatus]);
 
-  // 当图片 URL 切换时，更新纹理
+  // 当图片 URL 切换时，更新纹理（采用双缓冲就地置换，彻底消除切图黑屏闪烁）
   useEffect(() => {
     if (!imageUrl) {
+      if (imageContainerRef.current) {
+        imageContainerRef.current.children.forEach((child) => child.destroy());
+        imageContainerRef.current.removeChildren();
+      }
+      spriteRef.current = null;
+      pinsContainerRef.current = null;
       setImageStatus('idle');
       setLoadError(null);
       return;
@@ -174,11 +181,10 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     if (pixiStatus !== 'ready' || !appRef.current || !imageContainerRef.current) return;
 
     let isCurrent = true;
-    const container = imageContainerRef.current;
-    container.children.forEach((child) => child.destroy());
-    container.removeChildren();
-    spriteRef.current = null;
-    setImageStatus('loading');
+    // 若已有底片呈现，保持当前画面，直到新纹理载入完成直接替换，消除黑屏闪烁
+    if (!spriteRef.current) {
+      setImageStatus('loading');
+    }
     setLoadError(null);
 
     const loadTexture = async () => {
@@ -187,21 +193,24 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         if (!isCurrent || !imageContainerRef.current || !appRef.current) return;
 
         const container = imageContainerRef.current;
-        container.children.forEach((child) => child.destroy());
-        container.removeChildren();
+        if (spriteRef.current) {
+          // 双缓冲原位替换：直接换装新纹理
+          spriteRef.current.texture = texture;
+        } else {
+          // 初次挂载生成主精灵与图钉层
+          const sprite = new Sprite(texture);
+          sprite.anchor.set(0.5);
+          container.addChild(sprite);
+          spriteRef.current = sprite;
 
-        const sprite = new Sprite(texture);
-        sprite.anchor.set(0.5);
-
-        container.addChild(sprite);
-        spriteRef.current = sprite;
-
-        const pinsLayer = new Container();
-        container.addChild(pinsLayer);
-        pinsContainerRef.current = pinsLayer;
+          const pinsLayer = new Container();
+          container.addChild(pinsLayer);
+          pinsContainerRef.current = pinsLayer;
+        }
 
         fitImageToViewport();
         setImageStatus('loaded');
+        setTextureVersion((v) => v + 1);
       } catch (e) {
         console.error('Failed to render Pixi texture', e);
         if (isCurrent) {
@@ -247,7 +256,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       console.error('应用 3D LUT 滤镜失败:', err);
       sprite.filters = [];
     }
-  }, [activeLutId, isLutEnabled, lutIntensity, isLutBypassComparing, getCustomLutData, imageStatus]);
+  }, [activeLutId, isLutEnabled, lutIntensity, isLutBypassComparing, getCustomLutData, imageStatus, textureVersion]);
 
   // 渲染图上 Pin 针标记层
   useEffect(() => {
@@ -299,7 +308,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       marker.scale.set(1 / Math.max(imageContainerRef.current?.scale.x || 1, 0.001));
       pinsLayer.addChild(marker);
     }
-  }, [pins, imageStatus]);
+  }, [pins, imageStatus, textureVersion]);
 
   // 当摄影师点击 Face Loupe 人脸特写卡片时，平滑聚焦与居中放大至对应人物
   useEffect(() => {
@@ -323,16 +332,33 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     keepPinMarkersReadable();
   }, [focusedFace, keepPinMarkersReadable]);
 
-  // 滚轮缩放事件监听
+  // 滚轮与触控板缩放事件监听（支持以鼠标光标为中心缩放，及 Mac 触控板指数平滑捏合）
   const handleWheel = (e: React.WheelEvent) => {
-    if (!imageContainerRef.current || !appRef.current) return;
+    if (!imageContainerRef.current || !appRef.current || !containerRef.current) return;
     e.preventDefault();
 
     const container = imageContainerRef.current;
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+    const oldScale = container.scale.x;
 
-    const newScale = Math.max(0.1, Math.min(container.scale.x * zoomFactor, 8.0));
+    // 针对 Mac 触控板捏合手势（带 ctrlKey）使用指数平滑插值，普通滚轮则使用标准阶梯步进
+    const zoomFactor = e.ctrlKey
+      ? Math.exp(-e.deltaY * 0.01)
+      : e.deltaY < 0
+      ? 1.15
+      : 0.85;
+
+    const newScale = Math.max(0.1, Math.min(oldScale * zoomFactor, 8.0));
+    if (Math.abs(newScale - oldScale) < 0.0001) return;
+
+    // 计算鼠标在视口中的坐标，实现专业级光标中心缩放（指哪放大哪）
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
+    container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
     container.scale.set(newScale);
+
     keepPinMarkersReadable();
     setZoomLevel(Math.round(newScale * 100));
   };

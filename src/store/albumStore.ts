@@ -122,6 +122,122 @@ export function photoMatchesFilter(
   return true;
 }
 
+function isUnfiltered(state: AlbumStore): boolean {
+  return state.activeFilter === 'all' && state.selectedSceneId === null && state.activeTagFilter === null;
+}
+
+export function findNextMatchingIndex(state: AlbumStore): number | undefined {
+  const { photos, currentIndex } = state;
+  if (photos.length === 0) return undefined;
+  if (isUnfiltered(state)) {
+    return currentIndex + 1 < photos.length ? currentIndex + 1 : undefined;
+  }
+  const { selections, viewedPhotoIds } = useSelectionStore.getState();
+  const { insights } = useInsightStore.getState();
+  for (let i = currentIndex + 1; i < photos.length; i++) {
+    if (
+      photoMatchesFilter(
+        photos[i],
+        i,
+        state.activeFilter,
+        state.selectedSceneId,
+        state.scenes,
+        selections,
+        viewedPhotoIds,
+        insights,
+        state.activeTagFilter,
+      )
+    ) {
+      return i;
+    }
+  }
+  return undefined;
+}
+
+export function findPrevMatchingIndex(state: AlbumStore): number | undefined {
+  const { photos, currentIndex } = state;
+  if (photos.length === 0) return undefined;
+  if (isUnfiltered(state)) {
+    return currentIndex - 1 >= 0 ? currentIndex - 1 : undefined;
+  }
+  const { selections, viewedPhotoIds } = useSelectionStore.getState();
+  const { insights } = useInsightStore.getState();
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    if (
+      photoMatchesFilter(
+        photos[i],
+        i,
+        state.activeFilter,
+        state.selectedSceneId,
+        state.scenes,
+        selections,
+        viewedPhotoIds,
+        insights,
+        state.activeTagFilter,
+      )
+    ) {
+      return i;
+    }
+  }
+  return undefined;
+}
+
+export function findFirstMatchingIndex(state: AlbumStore): number | undefined {
+  const { photos } = state;
+  if (photos.length === 0) return undefined;
+  if (isUnfiltered(state)) {
+    return 0;
+  }
+  const { selections, viewedPhotoIds } = useSelectionStore.getState();
+  const { insights } = useInsightStore.getState();
+  for (let i = 0; i < photos.length; i++) {
+    if (
+      photoMatchesFilter(
+        photos[i],
+        i,
+        state.activeFilter,
+        state.selectedSceneId,
+        state.scenes,
+        selections,
+        viewedPhotoIds,
+        insights,
+        state.activeTagFilter,
+      )
+    ) {
+      return i;
+    }
+  }
+  return undefined;
+}
+
+export function findLastMatchingIndex(state: AlbumStore): number | undefined {
+  const { photos } = state;
+  if (photos.length === 0) return undefined;
+  if (isUnfiltered(state)) {
+    return photos.length - 1;
+  }
+  const { selections, viewedPhotoIds } = useSelectionStore.getState();
+  const { insights } = useInsightStore.getState();
+  for (let i = photos.length - 1; i >= 0; i--) {
+    if (
+      photoMatchesFilter(
+        photos[i],
+        i,
+        state.activeFilter,
+        state.selectedSceneId,
+        state.scenes,
+        selections,
+        viewedPhotoIds,
+        insights,
+        state.activeTagFilter,
+      )
+    ) {
+      return i;
+    }
+  }
+  return undefined;
+}
+
 function matchingPhotoIndexes(state: AlbumStore): number[] {
   const { selections, viewedPhotoIds } = useSelectionStore.getState();
   const { insights } = useInsightStore.getState();
@@ -517,21 +633,19 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
     const target = photos[index];
     if (target) {
       useSelectionStore.getState().markAsViewed(target.id);
-      usePreviewStore.getState().loadPreviewForCurrent(target, photos);
+      usePreviewStore.getState().loadPreviewForCurrent(target, photos, index);
     }
   },
 
   nextPhoto: () => {
     const state = get();
-    const nextIndex = matchingPhotoIndexes(state).find((index) => index > state.currentIndex);
+    const nextIndex = findNextMatchingIndex(state);
     if (nextIndex !== undefined) state.selectIndex(nextIndex);
   },
 
   prevPhoto: () => {
     const state = get();
-    const previousIndex = matchingPhotoIndexes(state)
-      .filter((index) => index < state.currentIndex)
-      .at(-1);
+    const previousIndex = findPrevMatchingIndex(state);
     if (previousIndex !== undefined) state.selectIndex(previousIndex);
   },
 
@@ -780,13 +894,13 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
 
   jumpToFirstMatching: () => {
     const state = get();
-    const firstIndex = matchingPhotoIndexes(state)[0];
+    const firstIndex = findFirstMatchingIndex(state);
     if (firstIndex !== undefined) state.selectIndex(firstIndex);
   },
 
   jumpToLastMatching: () => {
     const state = get();
-    const lastIndex = matchingPhotoIndexes(state).at(-1);
+    const lastIndex = findLastMatchingIndex(state);
     if (lastIndex !== undefined) state.selectIndex(lastIndex);
   },
 }));

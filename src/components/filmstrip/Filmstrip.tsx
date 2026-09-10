@@ -25,10 +25,14 @@ export const Filmstrip: React.FC = () => {
     scenes,
     selectedSceneId,
   } = useAlbumStore();
-  const { previewCache, prefetchPhotos } = usePreviewStore();
-  const { isCompareMode, compareTargetIndex } = useCompareStore();
-  const { insights } = useInsightStore();
-  const { selections, viewedPhotoIds } = useSelectionStore();
+  const previewCache = usePreviewStore((s) => s.previewCache);
+  const prefetchPhotos = usePreviewStore((s) => s.prefetchPhotos);
+  const isCompareMode = useCompareStore((s) => s.isCompareMode);
+  const compareTargetIndex = useCompareStore((s) => s.compareTargetIndex);
+  const insights = useInsightStore((s) => s.insights);
+  const selections = useSelectionStore((s) => s.selections);
+  const viewedPhotoIds = useSelectionStore((s) => s.viewedPhotoIds);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [containerWidth, setContainerWidth] = useState(1200);
@@ -36,12 +40,15 @@ export const Filmstrip: React.FC = () => {
   // macOS Dock 鱼眼悬停放大光标绝对位置跟踪
   const [hoverContentX, setHoverContentX] = useState<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const lastClientXRef = useRef<number | null>(null);
+  const lastNavTimeRef = useRef<number>(0);
 
   // 组件卸载时清理未完成的帧调度
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     };
   }, []);
 
@@ -84,13 +91,18 @@ export const Filmstrip: React.FC = () => {
   }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    setScrollLeft(e.currentTarget.scrollLeft);
-    if (lastClientXRef.current !== null) {
-      updateHoverX(lastClientXRef.current);
-    }
+    const targetScrollLeft = e.currentTarget.scrollLeft;
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      setScrollLeft(targetScrollLeft);
+      if (lastClientXRef.current !== null) {
+        updateHoverX(lastClientXRef.current);
+      }
+    });
   };
 
-  // 计算当前活动筛选条件下的匹配照片列表（保留其在全局 photos 中的 originalIndex）
+  // 计算当前活动筛选条件下的匹配照片列表（仅在 unreviewed 下解构 currentIndex，其余常规选片翻页 0 计算消耗）
+  const filterCurrentIndex = activeFilter === 'unreviewed' ? currentIndex : undefined;
   const filteredPhotos = React.useMemo(() => {
     const list: { photo: (typeof photos)[0]; originalIndex: number }[] = [];
     photos.forEach((photo, index) => {
@@ -105,7 +117,7 @@ export const Filmstrip: React.FC = () => {
           viewedPhotoIds,
           insights,
           activeTagFilter,
-          currentIndex,
+          filterCurrentIndex,
         )
       ) {
         list.push({ photo, originalIndex: index });
@@ -121,13 +133,13 @@ export const Filmstrip: React.FC = () => {
     viewedPhotoIds,
     insights,
     activeTagFilter,
-    currentIndex,
+    filterCurrentIndex,
   ]);
 
   const isFiltered = activeFilter !== 'all' || selectedSceneId !== null || activeTagFilter !== null;
   const totalItems = filteredPhotos.length;
 
-  // 自动平滑居中当前选中的缩略图卡片
+  // 自动居中当前选中的缩略图卡片（高速连击使用 auto 瞬时定位杜绝果冻迟滞，慢速单按使用 smooth 弹性居中）
   useEffect(() => {
     if (!containerRef.current || totalItems === 0) return;
     const currentFilteredIdx = filteredPhotos.findIndex(
@@ -135,18 +147,22 @@ export const Filmstrip: React.FC = () => {
     );
     if (currentFilteredIdx < 0) return;
 
+    const now = performance.now();
+    const isRapidNav = now - lastNavTimeRef.current < 180;
+    lastNavTimeRef.current = now;
+
     const container = containerRef.current;
     const itemLeft = CONTAINER_PADDING_X + currentFilteredIdx * ITEM_TOTAL;
     const itemRight = itemLeft + ITEM_WIDTH;
     const viewLeft = container.scrollLeft;
     const viewRight = viewLeft + container.clientWidth;
 
-    // 若当前高亮卡片超出视野或过于贴近边缘，平滑居中滚动
+    // 若当前高亮卡片超出视野或过于贴近边缘，平滑/瞬时居中滚动
     if (itemLeft < viewLeft + 100 || itemRight > viewRight - 100) {
       const idealScroll = itemLeft - (container.clientWidth - ITEM_WIDTH) / 2;
       container.scrollTo({
         left: Math.max(0, idealScroll),
-        behavior: 'smooth',
+        behavior: isRapidNav ? 'auto' : 'smooth',
       });
     }
   }, [currentIndex, filteredPhotos, totalItems]);

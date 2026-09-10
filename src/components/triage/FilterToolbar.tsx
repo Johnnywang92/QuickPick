@@ -40,8 +40,10 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
     currentIndex,
   } = useAlbumStore();
 
-  const { getStats, selections, viewedPhotoIds } = useSelectionStore();
-  const { insights } = useInsightStore();
+  const insights = useInsightStore((s) => s.insights);
+  const selections = useSelectionStore((s) => s.selections);
+  const viewedPhotoIds = useSelectionStore((s) => s.viewedPhotoIds);
+  const getStats = useSelectionStore((s) => s.getStats);
   const { availableTags } = useTagStore();
 
   const [showSceneDropdown, setShowSceneDropdown] = useState(false);
@@ -72,47 +74,69 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
   const stats = getStats(photos.length);
 
   // 统计可能需要检查的照片 (闭眼、轻微脱焦)
-  const needsCheckCount = photos.filter((p) => {
-    const ins = insights[p.id];
-    return !!(
-      ins &&
-      (ins.possibleBlur! > 40 ||
-        (ins.possibleClosedEyes !== undefined && ins.possibleClosedEyes < 0.4) ||
-        ins.reasons.some((r) => r.includes('眼睛') || r.includes('模糊')))
+  const needsCheckCount = React.useMemo(() => {
+    return photos.filter((p) => {
+      const ins = insights[p.id];
+      return !!(
+        ins &&
+        (ins.possibleBlur! > 40 ||
+          (ins.possibleClosedEyes !== undefined && ins.possibleClosedEyes < 0.4) ||
+          ins.reasons.some((r) => r.includes('眼睛') || r.includes('模糊')))
+      );
+    }).length;
+  }, [photos, insights]);
+
+  const burstCount = React.useMemo(() => {
+    return photos.filter((p) => !!p.burstGroupId).length;
+  }, [photos]);
+
+  // 筛选匹配计算：仅在 unreviewed 模式下绑定 currentIndex，其它状态下导航 0 计算开销
+  const filterCurrentIndex = activeFilter === 'unreviewed' ? currentIndex : undefined;
+  const matchingIndexes = React.useMemo(() => {
+    return photos.flatMap((photo, index) =>
+      photoMatchesFilter(
+        photo,
+        index,
+        activeFilter,
+        selectedSceneId,
+        scenes,
+        selections,
+        viewedPhotoIds,
+        insights,
+        activeTagFilter,
+        filterCurrentIndex,
+      )
+        ? [index]
+        : [],
     );
-  }).length;
+  }, [
+    photos,
+    activeFilter,
+    selectedSceneId,
+    scenes,
+    selections,
+    viewedPhotoIds,
+    insights,
+    activeTagFilter,
+    filterCurrentIndex,
+  ]);
 
-  const burstCount = photos.filter((p) => !!p.burstGroupId).length;
-
-  const matchingIndexes = photos.flatMap((photo, index) =>
-    photoMatchesFilter(
-      photo,
-      index,
-      activeFilter,
-      selectedSceneId,
-      scenes,
-      selections,
-      viewedPhotoIds,
-      insights,
-      activeTagFilter,
-      currentIndex,
-    )
-      ? [index]
-      : [],
-  );
   const positionInResults = matchingIndexes.indexOf(currentIndex);
   const filteredPosition = {
     current: positionInResults >= 0 ? positionInResults + 1 : null,
     total: matchingIndexes.length,
   };
 
-  const tagCounts: Record<string, number> = {};
-  photos.forEach((p) => {
-    const ann = parseAnnotation(selections[p.id]?.note);
-    (ann.presetTags || []).forEach((t) => {
-      tagCounts[t] = (tagCounts[t] || 0) + 1;
+  const tagCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    photos.forEach((p) => {
+      const ann = parseAnnotation(selections[p.id]?.note);
+      (ann.presetTags || []).forEach((t) => {
+        counts[t] = (counts[t] || 0) + 1;
+      });
     });
-  });
+    return counts;
+  }, [photos, selections]);
 
   const filterTabs: {
     id: FilterCategory;

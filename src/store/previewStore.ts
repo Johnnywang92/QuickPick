@@ -49,7 +49,7 @@ interface PreviewStore {
 
   // Actions
   getPreview: (photo: LocalPhoto) => Promise<string>;
-  loadPreviewForCurrent: (photo: LocalPhoto, photos?: LocalPhoto[]) => Promise<void>;
+  loadPreviewForCurrent: (photo: LocalPhoto, photos?: LocalPhoto[], photoIndex?: number) => Promise<void>;
   prefetchPhotos: (photos: LocalPhoto[]) => void;
   retryCurrentPreview: () => Promise<void>;
   clearCache: () => void;
@@ -66,10 +66,10 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
   getPreview: async (photo) => {
     const cached = get().previewCache.get(photo.path);
     if (cached) {
-      const refreshed = new Map(get().previewCache);
-      refreshed.delete(photo.path);
-      refreshed.set(photo.path, cached);
-      set({ previewCache: refreshed });
+      // 原位更新 Map 迭代顺序以保持 LRU，避免分配新 Map 触发全量组件冗余重绘
+      const cache = get().previewCache;
+      cache.delete(photo.path);
+      cache.set(photo.path, cached);
       return cached;
     }
 
@@ -98,7 +98,7 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
     return request;
   },
 
-  loadPreviewForCurrent: async (photo: LocalPhoto, photos?: LocalPhoto[]) => {
+  loadPreviewForCurrent: async (photo: LocalPhoto, photos?: LocalPhoto[], photoIndex?: number) => {
     const { currentPhotoPath } = get();
     if (currentPhotoPath === photo.path && get().previewStatus === 'loaded') {
       return;
@@ -136,7 +136,10 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
 
     // 2. 环形预加载前后照片 (前后各 2~3 张)
     if (photos && photos.length > 0) {
-      const currIdx = photos.findIndex((candidate) => candidate.id === photo.id);
+      const currIdx =
+        photoIndex !== undefined && photoIndex >= 0 && photos[photoIndex]?.id === photo.id
+          ? photoIndex
+          : photos.findIndex((candidate) => candidate.id === photo.id);
       if (currIdx >= 0) {
         const prefetchIndices = [
           currIdx + 1,

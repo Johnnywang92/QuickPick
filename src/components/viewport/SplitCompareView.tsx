@@ -296,14 +296,15 @@ export const SplitCompareView: React.FC = () => {
     }
   }, [canvasBgColor]);
 
-  // 加载左图纹理
+  // 加载左图纹理 (双缓冲原位替换，消除黑屏闪烁)
+  const [leftTextureVersion, setLeftTextureVersion] = useState(0);
+
   useEffect(() => {
     if (!currentPreviewUrl || !leftReady || !leftAppRef.current || !leftImageContainerRef.current) return;
     let isCurrent = true;
-    const existingContainer = leftImageContainerRef.current;
-    existingContainer.children.forEach((child) => child.destroy());
-    existingContainer.removeChildren();
-    setLeftRenderStatus('loading');
+    if (!leftSpriteRef.current) {
+      setLeftRenderStatus('loading');
+    }
     setLeftRenderError(null);
 
     const loadTexture = async () => {
@@ -311,12 +312,15 @@ export const SplitCompareView: React.FC = () => {
         const texture = await Assets.load(currentPreviewUrl);
         if (!isCurrent || !leftAppRef.current || !leftImageContainerRef.current) return;
         const container = leftImageContainerRef.current;
-        container.children.forEach((child) => child.destroy());
-        container.removeChildren();
 
-        const sprite = new Sprite(texture);
-        leftSpriteRef.current = sprite;
-        sprite.anchor.set(0.5);
+        if (leftSpriteRef.current) {
+          leftSpriteRef.current.texture = texture;
+        } else {
+          const sprite = new Sprite(texture);
+          leftSpriteRef.current = sprite;
+          sprite.anchor.set(0.5);
+          container.addChild(sprite);
+        }
 
         const app = leftAppRef.current;
         const scaleX = (app.screen.width * 0.9) / texture.width;
@@ -326,10 +330,10 @@ export const SplitCompareView: React.FC = () => {
         container.x = app.screen.width / 2;
         container.y = app.screen.height / 2;
         container.scale.set(fitScale);
-        container.addChild(sprite);
 
         setLeftZoom(Math.round(fitScale * 100));
         setLeftRenderStatus('loaded');
+        setLeftTextureVersion((v) => v + 1);
       } catch (error) {
         if (isCurrent) {
           setLeftRenderStatus('error');
@@ -342,18 +346,18 @@ export const SplitCompareView: React.FC = () => {
 
     return () => {
       isCurrent = false;
-      leftSpriteRef.current = null;
     };
   }, [currentPreviewUrl, leftReady, leftLoadAttempt]);
 
-  // 加载右图纹理
+  // 加载右图纹理 (双缓冲原位替换，消除黑屏闪烁)
+  const [rightTextureVersion, setRightTextureVersion] = useState(0);
+
   useEffect(() => {
     if (!comparePreviewUrl || !rightReady || !rightAppRef.current || !rightImageContainerRef.current) return;
     let isCurrent = true;
-    const existingContainer = rightImageContainerRef.current;
-    existingContainer.children.forEach((child) => child.destroy());
-    existingContainer.removeChildren();
-    setRightRenderStatus('loading');
+    if (!rightSpriteRef.current) {
+      setRightRenderStatus('loading');
+    }
     setRightRenderError(null);
 
     const loadTexture = async () => {
@@ -361,12 +365,15 @@ export const SplitCompareView: React.FC = () => {
         const texture = await Assets.load(comparePreviewUrl);
         if (!isCurrent || !rightAppRef.current || !rightImageContainerRef.current) return;
         const container = rightImageContainerRef.current;
-        container.children.forEach((child) => child.destroy());
-        container.removeChildren();
 
-        const sprite = new Sprite(texture);
-        rightSpriteRef.current = sprite;
-        sprite.anchor.set(0.5);
+        if (rightSpriteRef.current) {
+          rightSpriteRef.current.texture = texture;
+        } else {
+          const sprite = new Sprite(texture);
+          rightSpriteRef.current = sprite;
+          sprite.anchor.set(0.5);
+          container.addChild(sprite);
+        }
 
         const app = rightAppRef.current;
         const scaleX = (app.screen.width * 0.9) / texture.width;
@@ -376,10 +383,10 @@ export const SplitCompareView: React.FC = () => {
         container.x = app.screen.width / 2;
         container.y = app.screen.height / 2;
         container.scale.set(fitScale);
-        container.addChild(sprite);
 
         setRightZoom(Math.round(fitScale * 100));
         setRightRenderStatus('loaded');
+        setRightTextureVersion((v) => v + 1);
       } catch (error) {
         if (isCurrent) {
           setRightRenderStatus('error');
@@ -392,7 +399,6 @@ export const SplitCompareView: React.FC = () => {
 
     return () => {
       isCurrent = false;
-      rightSpriteRef.current = null;
     };
   }, [comparePreviewUrl, rightReady, rightLoadAttempt]);
 
@@ -445,16 +451,34 @@ export const SplitCompareView: React.FC = () => {
     getCustomLutData,
     leftRenderStatus,
     rightRenderStatus,
+    leftTextureVersion,
+    rightTextureVersion,
   ]);
 
-  // 滚轮缩放处理 (支持双画布联动)
+  // 滚轮与触控板缩放处理 (支持光标中心缩放与双画布联动)
   const handleWheel = (e: React.WheelEvent, isLeft: boolean) => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.15 : 0.85;
+    const factor = e.ctrlKey
+      ? Math.exp(-e.deltaY * 0.01)
+      : e.deltaY < 0
+      ? 1.15
+      : 0.85;
+
+    const targetWrapper = isLeft ? leftContainerRef.current : rightContainerRef.current;
+    const rect = targetWrapper?.getBoundingClientRect();
+    const mouseX = rect ? e.clientX - rect.left : 0;
+    const mouseY = rect ? e.clientY - rect.top : 0;
 
     const applyZoom = (container: Container | null, setZoom: (z: number) => void) => {
       if (!container) return;
-      const newScale = Math.max(0.1, Math.min(container.scale.x * factor, 8.0));
+      const oldScale = container.scale.x;
+      const newScale = Math.max(0.1, Math.min(oldScale * factor, 8.0));
+      if (Math.abs(newScale - oldScale) < 0.0001) return;
+
+      if (rect) {
+        container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
+        container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
+      }
       container.scale.set(newScale);
       setZoom(Math.round(newScale * 100));
     };

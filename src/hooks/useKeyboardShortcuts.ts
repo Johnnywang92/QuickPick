@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAlbumStore } from '../store/albumStore';
 import { useSelectionStore } from '../store/selectionStore';
 import { useCompareStore } from '../store/compareStore';
@@ -11,28 +11,8 @@ interface KeyboardShortcutsOptions {
 }
 
 export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
-  const { photos, currentIndex, nextPhoto, prevPhoto, resetFilter, jumpToFirstMatching, jumpToLastMatching } = useAlbumStore();
-  const {
-    toggleSelect,
-    setMaybe,
-    setSkipped,
-    undoLast,
-    getAnnotation,
-    setAnnotation,
-    getSelection,
-    setSelectionState,
-  } = useSelectionStore();
-  const {
-    isCompareMode,
-    isPkMode,
-    startBurstPk,
-    toggleCompareMode,
-    exitCompareMode,
-    swapComparePhotos,
-    nextCompareCandidate,
-    prevCompareCandidate,
-  } = useCompareStore();
-  const { toggleFaceLoupe } = useInsightStore();
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -49,6 +29,17 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         return;
       }
 
+      const {
+        isPkMode,
+        isCompareMode,
+        startBurstPk,
+        toggleCompareMode,
+        exitCompareMode,
+        swapComparePhotos,
+        nextCompareCandidate,
+        prevCompareCandidate,
+      } = useCompareStore.getState();
+
       // 如果处于 PK 对决全屏模式，将按键交由对决状态机接管
       if (isPkMode) {
         return;
@@ -57,13 +48,32 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
       // 撤销操作: Cmd/Ctrl + Z
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        undoLast();
+        useSelectionStore.getState().undoLast();
         return;
       }
+
+      const {
+        photos,
+        currentIndex,
+        nextPhoto,
+        prevPhoto,
+        resetFilter,
+        jumpToFirstMatching,
+        jumpToLastMatching,
+      } = useAlbumStore.getState();
 
       if (photos.length === 0) return;
 
       const currentPhoto = photos[currentIndex];
+      const {
+        toggleSelect,
+        setMaybe,
+        setSkipped,
+        getAnnotation,
+        setAnnotation,
+        getSelection,
+        setSelectionState,
+      } = useSelectionStore.getState();
 
       switch (e.key) {
         // 连拍极速对决 [P]
@@ -80,7 +90,7 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         case 'R':
           if (!isCompareMode) {
             e.preventDefault();
-            options?.onToggleRetouch?.();
+            optionsRef.current?.onToggleRetouch?.();
           }
           break;
 
@@ -176,7 +186,7 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         case 'f':
         case 'F':
           e.preventDefault();
-          toggleFaceLoupe();
+          useInsightStore.getState().toggleFaceLoupe();
           break;
 
         // 双图分屏比对 [C]
@@ -259,27 +269,5 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [
-    photos,
-    currentIndex,
-    nextPhoto,
-    prevPhoto,
-    toggleSelect,
-    setMaybe,
-    setSkipped,
-    undoLast,
-    isCompareMode,
-    isPkMode,
-    startBurstPk,
-    toggleCompareMode,
-    exitCompareMode,
-    swapComparePhotos,
-    nextCompareCandidate,
-    prevCompareCandidate,
-    toggleFaceLoupe,
-    resetFilter,
-    jumpToFirstMatching,
-    jumpToLastMatching,
-    options?.onToggleRetouch,
-  ]);
+  }, []);
 }

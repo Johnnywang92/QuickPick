@@ -223,7 +223,8 @@ export default function App() {
   const currentPhoto = photos[currentIndex];
   const stats = getStats(photos.length);
 
-  // 计算当前活动筛选条件下的匹配照片索引列表
+  // 计算当前活动筛选条件下的匹配照片索引列表（仅在 unreviewed 筛选下关联 currentIndex，其余模式下翻页 0 数组计算消耗）
+  const filterCurrentIndex = activeFilter === 'unreviewed' ? currentIndex : undefined;
   const matchingIndexes = useMemo(() => {
     return photos.flatMap((photo, index) =>
       photoMatchesFilter(
@@ -236,7 +237,7 @@ export default function App() {
         viewedPhotoIds,
         insights,
         activeTagFilter,
-        currentIndex,
+        filterCurrentIndex,
       )
         ? [index]
         : [],
@@ -250,7 +251,7 @@ export default function App() {
     viewedPhotoIds,
     insights,
     activeTagFilter,
-    currentIndex,
+    filterCurrentIndex,
   ]);
 
   const albumName = folderPath ? folderPath.split('/').filter(Boolean).pop() || folderPath : '';
