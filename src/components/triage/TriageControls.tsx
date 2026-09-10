@@ -77,12 +77,12 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
       )}
 
       {/* 核心选片操作条 */}
-      <div className="flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md border border-dark-700/80 px-3 py-1.5 rounded-2xl shadow-2xl">
+      <div className="flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md border border-dark-700/80 px-3 py-1.5 rounded-2xl shadow-2xl whitespace-nowrap shrink-0 max-w-[95vw] overflow-x-auto no-scrollbar">
         {/* 选择 / 取消选择 [Space] */}
         <button
           onClick={() => toggleSelect(currentPhoto.id)}
           title="选择或取消选择该照片 [空格 Space]"
-          className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none ${
+          className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer select-none ${
             isSelected
               ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 scale-102'
               : 'hover:bg-dark-700/90 text-slate-300 hover:text-emerald-300'
@@ -96,7 +96,7 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
         <button
           onClick={() => setMaybe(currentPhoto.id)}
           title="拿不准时先放入待考虑 [快捷键 M]"
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer select-none ${
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer select-none ${
             isMaybe
               ? 'bg-amber-500 text-amber-950 font-bold shadow-md shadow-amber-500/20'
               : 'hover:bg-dark-700/90 text-slate-300 hover:text-amber-300'
@@ -110,7 +110,7 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
         <button
           onClick={() => setSkipped(currentPhoto.id)}
           title="明确将这张照片标记为不选 [快捷键 N]"
-          className={`flex items-center space-x-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer select-none ${
+          className={`flex items-center space-x-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer select-none ${
             isSkipped
               ? 'bg-slate-600 text-white shadow-md shadow-slate-700/20'
               : 'text-slate-300 hover:bg-dark-700/90 hover:text-slate-100'
@@ -120,14 +120,14 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
           <span>{isSkipped ? '已不选 (N)' : '不选 (N)'}</span>
         </button>
 
-        <div className="h-4 w-[1px] bg-dark-700 mx-0.5" />
+        <div className="h-4 w-[1px] bg-dark-700 mx-0.5 shrink-0" />
 
         {/* 人脸特写 [F] */}
         {hasFaces && (
           <button
             onClick={toggleFaceLoupe}
             title="放大检查人物眼睛与表情 [快捷键 F]"
-            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer select-none ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer select-none ${
               isFaceLoupeOpen
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'hover:bg-dark-700 text-slate-300 hover:text-indigo-300'
@@ -142,7 +142,7 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
         <button
           onClick={toggleCompareMode}
           title="与同组连拍或其它照片分屏对比 [快捷键 C]"
-          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer select-none ${
+          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer select-none ${
             isCompareMode
               ? 'bg-blue-600 text-white shadow-md'
               : 'hover:bg-dark-700 text-slate-300 hover:text-blue-300'
@@ -157,7 +157,7 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
           <button
             onClick={() => startBurstPk(currentPhoto.burstGroupId)}
             title="两两淘汰对决，快速选出连拍最佳 [快捷键 P]"
-            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium hover:bg-dark-700 text-slate-300 hover:text-amber-500 dark:hover:text-amber-300 transition-all cursor-pointer select-none"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 hover:bg-dark-700 text-slate-300 hover:text-amber-500 dark:hover:text-amber-300 transition-all cursor-pointer select-none"
           >
             <Zap className="w-3.5 h-3.5 text-slate-400" />
             <span>连拍 PK (P)</span>
@@ -168,25 +168,23 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
         <button
           onClick={onToggleRetouch}
           title="为这张照片标记具体修图需求或图上标注 [快捷键 R]"
-          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer select-none ${
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer select-none ${
             isRetouchOpen
               ? 'bg-indigo-600 text-white shadow-md'
               : hasRetouchRequirements(currentSelection.note)
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-              : 'hover:bg-dark-700 text-slate-300 hover:text-indigo-300'
+              ? 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border border-indigo-500/40 font-semibold shadow-xs'
+              : 'hover:bg-dark-700/90 text-slate-300 hover:text-indigo-500 dark:hover:text-indigo-300'
           }`}
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>
-            修图要求 (R)
-            {hasRetouchRequirements(currentSelection.note) && (
-              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-indigo-500 text-white text-[10px] font-bold font-mono">
-                {parseAnnotation(currentSelection.note).pins?.length
-                  ? `${parseAnnotation(currentSelection.note).pins?.length}点`
-                  : '已填'}
-              </span>
-            )}
-          </span>
+          <Sparkles className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">修图要求 (R)</span>
+          {hasRetouchRequirements(currentSelection.note) && (
+            <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-indigo-500 text-white text-[10px] font-bold font-mono whitespace-nowrap shrink-0 leading-none shadow-xs">
+              {parseAnnotation(currentSelection.note).pins?.length
+                ? `${parseAnnotation(currentSelection.note).pins?.length}点`
+                : '已填'}
+            </span>
+          )}
         </button>
 
         {/* 撤销按钮 */}
@@ -194,7 +192,7 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
           <button
             onClick={undoLast}
             title={`撤销上一步操作 (Cmd/Ctrl+Z)`}
-            className="p-1.5 hover:bg-dark-700 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+            className="p-1.5 hover:bg-dark-700 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer shrink-0"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>

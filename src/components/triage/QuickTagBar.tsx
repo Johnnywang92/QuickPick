@@ -2,16 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { useTagStore } from '../../store/tagStore';
-import { Tag, Plus, Check, X, Trash2 } from 'lucide-react';
+import { useExportStore } from '../../store/exportStore';
+import { Tag, Plus, Check, X, Trash2, Pencil, GripVertical } from 'lucide-react';
 import clsx from 'clsx';
 
 export const QuickTagBar: React.FC = () => {
   const { photos, currentIndex } = useAlbumStore();
-  const { getAnnotation, setAnnotation, getSelection, setSelectionState } = useSelectionStore();
-  const { availableTags, addCustomTag, removeCustomTag } = useTagStore();
+  const { getAnnotation, setAnnotation, getSelection, setSelectionState, replaceTagAcrossSelections } = useSelectionStore();
+  const { availableTags, addCustomTag, renameTag, removeTag, reorderTag } = useTagStore();
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
+  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [editTagInput, setEditTagInput] = useState('');
+  const [draggedTag, setDraggedTag] = useState<string | null>(null);
+  const [managementError, setManagementError] = useState('');
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const currentPhoto = photos[currentIndex];
@@ -54,10 +59,45 @@ export const QuickTagBar: React.FC = () => {
     e.preventDefault();
     const trimmed = newTagInput.trim();
     if (!trimmed) return;
-    addCustomTag(trimmed);
-    // 立即为当前照片打上该新标签
-    handleToggleTag(trimmed);
-    setNewTagInput('');
+    if (addCustomTag(trimmed)) {
+      // 立即为当前照片打上该新标签
+      handleToggleTag(trimmed);
+      setNewTagInput('');
+      setManagementError('');
+    } else {
+      setManagementError('标签为空、重复或超过 20 个字符');
+    }
+  };
+
+  const syncActiveFilters = (currentTag: string, nextTag: string | null) => {
+    const albumState = useAlbumStore.getState();
+    if (albumState.activeTagFilter === currentTag) albumState.setActiveTagFilter(nextTag);
+    const exportState = useExportStore.getState();
+    if (exportState.exportTagFilter === currentTag) exportState.setExportTagFilter(nextTag);
+  };
+
+  const handleRenameTag = (currentTag: string) => {
+    const nextTag = editTagInput.trim();
+    if (!renameTag(currentTag, nextTag)) {
+      setManagementError('标签名不能为空、重复或超过 20 个字符');
+      return;
+    }
+    if (nextTag !== currentTag) {
+      replaceTagAcrossSelections(currentTag, nextTag);
+      syncActiveFilters(currentTag, nextTag);
+    }
+    setEditingTag(null);
+    setEditTagInput('');
+    setManagementError('');
+  };
+
+  const handleRemoveTag = (tag: string) => {
+    if (!window.confirm(`删除标签“${tag}”？该标签也会从已有照片中移除。`)) return;
+    removeTag(tag);
+    replaceTagAcrossSelections(tag, null);
+    syncActiveFilters(tag, null);
+    if (editingTag === tag) setEditingTag(null);
+    setManagementError('');
   };
 
   // 常用交付高频标签常驻显示，其它标签或额外标签也可点击
@@ -130,7 +170,7 @@ export const QuickTagBar: React.FC = () => {
         </button>
 
         {isPopoverOpen && (
-          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-64 bg-dark-850 border border-dark-700 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-dark-850 border border-dark-700 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-dark-750">
               <span className="text-[11px] font-bold text-slate-200">自定义与管理标签</span>
               <button
@@ -162,56 +202,98 @@ export const QuickTagBar: React.FC = () => {
             </form>
 
             {/* 全部标签清单 */}
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              <div className="text-[10px] text-slate-500 mb-1">点击切换当前照片标签：</div>
-              <div className="flex flex-wrap gap-1">
+            <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
+              <div className="text-[10px] text-slate-500 mb-1.5">拖动排序；点击标签可切换当前照片：</div>
+              <div className="space-y-1">
                 {availableTags.map((tag) => {
                   const isActive = activeTags.includes(tag);
-                  const isSystemDefault = [
-                    '要修图',
-                    '原图直出',
-                    '相册排版',
-                    '发圈预告',
-                    '面部微调',
-                    '修除碎发',
-                    '消除路人/杂物',
-                  ].includes(tag);
 
                   return (
                     <div
                       key={tag}
+                      draggable={editingTag !== tag}
+                      onDragStart={(e) => {
+                        setDraggedTag(tag);
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', tag);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const sourceTag = draggedTag || e.dataTransfer.getData('text/plain');
+                        if (sourceTag) reorderTag(sourceTag, tag);
+                        setDraggedTag(null);
+                      }}
+                      onDragEnd={() => setDraggedTag(null)}
                       className={clsx(
-                        'group flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-medium border transition-all',
+                        'group flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium border transition-all',
                         isActive
                           ? 'bg-brand-600/30 border-brand-500 text-brand-200'
                           : 'bg-dark-800 border-dark-700 text-slate-300 hover:border-slate-600',
+                        draggedTag === tag && 'opacity-40 border-dashed',
                       )}
                     >
-                      <button
-                        type="button"
-                        onClick={() => handleToggleTag(tag)}
-                        className="cursor-pointer"
-                      >
-                        {tag}
-                      </button>
-                      {!isSystemDefault && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeCustomTag(tag);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-400 rounded cursor-pointer transition-opacity"
-                          title="删除该自定义标签"
-                        >
-                          <Trash2 className="w-2.5 h-2.5" />
-                        </button>
+                      <GripVertical className="w-3.5 h-3.5 shrink-0 text-slate-500 cursor-grab active:cursor-grabbing" aria-hidden="true" />
+                      {editingTag === tag ? (
+                        <>
+                          <input
+                            value={editTagInput}
+                            onChange={(e) => setEditTagInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRenameTag(tag);
+                              if (e.key === 'Escape') setEditingTag(null);
+                            }}
+                            maxLength={20}
+                            className="min-w-0 flex-1 rounded border border-brand-500 bg-dark-900 px-1.5 py-0.5 text-[11px] text-slate-100 outline-none"
+                            aria-label={`修改标签 ${tag}`}
+                            autoFocus
+                          />
+                          <button type="button" onClick={() => handleRenameTag(tag)} className="p-1 text-emerald-400 hover:text-emerald-300" title="保存修改">
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button type="button" onClick={() => setEditingTag(null)} className="p-1 text-slate-500 hover:text-slate-300" title="取消修改">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" onClick={() => handleToggleTag(tag)} className="min-w-0 flex-1 truncate text-left cursor-pointer" title={tag}>
+                            {tag}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTag(tag);
+                              setEditTagInput(tag);
+                              setManagementError('');
+                            }}
+                            className="opacity-60 group-hover:opacity-100 p-1 text-slate-400 hover:text-brand-300 rounded cursor-pointer transition-opacity"
+                            title="修改标签名"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTag(tag)}
+                            className="opacity-60 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 rounded cursor-pointer transition-opacity"
+                            title="删除标签"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </>
                       )}
                     </div>
                   );
                 })}
               </div>
+              {availableTags.length === 0 && (
+                <div className="py-3 text-center text-[10px] text-slate-500">暂无标签，可在上方新建</div>
+              )}
             </div>
+            {managementError && <p className="mt-2 text-[10px] text-rose-400">{managementError}</p>}
           </div>
         )}
       </div>

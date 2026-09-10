@@ -65,6 +65,7 @@ interface SelectionStore {
   setSkipped: (photoId: string) => void;
   setNote: (photoId: string, note: string) => void;
   setAnnotation: (photoId: string, annotation: PhotoAnnotation) => void;
+  replaceTagAcrossSelections: (currentTag: string, nextTag: string | null) => void;
   getAnnotation: (photoId: string) => PhotoAnnotation;
   undoLast: () => void;
   getSelection: (photoId: string) => UserSelection;
@@ -305,6 +306,48 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
   setAnnotation: (photoId, annotation) => {
     const note = serializeAnnotation(annotation);
     get().setNote(photoId, note);
+  },
+
+  replaceTagAcrossSelections: (currentTag, nextTag) => {
+    const { selections, currentProjectId } = get();
+    const previousSelections = selections;
+    const nextSelections = { ...selections };
+    const updatedRecords: UserSelection[] = [];
+
+    for (const selection of Object.values(selections)) {
+      const annotation = parseAnnotation(selection.note);
+      const tags = annotation.presetTags || [];
+      if (!tags.includes(currentTag)) continue;
+
+      const replacedTags = tags
+        .flatMap((tag) => tag === currentTag ? (nextTag ? [nextTag] : []) : [tag])
+        .filter((tag, index, allTags) => allTags.indexOf(tag) === index);
+      const updated: UserSelection = {
+        ...selection,
+        note: serializeAnnotation({ ...annotation, presetTags: replacedTags }),
+        updatedAt: new Date().toISOString(),
+      };
+      nextSelections[selection.photoId] = updated;
+      updatedRecords.push(updated);
+    }
+
+    if (updatedRecords.length === 0) return;
+    set({ selections: nextSelections });
+    if (!currentProjectId) return;
+
+    enqueuePersistence(
+      () => persistSelections(currentProjectId, updatedRecords.map(asPersistedSelection)),
+      () => {
+        const current = get().selections;
+        const rolledBack = { ...current };
+        for (const updated of updatedRecords) {
+          if (current[updated.photoId]?.updatedAt === updated.updatedAt) {
+            rolledBack[updated.photoId] = previousSelections[updated.photoId];
+          }
+        }
+        set({ selections: rolledBack });
+      },
+    );
   },
 
   getAnnotation: (photoId) => {

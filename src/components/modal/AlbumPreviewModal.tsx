@@ -47,6 +47,7 @@ const SpreadPhotoItem: React.FC<{
   }, [photo, getPreview]);
 
   const isForestTheme = theme === 'forest';
+  const isLinenTheme = theme === 'linen';
 
   return (
     <div
@@ -67,7 +68,9 @@ const SpreadPhotoItem: React.FC<{
                   'max-w-full max-h-full p-1.5 md:p-2 rounded-xs shadow-[0_6px_20px_rgba(0,0,0,0.18)]',
                   isForestTheme
                     ? 'bg-[#f6f7ef] ring-1 ring-[#315c43]/15 shadow-[0_8px_24px_rgba(29,68,46,0.22)]'
-                    : 'bg-white ring-1 ring-black/5 shadow-[0_6px_20px_rgba(0,0,0,0.12)]',
+                    : isLinenTheme
+                      ? 'bg-[#f7f0e4] ring-1 ring-[#9a7d58]/15 shadow-[0_8px_22px_rgba(91,67,43,0.16)]'
+                      : 'bg-[#fffdfa] ring-1 ring-[#b79154]/15 shadow-[0_7px_22px_rgba(111,86,45,0.14)]',
                 )
               : 'w-full h-full shadow-md rounded-xs overflow-hidden',
           )}
@@ -89,7 +92,9 @@ const SpreadPhotoItem: React.FC<{
             'w-full h-full flex flex-col items-center justify-center p-4 rounded-xs border border-dashed animate-pulse',
             isForestTheme
               ? 'bg-[#cbd9c5]/70 border-[#9eb79d] text-[#58715d]'
-              : 'bg-stone-200/40 border-stone-300 text-stone-500',
+              : isLinenTheme
+                ? 'bg-[#e8ddcc]/70 border-[#c7b79e] text-[#796b58]'
+                : 'bg-[#f4efe6]/70 border-[#d9cdb9] text-[#89785f]',
           )}
         >
           <div className="w-6 h-6 rounded-full border-2 border-amber-500/40 border-t-amber-500 animate-spin mb-2" />
@@ -218,7 +223,7 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
                 className={clsx(
                   'px-2.5 py-1 rounded-md transition-all font-medium flex items-center gap-1 cursor-pointer',
                   theme === 'ivory'
-                    ? 'bg-amber-500/20 text-amber-300 shadow-xs border border-amber-500/30'
+                    ? 'bg-[#d7b77a]/20 text-[#efd49f] shadow-xs border border-[#d7b77a]/35'
                     : 'text-slate-400 hover:text-slate-200',
                 )}
                 title="经典雅白：象牙艺术微喷纸质感"
@@ -244,7 +249,7 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
                 className={clsx(
                   'px-2.5 py-1 rounded-md transition-all font-medium flex items-center gap-1 cursor-pointer',
                   theme === 'linen'
-                    ? 'bg-amber-500/20 text-amber-300 shadow-xs border border-amber-500/30'
+                    ? 'bg-[#b99569]/20 text-[#dfc49f] shadow-xs border border-[#b99569]/35'
                     : 'text-slate-400 hover:text-slate-200',
                 )}
                 title="燕麦亚麻：温润织物布纹质感"
@@ -323,6 +328,24 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
                   <Leaf className="absolute left-[44%] -bottom-8 w-28 h-28 -rotate-[38deg] opacity-[0.07]" strokeWidth={1} />
                   <Flower2 className="absolute -right-4 -bottom-5 w-28 h-28 -rotate-12 opacity-[0.09]" strokeWidth={0.8} />
                   <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_14%_18%,rgba(91,126,88,0.16)_0,transparent_24%),radial-gradient(circle_at_88%_82%,rgba(60,104,73,0.13)_0,transparent_28%)]" />
+                </div>
+              )}
+
+              {theme === 'ivory' && (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none text-[#a98245] z-0" aria-hidden="true">
+                  <Flower2 className="absolute -right-5 -top-7 w-32 h-32 rotate-12 opacity-[0.065]" strokeWidth={0.75} />
+                  <Leaf className="absolute -left-5 -bottom-8 w-28 h-28 -rotate-[28deg] opacity-[0.055]" strokeWidth={0.8} />
+                  <div className="absolute inset-x-[8%] top-[7%] h-px bg-gradient-to-r from-transparent via-[#b9965c]/20 to-transparent" />
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_14%,rgba(220,194,151,0.13)_0,transparent_22%),radial-gradient(circle_at_12%_88%,rgba(205,181,143,0.10)_0,transparent_24%)]" />
+                </div>
+              )}
+
+              {theme === 'linen' && (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none text-[#876f4f] z-0" aria-hidden="true">
+                  <div className="absolute inset-0 opacity-[0.16] bg-[repeating-linear-gradient(0deg,transparent_0,transparent_3px,rgba(105,82,55,0.12)_4px),repeating-linear-gradient(90deg,transparent_0,transparent_4px,rgba(255,255,255,0.35)_5px)]" />
+                  <Leaf className="absolute -left-4 top-[12%] w-24 h-24 rotate-[18deg] opacity-[0.075]" strokeWidth={0.85} />
+                  <Leaf className="absolute -right-5 bottom-[8%] w-28 h-28 -rotate-[42deg] opacity-[0.07]" strokeWidth={0.85} />
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_20%,rgba(145,113,72,0.10)_0,transparent_25%),radial-gradient(circle_at_90%_78%,rgba(145,113,72,0.09)_0,transparent_27%)]" />
                 </div>
               )}
 
@@ -489,7 +512,9 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
                                     'px-4 py-2.5 rounded-lg text-left text-[10px] font-mono space-y-1 border',
                                     theme === 'forest'
                                       ? 'bg-[#eef2e6]/75 border-[#a9bea7] text-[#506b58] shadow-2xs'
-                                      : 'bg-white/60 border-stone-300/80 text-stone-600 shadow-2xs',
+                                      : theme === 'linen'
+                                        ? 'bg-[#eee3d2]/75 border-[#c8b79d] text-[#6f604d] shadow-2xs'
+                                        : 'bg-[#fffdf8]/70 border-[#ddcfb8] text-[#766650] shadow-2xs',
                                   )}
                                 >
                                   <div className="flex items-center gap-1.5 font-bold truncate">
