@@ -5,6 +5,7 @@ import { useCompareStore } from '../../store/compareStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { useInsightStore } from '../../store/insightStore';
+import { useThemeStore } from '../../store/themeStore';
 import {
   ArrowRightLeft,
   X,
@@ -49,6 +50,8 @@ export const SplitCompareView: React.FC = () => {
   const { selections } = useSelectionStore();
   const { currentPreviewUrl, previewStatus, previewError, retryCurrentPreview } = usePreviewStore();
   const { getInsight } = useInsightStore();
+  const effectiveTheme = useThemeStore((state) => state.effectiveTheme);
+  const canvasBgColor = effectiveTheme === 'light' ? 0xf8fafc : 0x0a0c10;
 
   const leftContainerRef = useRef<HTMLDivElement>(null);
   const rightContainerRef = useRef<HTMLDivElement>(null);
@@ -178,7 +181,7 @@ export const SplitCompareView: React.FC = () => {
       try {
         await app.init({
           resizeTo: parent,
-          backgroundColor: 0x0a0c10,
+          backgroundColor: canvasBgColor,
           antialias: true,
           autoDensity: true,
           resolution: window.devicePixelRatio || 1,
@@ -232,7 +235,7 @@ export const SplitCompareView: React.FC = () => {
       try {
         await app.init({
           resizeTo: parent,
-          backgroundColor: 0x0a0c10,
+          backgroundColor: canvasBgColor,
           antialias: true,
           autoDensity: true,
           resolution: window.devicePixelRatio || 1,
@@ -270,6 +273,16 @@ export const SplitCompareView: React.FC = () => {
       rightImageContainerRef.current = null;
     };
   }, [rightInitAttempt]);
+
+  // 主题切换时动态更新双图画布背景色
+  useEffect(() => {
+    if (leftAppRef.current?.renderer) {
+      leftAppRef.current.renderer.background.color = canvasBgColor;
+    }
+    if (rightAppRef.current?.renderer) {
+      rightAppRef.current.renderer.background.color = canvasBgColor;
+    }
+  }, [canvasBgColor]);
 
   // 加载左图纹理
   useEffect(() => {

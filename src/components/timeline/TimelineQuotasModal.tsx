@@ -26,6 +26,7 @@ export const TimelineQuotasModal: React.FC = () => {
     activePresetId,
     isScenesModalOpen,
     targetGoal,
+    detectedPreset,
     setScenesModalOpen,
     setSelectedSceneId,
     selectIndex,
@@ -146,23 +147,60 @@ export const TimelineQuotasModal: React.FC = () => {
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
             {presets.map((preset) => {
               const isActive = activePresetId === preset.id;
+              const isRecommended =
+                detectedPreset?.presetId === preset.id && detectedPreset.confidence >= 0.5;
+
               return (
                 <button
                   key={preset.id}
                   onClick={() => handlePresetSelect(preset.id)}
-                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all shrink-0 cursor-pointer ${
+                  className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all shrink-0 cursor-pointer ${
                     isActive
                       ? 'bg-brand-600/30 border-brand-400 text-brand-200 shadow-sm ring-1 ring-brand-400/30'
+                      : isRecommended
+                      ? 'bg-amber-500/10 border-amber-500/40 text-amber-200 hover:border-amber-400 hover:bg-amber-500/20'
                       : 'bg-dark-800 border-dark-700 text-slate-300 hover:border-dark-600 hover:text-white'
                   }`}
-                  title={`${preset.name}: ${preset.description}`}
+                  title={`${preset.name}: ${preset.description}${
+                    isRecommended
+                      ? `\n✨ 系统智能推荐 (${Math.round(detectedPreset.confidence * 100)}% 匹配度):\n${detectedPreset.reasons.join('\n')}`
+                      : ''
+                  }`}
                 >
                   <span className="text-sm">{preset.icon}</span>
                   <span>{preset.name}</span>
+                  {isRecommended && (
+                    <span className="ml-1 text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-normal border border-amber-500/30">
+                      推荐
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
+
+          {/* 智能推荐依据与一键套用 */}
+          {detectedPreset &&
+            detectedPreset.confidence >= 0.5 &&
+            detectedPreset.presetId !== 'general' && (
+              <div className="mt-2.5 pt-2 border-t border-dark-700/60 text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="text-amber-300 font-medium">推荐依据：</span>
+                  <span className="text-slate-300 truncate max-w-[550px]">
+                    {detectedPreset.reasons.join(' · ')}
+                  </span>
+                </div>
+                {detectedPreset.presetId !== activePresetId && (
+                  <button
+                    onClick={() => handlePresetSelect(detectedPreset.presetId)}
+                    className="px-2.5 py-1 rounded-lg text-[10px] bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 font-semibold transition-colors cursor-pointer shrink-0"
+                  >
+                    一键套用推荐模板
+                  </button>
+                )}
+              </div>
+            )}
         </div>
 
         {/* 选片总目标与智能平分卡片 */}

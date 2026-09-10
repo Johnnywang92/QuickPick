@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Sparkles,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -36,6 +37,7 @@ export const StorylineBar: React.FC<StorylineBarProps> = ({
     currentIndex,
     selectIndex,
     setScenesModalOpen,
+    detectedPreset,
   } = useAlbumStore();
   const { selections } = useSelectionStore();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -105,12 +107,36 @@ export const StorylineBar: React.FC<StorylineBarProps> = ({
         {/* 题材图标与故事线标签 */}
         <div
           onClick={() => setScenesModalOpen(true)}
-          className="flex items-center space-x-1 text-slate-400 hover:text-slate-200 shrink-0 font-medium text-[11px] mr-1 cursor-pointer transition-colors"
-          title={`当前题材: ${currentPreset.name}\n点击切换预设或配置配额`}
+          className="flex items-center space-x-1.5 text-slate-400 hover:text-slate-200 shrink-0 font-medium text-[11px] mr-1 cursor-pointer transition-colors"
+          title={`当前题材: ${currentPreset.name}${
+            detectedPreset?.presetId === activePresetId && detectedPreset.confidence >= 0.5
+              ? `\n✨ 系统根据导入照片智能匹配 (${Math.round(detectedPreset.confidence * 100)}% 置信度):\n${detectedPreset.reasons.join('\n')}`
+              : ''
+          }\n点击切换预设或配置配额`}
         >
           <span className="text-sm">{currentPreset.icon}</span>
           <span className="hidden sm:inline font-semibold">{currentPreset.name}</span>
+          {detectedPreset?.presetId === activePresetId && detectedPreset.confidence >= 0.5 && (
+            <span className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-normal text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full">
+              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+              智能匹配
+            </span>
+          )}
         </div>
+
+        {/* 建议切换胶囊（若检测到更贴切且用户尚未切换） */}
+        {detectedPreset &&
+          detectedPreset.presetId !== activePresetId &&
+          detectedPreset.confidence >= 0.6 && (
+            <button
+              onClick={() => setScenesModalOpen(true)}
+              className="hidden lg:flex items-center space-x-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] hover:bg-amber-500/25 transition-colors cursor-pointer shrink-0"
+              title={`系统推荐更贴切模板: ${getStorylinePreset(detectedPreset.presetId).name}\n依据: ${detectedPreset.reasons.join('; ')}\n点击打开故事线配置一键切换`}
+            >
+              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+              <span>建议: {getStorylinePreset(detectedPreset.presetId).name}</span>
+            </button>
+          )}
 
         {/* 章节过滤聚焦状态提醒 */}
         {activeScene && (

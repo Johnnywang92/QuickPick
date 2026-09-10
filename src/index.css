@@ -2,11 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* 深色主题 (Dark Theme - 默认) */
+  --color-dark-950: 8 10 13;       /* #080a0d */
+  --color-dark-900: 13 15 18;      /* #0d0f12 */
+  --color-dark-850: 17 20 26;      /* #11141a */
+  --color-dark-800: 20 24 31;      /* #14181f */
+  --color-dark-750: 25 31 41;      /* #191f29 */
+  --color-dark-700: 30 36 48;      /* #1e2430 */
+  --color-dark-650: 36 44 58;      /* #242c3a */
+  --color-dark-600: 43 51 68;      /* #2b3344 */
+
+  --color-slate-50: 248 250 252;
+  --color-slate-100: 241 245 249;
+  --color-slate-200: 226 232 240;
+  --color-slate-300: 203 213 225;
+  --color-slate-400: 148 163 184;
+  --color-slate-500: 100 116 139;
+  --color-slate-600: 71 85 105;
+  --color-slate-700: 51 65 85;
+  --color-slate-800: 30 41 59;
+  --color-slate-900: 15 23 42;
+  --color-slate-950: 2 6 23;
+}
+
+html.theme-light {
+  /* 浅色/明亮白色主题 (Light Theme) */
+  --color-dark-950: 255 255 255;   /* #ffffff 纯白 */
+  --color-dark-900: 248 250 252;   /* #f8fafc 浅灰白底色 */
+  --color-dark-850: 255 255 255;   /* #ffffff 卡片/弹窗纯白背景 */
+  --color-dark-800: 241 245 249;   /* #f1f5f9 浅灰容器/顶栏 */
+  --color-dark-750: 226 232 240;   /* #e2e8f0 浅灰胶囊/悬浮 */
+  --color-dark-700: 203 213 225;   /* #cbd5e1 边框线 */
+  --color-dark-650: 148 163 184;   /* #94a3b8 强调边框 */
+  --color-dark-600: 100 116 139;   /* #64748b 深度边框/图标 */
+
+  --color-slate-50: 15 23 42;
+  --color-slate-100: 15 23 42;     /* 标题文字 -> 深蓝灰 #0f172a */
+  --color-slate-200: 30 41 59;     /* 主文字 -> 深灰 #1e293b */
+  --color-slate-300: 51 65 85;     /* 次文字 -> 中灰 #334155 */
+  --color-slate-400: 100 116 139;  /* 辅助/说明 -> #64748b */
+  --color-slate-500: 148 163 184;  /* 弱化提示 -> #94a3b8 */
+  --color-slate-600: 203 213 225;  /* 边框灰 -> #cbd5e1 */
+  --color-slate-700: 226 232 240;  /* 浅边框 -> #e2e8f0 */
+  --color-slate-800: 241 245 249;  /* 浅底色 -> #f1f5f9 */
+  --color-slate-900: 248 250 252;  /* 底白 -> #f8fafc */
+  --color-slate-950: 255 255 255;
+}
+
 @layer base {
   body {
     @apply antialiased font-sans bg-dark-900 text-slate-100;
     user-select: none;
     -webkit-user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
 }
 
@@ -17,4 +66,9 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* 浅色模式下弹窗背景遮罩更柔和 */
+html.theme-light .fixed.inset-0.bg-black\/75 {
+  background-color: rgb(15 23 42 / 0.45);
 }

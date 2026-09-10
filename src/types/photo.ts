@@ -136,7 +136,12 @@ export type FilterCategory =
 /**
  * 清单导出格式
  */
-export type ManifestFormat = 'txt' | 'csv' | 'json' | 'html';
+export type ManifestFormat = 'txt' | 'csv' | 'json' | 'html' | 'lrsmcol' | 'pmselection';
+
+/**
+ * 面向实际交付目的的导出预设。
+ */
+export type ExportPurpose = 'photographer' | 'self_edit' | 'social' | 'phone' | 'nas';
 
 /**
  * 导出模式

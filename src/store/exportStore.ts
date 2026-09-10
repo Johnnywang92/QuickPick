@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { ExportMode, LocalPhoto, ManifestFormat } from '../types/photo';
-export type { ManifestFormat };
+import { ExportMode, ExportPurpose, LocalPhoto, ManifestFormat } from '../types/photo';
+export type { ExportPurpose, ManifestFormat };
 import {
   exportPhotos as tauriExportPhotos,
   cancelExport,
@@ -10,6 +10,9 @@ import {
   ExportPreflight,
   ExportResult,
   saveManifestFile,
+  exportShareableJpegs,
+  sharePhotosViaAirDrop,
+  RenderedExportResult,
 } from '../services/tauriBridge';
 import { useAlbumStore } from './albumStore';
 import { useSelectionStore } from './selectionStore';
@@ -47,9 +50,18 @@ function safeCsvCell(value: string | number): string {
   return `"${formulaSafe.replace(/"/g, '""')}"`;
 }
 
+function escapeLuaString(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
+}
+
 interface ExportStore {
   isExportModalOpen: boolean;
   exportMode: ExportMode;
+  exportPurpose: ExportPurpose;
   targetDir: string;
   includeXmp: boolean;
   openAfterExport: boolean;
@@ -62,10 +74,12 @@ interface ExportStore {
   preflightResult: ExportPreflight | null;
   errorMessage: string | null;
   manifestExportSuccess: boolean;
+  renderedExportResult: RenderedExportResult | null;
 
   // Actions
   setExportModalOpen: (open: boolean) => void;
   setExportMode: (mode: ExportMode) => void;
+  setExportPurpose: (purpose: ExportPurpose) => void;
   setTargetDir: (dir: string) => void;
   setIncludeXmp: (include: boolean) => void;
   setOpenAfterExport: (open: boolean) => void;
@@ -79,14 +93,17 @@ interface ExportStore {
   generateManifestContent: () => string;
   downloadManifest: () => Promise<void>;
   copyManifestToClipboard: () => Promise<boolean>;
+  executeSocialExport: () => Promise<void>;
+  shareToPhone: () => Promise<void>;
   resetExportState: () => void;
 }
 
 export const useExportStore = create<ExportStore>((set, get) => ({
   isExportModalOpen: false,
   exportMode: 'copy_raw',
+  exportPurpose: 'photographer',
   targetDir: '',
-  includeXmp: false,
+  includeXmp: true,
   openAfterExport: true,
   manifestFormat: 'txt',
 
@@ -97,6 +114,7 @@ export const useExportStore = create<ExportStore>((set, get) => ({
   preflightResult: null,
   errorMessage: null,
   manifestExportSuccess: false,
+  renderedExportResult: null,
 
   setExportModalOpen: (open: boolean) => {
     set({
@@ -107,6 +125,7 @@ export const useExportStore = create<ExportStore>((set, get) => ({
       exportResult: null,
       preflightResult: null,
       manifestExportSuccess: false,
+      renderedExportResult: null,
       isCancelling: false,
       currentJobId: null,
     });
@@ -118,6 +137,20 @@ export const useExportStore = create<ExportStore>((set, get) => ({
       errorMessage: null,
       manifestExportSuccess: false,
       preflightResult: null,
+    });
+  },
+
+  setExportPurpose: (purpose: ExportPurpose) => {
+    const manifestPurpose = purpose === 'photographer' && get().exportMode === 'manifest';
+    set({
+      exportPurpose: purpose,
+      exportMode: manifestPurpose ? 'manifest' : 'copy_raw',
+      includeXmp: purpose === 'photographer' || purpose === 'self_edit' || purpose === 'nas',
+      errorMessage: null,
+      exportResult: null,
+      renderedExportResult: null,
+      preflightResult: null,
+      manifestExportSuccess: false,
     });
   },
 
@@ -308,6 +341,37 @@ export const useExportStore = create<ExportStore>((set, get) => ({
       return generateRetouchHtmlReport(projectName, reportItems);
     }
 
+    if (manifestFormat === 'lrsmcol') {
+      const rules = photos.map((photo) => [
+        '\t\t{',
+        '\t\t\tcriteria = "filename",',
+        '\t\t\toperation = "==",',
+        `\t\t\tvalue = "${escapeLuaString(photo.filename)}",`,
+        '\t\t},',
+      ].join('\n'));
+      return [
+        's = {',
+        '\tid = "' + crypto.randomUUID() + '",',
+        '\tinternalName = "QuickPick_' + escapeLuaString(projectName) + '",',
+        '\ttitle = "QuickPick · ' + escapeLuaString(projectName) + '",',
+        '\ttype = "LibrarySmartCollection",',
+        '\tvalue = {',
+        '\t\tcombine = "union",',
+        ...rules,
+        '\t},',
+        '\tversion = 0,',
+        '}',
+      ].join('\n');
+    }
+
+    if (manifestFormat === 'pmselection') {
+      // Photo Mechanic 的 Load Selection 接受 UTF-8 文本中每行一个绝对路径。
+      return photos.map((photo) => {
+        const source = selectedPhotos.find((item) => item.filename === photo.filename && relativePhotoPath(item.path, folderPath) === photo.relativePath);
+        return source?.path || photo.relativePath;
+      }).join('\n');
+    }
+
     // JSON 格式
     return JSON.stringify(
       {
@@ -347,12 +411,61 @@ export const useExportStore = create<ExportStore>((set, get) => ({
     }
   },
 
+  executeSocialExport: async () => {
+    const selectedPhotos = get().getSelectedPhotos();
+    const { targetDir } = get();
+    if (selectedPhotos.length === 0) {
+      set({ errorMessage: '当前没有标记为“已选”的照片' });
+      return;
+    }
+    if (!targetDir.trim()) {
+      set({ errorMessage: '请选择社交媒体 JPEG 的保存文件夹' });
+      return;
+    }
+    set({ isExporting: true, errorMessage: null, renderedExportResult: null });
+    try {
+      const result = await exportShareableJpegs(
+        selectedPhotos.map((photo) => ({ id: photo.id, path: photo.path })),
+        targetDir,
+        2048,
+        88,
+      );
+      set({ isExporting: false, renderedExportResult: result });
+    } catch (error) {
+      set({
+        isExporting: false,
+        errorMessage: `社交媒体 JPEG 导出失败：${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  },
+
+  shareToPhone: async () => {
+    const selectedPhotos = get().getSelectedPhotos();
+    if (selectedPhotos.length === 0) {
+      set({ errorMessage: '当前没有标记为“已选”的照片' });
+      return;
+    }
+    set({ isExporting: true, errorMessage: null, renderedExportResult: null });
+    try {
+      const result = await sharePhotosViaAirDrop(
+        selectedPhotos.map((photo) => ({ id: photo.id, path: photo.path })),
+      );
+      set({ isExporting: false, renderedExportResult: result });
+    } catch (error) {
+      set({
+        isExporting: false,
+        errorMessage: `AirDrop 准备失败：${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  },
+
   resetExportState: () => {
     set({
       exportResult: null,
       preflightResult: null,
       errorMessage: null,
       manifestExportSuccess: false,
+      renderedExportResult: null,
       isExporting: false,
       isCancelling: false,
       currentJobId: null,

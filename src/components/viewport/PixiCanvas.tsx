@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js';
 import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
+import { useThemeStore } from '../../store/themeStore';
 import { VisualPin } from '../../types/photo';
 import clsx from 'clsx';
 
@@ -34,6 +35,8 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const mouseDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const focusedFace = useInsightStore((state) => state.focusedFace);
+  const effectiveTheme = useThemeStore((state) => state.effectiveTheme);
+  const canvasBgColor = effectiveTheme === 'light' ? 0xf8fafc : 0x0d0f12;
 
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isPanning, setIsPanning] = useState<boolean>(false);
@@ -43,6 +46,31 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const [initAttempt, setInitAttempt] = useState(0);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const keepPinMarkersReadable = useCallback(() => {
+    const scale = imageContainerRef.current?.scale.x;
+    if (!scale || !pinsContainerRef.current) return;
+    const inverseScale = 1 / Math.max(scale, 0.001);
+    for (const marker of pinsContainerRef.current.children) {
+      marker.scale.set(inverseScale);
+    }
+  }, []);
+
+  const fitImageToViewport = useCallback(() => {
+    if (!imageContainerRef.current || !appRef.current || !spriteRef.current) return;
+    const app = appRef.current;
+    const sprite = spriteRef.current;
+    const container = imageContainerRef.current;
+    const scaleX = (app.screen.width * 0.92) / sprite.texture.width;
+    const scaleY = (app.screen.height * 0.92) / sprite.texture.height;
+    const fitScale = Math.min(scaleX, scaleY, 1.0);
+
+    container.x = app.screen.width / 2;
+    container.y = app.screen.height / 2;
+    container.scale.set(fitScale);
+    keepPinMarkersReadable();
+    setZoomLevel(Math.round(fitScale * 100));
+  }, [keepPinMarkersReadable]);
 
   useEffect(() => {
     let isMounted = true;
@@ -57,7 +85,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       try {
         await app.init({
           resizeTo: parent,
-          backgroundColor: 0x0d0f12,
+          backgroundColor: canvasBgColor,
           antialias: true,
           autoDensity: true,
           resolution: window.devicePixelRatio || 1,
@@ -101,6 +129,31 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     };
   }, [initAttempt]);
 
+  // 主题切换时动态更新画布背景色
+  useEffect(() => {
+    if (appRef.current && appRef.current.renderer) {
+      appRef.current.renderer.background.color = canvasBgColor;
+    }
+  }, [canvasBgColor]);
+
+  // 修图侧栏开关或窗口尺寸变化时，让画布与照片自动适配剩余空间。
+  useEffect(() => {
+    const parent = containerRef.current;
+    if (!parent || pixiStatus !== 'ready' || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      const app = appRef.current;
+      if (!app || entry.contentRect.width <= 0 || entry.contentRect.height <= 0) return;
+      app.renderer.resize(
+        Math.round(entry.contentRect.width),
+        Math.round(entry.contentRect.height),
+      );
+      fitImageToViewport();
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [fitImageToViewport, pixiStatus]);
+
   // 当图片 URL 切换时，更新纹理
   useEffect(() => {
     if (!imageUrl) {
@@ -130,19 +183,6 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         const sprite = new Sprite(texture);
         sprite.anchor.set(0.5);
 
-        // 计算居中与自适应适配缩放 (Fit to Screen)
-        const app = appRef.current;
-        const screenW = app.screen.width;
-        const screenH = app.screen.height;
-
-        const scaleX = (screenW * 0.92) / texture.width;
-        const scaleY = (screenH * 0.92) / texture.height;
-        const fitScale = Math.min(scaleX, scaleY, 1.0);
-
-        container.x = screenW / 2;
-        container.y = screenH / 2;
-        container.scale.set(fitScale);
-
         container.addChild(sprite);
         spriteRef.current = sprite;
 
@@ -150,7 +190,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         container.addChild(pinsLayer);
         pinsContainerRef.current = pinsLayer;
 
-        setZoomLevel(Math.round(fitScale * 100));
+        fitImageToViewport();
         setImageStatus('loaded');
       } catch (e) {
         console.error('Failed to render Pixi texture', e);
@@ -166,7 +206,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [imageUrl, pixiStatus, loadAttempt]);
+  }, [fitImageToViewport, imageUrl, pixiStatus, loadAttempt]);
 
   // 渲染图上 Pin 针标记层
   useEffect(() => {
@@ -183,26 +223,40 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       const pinX = (pin.x - 0.5) * sprite.texture.width;
       const pinY = (pin.y - 0.5) * sprite.texture.height;
 
-      const g = new Graphics();
-      g.circle(pinX, pinY, 14);
-      g.fill({ color: 0xef4444 });
-      g.stroke({ color: 0xffffff, width: 2.5 });
-      pinsLayer.addChild(g);
+      const marker = new Container();
+      marker.position.set(pinX, pinY);
+
+      const target = new Graphics();
+      target.circle(0, 0, 22);
+      target.fill({ color: 0xef4444, alpha: 0.24 });
+      target.circle(0, 0, 16);
+      target.fill({ color: 0xdc2626 });
+      target.stroke({ color: 0xffffff, width: 3 });
+      target.moveTo(-25, 0);
+      target.lineTo(-18, 0);
+      target.moveTo(18, 0);
+      target.lineTo(25, 0);
+      target.moveTo(0, -25);
+      target.lineTo(0, -18);
+      target.moveTo(0, 18);
+      target.lineTo(0, 25);
+      target.stroke({ color: 0xfef2f2, width: 2 });
+      marker.addChild(target);
 
       const text = new Text({
         text: String(pin.pinIndex),
         style: {
           fontFamily: 'sans-serif',
-          fontSize: 12,
+          fontSize: 14,
           fontWeight: 'bold',
           fill: 0xffffff,
           align: 'center',
         },
       });
       text.anchor.set(0.5);
-      text.x = pinX;
-      text.y = pinY;
-      pinsLayer.addChild(text);
+      marker.addChild(text);
+      marker.scale.set(1 / Math.max(imageContainerRef.current?.scale.x || 1, 0.001));
+      pinsLayer.addChild(marker);
     }
   }, [pins, imageStatus]);
 
@@ -225,7 +279,8 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     container.x = app.screen.width / 2 - relX * targetScale;
     container.y = app.screen.height / 2 - relY * targetScale;
     setZoomLevel(Math.round(targetScale * 100));
-  }, [focusedFace]);
+    keepPinMarkersReadable();
+  }, [focusedFace, keepPinMarkersReadable]);
 
   // 滚轮缩放事件监听
   const handleWheel = (e: React.WheelEvent) => {
@@ -237,6 +292,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
     const newScale = Math.max(0.1, Math.min(container.scale.x * zoomFactor, 8.0));
     container.scale.set(newScale);
+    keepPinMarkersReadable();
     setZoomLevel(Math.round(newScale * 100));
   };
 
@@ -292,19 +348,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
   // 100% 点对点与重置适配
   const resetToFit = () => {
-    if (!imageContainerRef.current || !appRef.current || !spriteRef.current) return;
-    const app = appRef.current;
-    const sprite = spriteRef.current;
-    const container = imageContainerRef.current;
-
-    const scaleX = (app.screen.width * 0.92) / sprite.texture.width;
-    const scaleY = (app.screen.height * 0.92) / sprite.texture.height;
-    const fitScale = Math.min(scaleX, scaleY, 1.0);
-
-    container.x = app.screen.width / 2;
-    container.y = app.screen.height / 2;
-    container.scale.set(fitScale);
-    setZoomLevel(Math.round(fitScale * 100));
+    fitImageToViewport();
   };
 
   const zoomTo100 = () => {
@@ -314,6 +358,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     container.x = app.screen.width / 2;
     container.y = app.screen.height / 2;
     container.scale.set(1.0);
+    keepPinMarkersReadable();
     setZoomLevel(100);
   };
 
@@ -330,6 +375,11 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         isAddingPin ? 'cursor-crosshair' : isPanning ? 'cursor-grabbing' : 'cursor-grab',
       )}
     >
+      {isAddingPin && (
+        <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-full border border-rose-400/60 bg-rose-950/90 px-3 py-1.5 text-xs font-semibold text-rose-100 shadow-lg shadow-black/40">
+          点击照片中的修图位置，将生成醒目的编号标注
+        </div>
+      )}
       {(pixiStatus === 'initializing' || previewStatus === 'loading' || imageStatus === 'loading') && (
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-dark-900/55">
           <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/90 px-3 py-2 text-xs text-slate-300 shadow-lg">

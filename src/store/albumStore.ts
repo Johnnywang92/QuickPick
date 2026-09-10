@@ -12,6 +12,10 @@ import {
   distributeTargetGoalAcrossChapters,
 } from '../utils/storylinePresets';
 import {
+  detectOptimalPreset,
+  DetectedPresetResult,
+} from '../utils/storylineDetector';
+import {
   persistProjectViewState,
   ProjectViewStateInput,
   relocateProjectState,
@@ -211,6 +215,7 @@ interface AlbumStore {
   targetGoal: number | null; // 用户自设选片目标 (如 100 张)
   activeFilter: FilterCategory;
   isScenesModalOpen: boolean;
+  detectedPreset: DetectedPresetResult | null;
 
   // Actions
   openFolder: (path: string, relocateProjectId?: string) => Promise<void>;
@@ -301,11 +306,13 @@ function restoredScenes(
   photos: LocalPhoto[],
   presetId: WorkflowScene,
   targetGoal?: number | null,
+  minGapMinutes?: number,
 ): SceneChapter[] {
+  const gap = minGapMinutes ?? getStorylinePreset(presetId).defaultGapMinutes ?? 10;
   try {
     const value: unknown = JSON.parse(scenesJson);
     if (!Array.isArray(value) || value.length === 0) {
-      return clusterPhotosIntoScenes(photos, 10, presetId, targetGoal);
+      return clusterPhotosIntoScenes(photos, gap, presetId, targetGoal);
     }
     const scenes = value.filter((scene): scene is SceneChapter => {
       if (!scene || typeof scene !== 'object') return false;
@@ -320,7 +327,7 @@ function restoredScenes(
         candidate.endIndex! < photos.length
       );
     });
-    if (scenes.length === 0) return clusterPhotosIntoScenes(photos, 10, presetId, targetGoal);
+    if (scenes.length === 0) return clusterPhotosIntoScenes(photos, gap, presetId, targetGoal);
     return scenes.map((scene) => ({
       ...scene,
       startPath: photos[scene.startIndex].path,
@@ -328,7 +335,7 @@ function restoredScenes(
       photoCount: scene.endIndex - scene.startIndex + 1,
     }));
   } catch {
-    return clusterPhotosIntoScenes(photos, 10, presetId, targetGoal);
+    return clusterPhotosIntoScenes(photos, gap, presetId, targetGoal);
   }
 }
 
@@ -345,6 +352,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   targetGoal: null,
   activeFilter: 'all',
   isScenesModalOpen: false,
+  detectedPreset: null,
 
   openFolder: async (path: string, relocateProjectId?: string) => {
     await drainPendingViewState();
@@ -362,6 +370,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
       selectedSceneId: null,
       targetGoal: null,
       activeFilter: 'all',
+      detectedPreset: null,
     });
     try {
       const items: PhotoItem[] = await tauriScanFolder(path);
@@ -402,12 +411,29 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         })),
       );
 
-      const activePresetId = getStorylinePreset(project.active_preset_id).id;
+      // 自动推断最贴切的故事线模板
+      const detected = detectOptimalPreset(path, localPhotos);
+      const isNewScenes =
+        !project.scenes_json ||
+        project.scenes_json.trim() === '' ||
+        project.scenes_json === '[]';
+      const shouldAutoAdopt =
+        isNewScenes &&
+        (!project.active_preset_id || project.active_preset_id === 'general') &&
+        detected.confidence >= 0.55 &&
+        detected.presetId !== 'general';
+
+      const activePresetId = shouldAutoAdopt
+        ? detected.presetId
+        : getStorylinePreset(project.active_preset_id).id;
+      const activePreset = getStorylinePreset(activePresetId);
+
       const scenes = restoredScenes(
         project.scenes_json,
         localPhotos,
         activePresetId,
         project.target_count,
+        activePreset.defaultGapMinutes,
       );
       const restoredIndex = project.current_photo_id
         ? localPhotos.findIndex((photo) => photo.id === project.current_photo_id)
@@ -427,6 +453,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         activeFilter,
         selectedSceneId,
         activePresetId,
+        detectedPreset: detected,
         targetGoal: project.target_count ?? null,
         isLoading: false,
         scanError: null,

@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod delivery;
 pub mod exif;
 pub mod export;
 use crate::libraw_ffi;

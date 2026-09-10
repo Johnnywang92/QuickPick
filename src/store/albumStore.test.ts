@@ -250,4 +250,21 @@ describe('albumStore filter navigation', () => {
       expect(grouped[1].burstGroupId).toBe('burst:p1');
     });
   });
+
+  describe('detectedPreset state', () => {
+    it('initializes detectedPreset as null and allows storing detection results', () => {
+      useAlbumStore.setState({ detectedPreset: null });
+      expect(useAlbumStore.getState().detectedPreset).toBeNull();
+      useAlbumStore.setState({
+        detectedPreset: {
+          presetId: 'wedding',
+          confidence: 0.9,
+          reasons: ['目录命中婚礼关键词'],
+          scores: { wedding: 90, family: 0, conference: 0, concert: 0, cosplay: 0, travel: 0, general: 0 },
+        },
+      });
+      expect(useAlbumStore.getState().detectedPreset?.presetId).toBe('wedding');
+      expect(useAlbumStore.getState().detectedPreset?.confidence).toBe(0.9);
+    });
+  });
 });

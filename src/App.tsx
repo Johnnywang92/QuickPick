@@ -33,7 +33,9 @@ import {
   Loader2,
   X,
   History,
+  Settings,
 } from 'lucide-react';
+import { useThemeStore } from './store/themeStore';
 
 const PixiCanvas = lazy(() =>
   import('./components/viewport/PixiCanvas').then((module) => ({ default: module.PixiCanvas })),
@@ -90,6 +92,11 @@ const AlbumPreviewModal = lazy(() =>
     default: module.AlbumPreviewModal,
   })),
 );
+const SettingsModal = lazy(() =>
+  import('./components/modal/SettingsModal').then((module) => ({
+    default: module.SettingsModal,
+  })),
+);
 
 const LoadingPanel = () => (
   <div className="flex h-full w-full items-center justify-center bg-dark-950 text-xs text-slate-400">
@@ -126,6 +133,7 @@ export default function App() {
   const { currentPreviewUrl, previewStatus, previewError, retryCurrentPreview } = usePreviewStore();
   const { isCompareMode, isPkMode } = useCompareStore();
   const { isExportModalOpen, setExportModalOpen } = useExportStore();
+  const { isSettingsOpen, setSettingsOpen } = useThemeStore();
   const { isFaceLoupeOpen, isAnalyzing, analysisTotal, analysisCompleted, analysisFailed } =
     useInsightStore();
 
@@ -379,6 +387,15 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => setSettingsOpen(true)}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer"
+            title="偏好设置与外观主题"
+            aria-label="偏好设置与外观主题"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+
+          <button
             onClick={() => setIsAboutOpen(true)}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-dark-700 transition-colors cursor-pointer"
             title="关于 QuickPick 与安全选片说明"
@@ -516,44 +533,63 @@ export default function App() {
             <SplitCompareView />
           </Suspense>
         ) : (
-          <div className="w-full h-full relative">
-            {/* Pixi.js 硬件加速照片视口 */}
-            <Suspense fallback={<LoadingPanel />}>
-              <PixiCanvas
-                imageUrl={currentPreviewUrl}
-                filename={currentPhoto ? currentPhoto.filename : ''}
-                previewStatus={previewStatus}
-                previewError={previewError}
-                onRetryPreview={retryCurrentPreview}
-                isAddingPin={isAddingPin}
-                pins={currentPhoto ? getAnnotation(currentPhoto.id).pins : []}
-                onDropPin={(x, y) => {
-                  if (currentPhoto) {
-                    const currentAnn = getAnnotation(currentPhoto.id);
-                    const nextPins = currentAnn.pins || [];
-                    const newPin = createPin(x, y, nextPins.length + 1);
-                    setAnnotation(currentPhoto.id, {
-                      ...currentAnn,
-                      pins: [...nextPins, newPin],
-                    });
-                    setIsAddingPin(false);
-                    setIsRetouchOpen(true);
-                  }
-                }}
-              />
-            </Suspense>
+          <div className="flex h-full w-full min-w-0">
+            <div className="relative min-w-0 flex-1">
+              {/* Pixi.js 硬件加速照片视口 */}
+              <Suspense fallback={<LoadingPanel />}>
+                <PixiCanvas
+                  imageUrl={currentPreviewUrl}
+                  filename={currentPhoto ? currentPhoto.filename : ''}
+                  previewStatus={previewStatus}
+                  previewError={previewError}
+                  onRetryPreview={retryCurrentPreview}
+                  isAddingPin={isAddingPin}
+                  pins={currentPhoto ? getAnnotation(currentPhoto.id).pins : []}
+                  onDropPin={(x, y) => {
+                    if (currentPhoto) {
+                      const currentAnn = getAnnotation(currentPhoto.id);
+                      const nextPins = currentAnn.pins || [];
+                      const newPin = createPin(x, y, nextPins.length + 1);
+                      setAnnotation(currentPhoto.id, {
+                        ...currentAnn,
+                        pins: [...nextPins, newPin],
+                      });
+                      setIsAddingPin(false);
+                      setIsRetouchOpen(true);
+                    }
+                  }}
+                />
+              </Suspense>
 
-            {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
-            <div className="absolute top-4 left-4 z-20">
-              <PhotoInfoHud />
+              {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
+              <div className="absolute top-4 left-4 z-20">
+                <PhotoInfoHud />
+              </div>
+
+              {/* 视口上方：本地辅助提示药丸 */}
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+                <DefectBadge />
+              </div>
+
+              {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
+              {isFaceLoupeOpen && (
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
+                  <Suspense fallback={null}>
+                    <FaceLoupe />
+                  </Suspense>
+                </div>
+              )}
+
+              {/* 视口下方：选片操作条 (Space 选择 / M 待考虑) */}
+              <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20">
+                <TriageControls
+                  onToggleRetouch={() => setIsRetouchOpen((v) => !v)}
+                  isRetouchOpen={isRetouchOpen}
+                />
+              </div>
             </div>
 
-            {/* 视口上方：本地辅助提示药丸 */}
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
-              <DefectBadge />
-            </div>
-
-            {/* 视口右侧：修图与批注要求抽屉 */}
+            {/* 独立右侧栏：占用布局空间，不覆盖照片 */}
             <RetouchPanel
               isOpen={isRetouchOpen}
               onClose={() => {
@@ -563,23 +599,6 @@ export default function App() {
               isAddingPin={isAddingPin}
               setIsAddingPin={setIsAddingPin}
             />
-
-            {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
-            {isFaceLoupeOpen && (
-              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
-                <Suspense fallback={null}>
-                  <FaceLoupe />
-                </Suspense>
-              </div>
-            )}
-
-            {/* 视口下方：选片操作条 (Space 选择 / M 待考虑) */}
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20">
-              <TriageControls
-                onToggleRetouch={() => setIsRetouchOpen((v) => !v)}
-                isRetouchOpen={isRetouchOpen}
-              />
-            </div>
           </div>
         )}
       </main>
@@ -656,6 +675,16 @@ export default function App() {
           <AlbumPreviewModal
             isOpen={isAlbumPreviewOpen}
             onClose={() => setIsAlbumPreviewOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* 偏好设置与外观主题弹窗 */}
+      {isSettingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={() => setSettingsOpen(false)}
           />
         </Suspense>
       )}

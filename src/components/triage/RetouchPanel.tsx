@@ -91,10 +91,10 @@ export const RetouchPanel: React.FC<RetouchPanelProps> = ({
   };
 
   return (
-    <div
+    <aside
       role="dialog"
       aria-label="修图与批注要求"
-      className="absolute right-4 top-16 bottom-24 w-84 bg-dark-900/95 backdrop-blur-md border border-dark-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-200 z-30 font-sans animate-in slide-in-from-right-4 duration-200"
+      className="relative z-30 flex h-full w-[clamp(17rem,24vw,22rem)] max-w-[40%] shrink-0 flex-col overflow-hidden border-l border-dark-700 bg-dark-900 text-slate-200 shadow-2xl font-sans animate-in slide-in-from-right-4 duration-200"
     >
       {/* 顶部标题栏 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-dark-750 bg-dark-850/90 shrink-0">
@@ -251,10 +251,10 @@ export const RetouchPanel: React.FC<RetouchPanelProps> = ({
       <div className="px-4 py-2.5 border-t border-dark-750 bg-dark-850/80 text-[10px] text-slate-400 flex items-center justify-between shrink-0">
         <span className="flex items-center text-emerald-400">
           <CheckCircle2 className="w-3 h-3 mr-1" />
-          更改自动实时落盘
+          保存在项目内 · 原片不变
         </span>
         <span className="font-mono text-slate-500">按 R 快捷开关</span>
       </div>
-    </div>
+    </aside>
   );
 };

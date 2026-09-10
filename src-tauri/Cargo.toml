@@ -50,10 +50,15 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 walkdir = "2"
 thiserror = "2"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "pnm", "webp"] }
 libc = "0.2"
 base64 = "0.22"
 rusqlite = { version = "0.32", features = ["backup", "bundled"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSSharingService"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSString", "NSURL"] }
 
 [profile.release]
 opt-level = 3

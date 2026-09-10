@@ -436,10 +436,16 @@ export async function selectDirectory(title = '选择导出目标文件夹'): Pr
 
 export async function saveManifestFile(
   content: string,
-  extension: 'txt' | 'csv' | 'json' | 'html',
+  extension: 'txt' | 'csv' | 'json' | 'html' | 'lrsmcol' | 'pmselection',
 ): Promise<string | null> {
-  const defaultFilename =
-    extension === 'html' ? 'QuickPick_修图指示书.html' : `QuickPick_Selected_List.${extension}`;
+  const defaultFilename = extension === 'html'
+    ? 'QuickPick_修图指示书.html'
+    : extension === 'lrsmcol'
+      ? 'QuickPick_Selected.lrsmcol'
+      : extension === 'pmselection'
+        ? 'QuickPick_PhotoMechanic_Selection.txt'
+        : `QuickPick_Selected_List.${extension}`;
+  const fileExtension = extension === 'pmselection' ? 'txt' : extension;
   if (!isTauri()) {
     const mimeType = extension === 'html' ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8';
     const blob = new Blob([content], { type: mimeType });
@@ -458,14 +464,75 @@ export async function saveManifestFile(
     defaultPath: defaultFilename,
     filters: [
       {
-        name: extension === 'html' ? 'HTML 网页指示单' : `${extension.toUpperCase()} 清单`,
-        extensions: [extension],
+        name: extension === 'html'
+          ? 'HTML 网页指示单'
+          : extension === 'lrsmcol'
+            ? 'Lightroom Smart Collection'
+            : extension === 'pmselection'
+              ? 'Photo Mechanic Selection'
+              : `${extension.toUpperCase()} 清单`,
+        extensions: [fileExtension],
       },
     ],
   });
   if (!selected) return null;
   await invoke('save_manifest_file', { path: selected, content });
   return selected;
+}
+
+export interface DeliveryPhotoInput {
+  id: string;
+  path: string;
+}
+
+export interface RenderedExportResult {
+  total: number;
+  success: number;
+  skipped: number;
+  failed: number;
+  target_directory: string;
+  files: string[];
+  errors: string[];
+}
+
+export async function exportShareableJpegs(
+  photos: DeliveryPhotoInput[],
+  targetDir: string,
+  maxEdge: number,
+  quality: number,
+): Promise<RenderedExportResult> {
+  if (!isTauri()) {
+    return {
+      total: photos.length,
+      success: photos.length,
+      skipped: 0,
+      failed: 0,
+      target_directory: targetDir,
+      files: photos.map((photo) => `${targetDir}/${photo.id}.jpg`),
+      errors: [],
+    };
+  }
+  return await invoke<RenderedExportResult>('export_shareable_jpegs', {
+    photos,
+    targetDir,
+    maxEdge,
+    quality,
+  });
+}
+
+export async function sharePhotosViaAirDrop(photos: DeliveryPhotoInput[]): Promise<RenderedExportResult> {
+  if (!isTauri()) {
+    return {
+      total: photos.length,
+      success: photos.length,
+      skipped: 0,
+      failed: 0,
+      target_directory: '/tmp/QuickPick_AirDrop',
+      files: photos.map((photo) => `/tmp/QuickPick_AirDrop/${photo.id}.jpg`),
+      errors: [],
+    };
+  }
+  return await invoke<RenderedExportResult>('share_photos_via_air_drop', { photos });
 }
 
 export async function exportPhotos(options: ExportOptions, jobId: string): Promise<ExportResult> {

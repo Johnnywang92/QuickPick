@@ -1,22 +1,55 @@
 import React, { useState } from 'react';
-import { useExportStore, ManifestFormat } from '../../store/exportStore';
+import { useExportStore, ExportPurpose, ManifestFormat } from '../../store/exportStore';
 import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import {
-  FolderOutput,
-  FolderCheck,
-  FolderOpen,
-  X,
-  Check,
   AlertCircle,
-  FileText,
-  Copy,
-  Download,
-  ShieldCheck,
-  Loader2,
+  Check,
   ChevronDown,
   ChevronUp,
+  Copy,
+  Download,
+  FileText,
+  FolderCheck,
+  FolderOpen,
+  FolderOutput,
+  HardDrive,
+  ImageDown,
+  MonitorDown,
+  Loader2,
+  Send,
+  Server,
+  ShieldCheck,
+  Smartphone,
+  UserRound,
+  X,
 } from 'lucide-react';
+
+const manifestFormatOptions: Array<{
+  value: ManifestFormat;
+  label: string;
+  description: string;
+}> = [
+  { value: 'txt', label: 'TXT', description: '纯文件名' },
+  { value: 'csv', label: 'CSV', description: '表格整理' },
+  { value: 'json', label: 'JSON', description: '系统交换' },
+  { value: 'html', label: 'HTML', description: '图文指示单' },
+  { value: 'lrsmcol', label: 'LIGHTROOM', description: 'Smart Collection' },
+  { value: 'pmselection', label: 'PHOTO MECHANIC', description: 'Load Selection' },
+];
+
+const purposeOptions: Array<{
+  value: ExportPurpose;
+  label: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { value: 'photographer', label: '给摄影师修图', description: '原片与专业清单', icon: UserRound },
+  { value: 'self_edit', label: '给自己修图', description: '复制到本地工作区', icon: MonitorDown },
+  { value: 'social', label: '发布社交媒体', description: '轻量高清 JPEG', icon: ImageDown },
+  { value: 'phone', label: '发送到手机', description: 'macOS AirDrop', icon: Smartphone },
+  { value: 'nas', label: '备份到 NAS', description: '安全校验复制', icon: Server },
+];
 
 export const ExportModal: React.FC = () => {
   const {
@@ -24,6 +57,8 @@ export const ExportModal: React.FC = () => {
     setExportModalOpen,
     exportMode,
     setExportMode,
+    exportPurpose,
+    setExportPurpose,
     targetDir,
     includeXmp,
     setIncludeXmp,
@@ -43,6 +78,9 @@ export const ExportModal: React.FC = () => {
     preflightResult,
     errorMessage,
     manifestExportSuccess,
+    renderedExportResult,
+    executeSocialExport,
+    shareToPhone,
     resetExportState,
   } = useExportStore();
 
@@ -58,12 +96,15 @@ export const ExportModal: React.FC = () => {
   const reviewStats = getStats(photos.length);
   const hasPendingReview = reviewStats.unreviewedCount > 0 || reviewStats.maybeCount > 0;
   const canExport = !hasPendingReview || reviewWarningAcknowledged;
-  const totalSizeBytes = selectedPhotos.reduce((acc, p) => acc + (p.fileSize || 35000000), 0);
+  const totalSizeBytes = selectedPhotos.reduce((acc, photo) => acc + (photo.fileSize || 35000000), 0);
   const totalSizeMB = (totalSizeBytes / (1024 * 1024)).toFixed(1);
   const totalSizeGB = (totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2);
+  const formattedTotalSize = Number(totalSizeGB) >= 1 ? `${totalSizeGB} GB` : `${totalSizeMB} MB`;
 
   const handleClose = () => {
     resetExportState();
+    setCopied(false);
+    setReviewWarningAcknowledged(false);
     setExportModalOpen(false);
   };
 
@@ -71,389 +112,485 @@ export const ExportModal: React.FC = () => {
     const ok = await copyManifestToClipboard();
     if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      window.setTimeout(() => setCopied(false), 2500);
     }
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm animate-in fade-in duration-150 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="export-modal-title"
     >
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 font-sans text-slate-200 shadow-2xl">
-        {/* 顶部标题 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-750 bg-dark-800/80">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-              <FolderOutput className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 id="export-modal-title" className="text-sm font-bold text-slate-100">导出选片结果</h3>
-              <p className="text-[11px] text-slate-400">
-                已精选 <span className="text-emerald-400 font-semibold">{selectedPhotos.length}</span> 张照片，请选择适合的交付方式
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={handleClose}
-            disabled={isExporting}
-            className="p-1.5 hover:bg-dark-700 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* 导出模式 Tab 切换 */}
-        <div className="grid grid-cols-2 border-b border-dark-750 bg-dark-800/40 p-1 text-xs">
-          <button
-            onClick={() => setExportMode('copy_raw')}
-            className={`flex items-center justify-center space-x-1.5 py-2.5 rounded-lg font-semibold transition-all cursor-pointer ${
-              exportMode === 'copy_raw'
-                ? 'bg-dark-700 text-emerald-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FolderCheck className="w-3.5 h-3.5" />
-            <span>模式 A: 复制所选原片</span>
-          </button>
-
-          <button
-            onClick={() => setExportMode('manifest')}
-            className={`flex items-center justify-center space-x-1.5 py-2.5 rounded-lg font-semibold transition-all cursor-pointer ${
-              exportMode === 'manifest'
-                ? 'bg-dark-700 text-blue-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>模式 B: 选片清单</span>
-          </button>
-
-        </div>
-
-        {/* 弹窗内容主体 */}
-        <div className="space-y-5 overflow-y-auto p-6">
-          {hasPendingReview ? (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-100" role="alert">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                <div>
-                  <div className="font-semibold">选片尚未完全复核</div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-amber-200/80">
-                    还有 {reviewStats.unreviewedCount} 张未查看、{reviewStats.maybeCount} 张待考虑。你可以关闭窗口先去复核，也可以明确确认后继续导出当前已选照片。
-                  </p>
-                </div>
+      <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 font-sans text-slate-200 shadow-2xl sm:max-h-[calc(100vh-3rem)]">
+        <header className="shrink-0 border-b border-dark-700/80 bg-dark-900/55 px-5 py-4 sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 shadow-inner">
+                <FolderOutput className="h-5 w-5" />
               </div>
-              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-500/20 bg-black/10 px-3 py-2.5">
-                <input
-                  type="checkbox"
-                  checked={reviewWarningAcknowledged}
-                  onChange={(event) => setReviewWarningAcknowledged(event.target.checked)}
-                  className="mt-0.5 rounded border-amber-500/40 bg-dark-800 text-amber-500 focus:ring-amber-500/30"
-                />
-                <span className="text-[11px] leading-relaxed">
-                  我已了解仍有照片未完成复核，继续导出当前已选的 {selectedPhotos.length} 张照片
-                </span>
-              </label>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 id="export-modal-title" className="text-base font-bold tracking-tight text-slate-100">
+                    导出所选照片
+                  </h2>
+                  <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400">
+                    {selectedPhotos.length} 张 · {formattedTotalSize}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-400">选择一种交付方式，QuickPick 会保护原片不被修改。</p>
+              </div>
             </div>
-          ) : (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-3 text-xs text-emerald-200">
-              <Check className="h-4 w-4 shrink-0" />
-              <span>所有照片都已查看，待考虑队列已清空。</span>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={isExporting}
+              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="关闭导出窗口"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
 
-          {/* 模式 A：复制所选原片 */}
-          {exportMode === 'copy_raw' && (
-            <>
-              {exportResult ? (
-                /* 复制结果状态卡片 */
-                <div className="py-4 flex flex-col items-center text-center space-y-4">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
-                    <Check className="w-6 h-6 stroke-[2.5]" />
+        <div className="overflow-y-auto">
+          <div className="space-y-5 p-5 sm:p-6">
+            <section aria-labelledby="delivery-method-title">
+              <div className="mb-2.5 flex items-center justify-between">
+                <h3 id="delivery-method-title" className="text-xs font-semibold text-slate-300">
+                  这次照片要去哪里？
+                </h3>
+                <span className="text-[10px] text-slate-500">QuickPick 会自动匹配交付设置</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup" aria-label="导出目的">
+                {purposeOptions.map((option) => {
+                  const Icon = option.icon;
+                  const active = exportPurpose === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      disabled={isExporting}
+                      onClick={() => setExportPurpose(option.value)}
+                      className={`relative rounded-xl border px-2.5 py-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+                        active
+                          ? 'border-emerald-500/60 bg-emerald-500/10 shadow-[0_0_0_1px_rgb(16_185_129_/_0.08)]'
+                          : 'border-dark-700 bg-dark-900/45 hover:border-dark-600 hover:bg-dark-800/70'
+                      }`}
+                    >
+                      <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/15 text-emerald-400' : 'bg-dark-800 text-slate-400'}`}>
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="mt-2 block text-[11px] font-semibold text-slate-200">{option.label}</span>
+                      <span className="mt-0.5 block text-[9px] leading-relaxed text-slate-500">{option.description}</span>
+                      {active && (
+                        <span className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-white">
+                          <Check className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {exportPurpose === 'photographer' && (
+              <div className="grid grid-cols-2 rounded-xl border border-dark-700 bg-dark-900/45 p-1" role="tablist" aria-label="摄影师交付内容">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={exportMode === 'copy_raw'}
+                  onClick={() => setExportMode('copy_raw')}
+                  className={`rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors ${exportMode === 'copy_raw' ? 'bg-dark-700 text-emerald-300' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  原片交付包
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={exportMode === 'manifest'}
+                  onClick={() => setExportMode('manifest')}
+                  className={`rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors ${exportMode === 'manifest' ? 'bg-dark-700 text-blue-300' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  软件选片清单
+                </button>
+              </div>
+            )}
+
+            {hasPendingReview ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-100" role="alert">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold">导出前还有内容待复核</div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-amber-200/80">
+                      {reviewStats.unreviewedCount} 张未查看，{reviewStats.maybeCount} 张待考虑。确认后仍可只导出当前已选的 {selectedPhotos.length} 张。
+                    </p>
                   </div>
-                  <div>
-                    <h4 className="text-base font-bold text-slate-100">
+                </div>
+                <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-amber-500/20 bg-black/10 px-3 py-2.5 transition-colors hover:bg-amber-500/5">
+                  <input
+                    type="checkbox"
+                    checked={reviewWarningAcknowledged}
+                    onChange={(event) => setReviewWarningAcknowledged(event.target.checked)}
+                    className="mt-0.5 rounded border-amber-500/40 bg-dark-800 text-amber-500 focus:ring-amber-500/30"
+                  />
+                  <span className="text-[11px] leading-relaxed">我已了解，继续导出当前选片结果</span>
+                </label>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-3 text-xs text-emerald-300">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                  <Check className="h-3 w-3" />
+                </span>
+                <span>复核已完成，所有照片均已查看，待考虑队列为空。</span>
+              </div>
+            )}
+
+            {(exportPurpose === 'photographer' || exportPurpose === 'self_edit' || exportPurpose === 'nas') && exportMode === 'copy_raw' && (
+              <>
+                {exportResult ? (
+                  <section className="flex flex-col items-center py-5 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/15 text-emerald-400 shadow-lg shadow-emerald-950/20">
+                      <Check className="h-7 w-7 stroke-[2.5]" />
+                    </div>
+                    <h3 className="mt-4 text-lg font-bold text-slate-100">
                       {exportResult.cancelled ? '导出已安全取消' : '原片复制完成'}
-                    </h4>
-                    <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                    </h3>
+                    <p className="mt-1 max-w-md text-xs leading-relaxed text-slate-400">
                       {exportResult.cancelled
                         ? '任务创建的临时文件已清理，尚未处理的照片保持不变。'
-                        : '已将选中的底片安全复制到新目录。原片目录全程只读，源文件完好无损。'}
+                        : '所选原片已安全复制并完成校验，源目录中的文件没有被修改。'}
                     </p>
-                  </div>
 
-                  <div className="grid grid-cols-4 gap-3 w-full max-w-md bg-dark-800/80 border border-dark-700/80 p-3 rounded-xl text-center text-xs">
-                    <div>
-                      <span className="text-[11px] text-slate-400">成功复制</span>
-                      <div className="text-lg font-bold text-emerald-400 font-mono mt-0.5">
-                        {exportResult.success_photos} 张
-                      </div>
+                    <div className="mt-5 grid w-full grid-cols-2 overflow-hidden rounded-xl border border-dark-700 bg-dark-900/60 sm:grid-cols-4">
+                      {[
+                        { label: '成功复制', value: exportResult.success_photos, color: 'text-emerald-400' },
+                        { label: '重复跳过', value: exportResult.skipped, color: 'text-slate-300' },
+                        { label: '复制失败', value: exportResult.failed, color: 'text-rose-400' },
+                        { label: '未处理', value: exportResult.unprocessed, color: 'text-amber-400' },
+                      ].map((item) => (
+                        <div key={item.label} className="border-dark-700 p-3 text-center even:border-l sm:border-l sm:first:border-l-0">
+                          <div className="text-[10px] text-slate-500">{item.label}</div>
+                          <div className={`mt-1 font-mono text-lg font-bold ${item.color}`}>{item.value}</div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="border-x border-dark-700">
-                      <span className="text-[11px] text-slate-400">重复跳过</span>
-                      <div className="text-lg font-bold text-slate-400 font-mono mt-0.5">
-                        {exportResult.skipped} 张
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-slate-400">失败</span>
-                      <div className="text-lg font-bold text-rose-400 font-mono mt-0.5">
-                        {exportResult.failed} 张
-                      </div>
-                    </div>
-                    <div className="border-l border-dark-700">
-                      <span className="text-[11px] text-slate-400">未处理</span>
-                      <div className="text-lg font-bold text-amber-400 font-mono mt-0.5">
-                        {exportResult.unprocessed} 张
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="text-[11px] font-mono text-slate-400 bg-dark-800 px-3 py-1.5 rounded-lg border border-dark-700 max-w-md truncate w-full">
-                    📁 {exportResult.target_directory}
-                  </div>
-
-                  <button
-                    onClick={handleClose}
-                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-md transition-all cursor-pointer"
-                  >
-                    完成
-                  </button>
-                </div>
-              ) : (
-                /* 复制参数配置 */
-                <div className="space-y-4 text-xs">
-                  <div className="bg-dark-800/80 border border-dark-700 p-3.5 rounded-xl space-y-1">
-                    <div className="font-semibold text-slate-200">交由修图师或导入修图软件</div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      将挑好的 RAW 或 JPEG 原片完整复制到指定的新文件夹，附带 SHA-256 完整性校验和选片清单。原片文件夹保持只读，绝不移动、覆盖或删除源文件。
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-300 mb-1.5">
-                      导出目标文件夹 (新建/已有目录)
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <div className="flex-1 flex items-center bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 font-mono text-slate-300 overflow-hidden">
-                        <span className="truncate" title={targetDir}>
-                          {targetDir || '请选择导出目标目录...'}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={browseTargetDir}
-                        className="flex items-center space-x-1.5 px-3 py-2 bg-dark-750 hover:bg-dark-700 text-slate-200 font-medium rounded-lg border border-dark-600 transition-colors shrink-0 cursor-pointer"
-                      >
-                        <FolderOpen className="w-3.5 h-3.5" />
-                        <span>选择...</span>
-                      </button>
+                    <div className="mt-3 flex w-full items-center gap-2 rounded-lg border border-dark-700 bg-dark-900/70 px-3 py-2 text-left font-mono text-[10px] text-slate-400">
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate" title={exportResult.target_directory}>{exportResult.target_directory}</span>
                     </div>
-                  </div>
 
-                  {/* 高级选项折叠 */}
-                  <div className="border border-dark-750 rounded-xl overflow-hidden bg-dark-800/40">
                     <button
                       type="button"
-                      onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                      className="w-full flex items-center justify-between px-3.5 py-2 text-slate-400 hover:text-slate-200 text-left transition-colors"
+                      onClick={handleClose}
+                      className="mt-5 rounded-lg bg-emerald-600 px-6 py-2.5 text-xs font-semibold text-white shadow-md transition-all hover:bg-emerald-500"
                     >
-                      <span className="font-medium text-[11px]">高级选项 (摄影师伴侣文件)</span>
-                      {showAdvancedOptions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      完成
                     </button>
-                    {showAdvancedOptions && (
-                      <div className="px-3.5 pb-3 pt-1 border-t border-dark-750 space-y-2 text-[11px]">
-                        <label className="flex items-center space-x-2 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={includeXmp}
-                            onChange={(e) => setIncludeXmp(e.target.checked)}
-                            className="rounded bg-dark-700 border-dark-600 text-emerald-600 focus:ring-emerald-500/20"
-                          />
-                          <span className="text-slate-300">
-                            若摄影师原片目录中包含同名 .xmp 伴侣文件，连同 XMP 一并复制
-                          </span>
-                        </label>
-                        <label className="flex items-center space-x-2 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={openAfterExport}
-                            onChange={(e) => setOpenAfterExport(e.target.checked)}
-                            className="rounded bg-dark-700 border-dark-600 text-emerald-600 focus:ring-emerald-500/20"
-                          />
-                          <span className="text-slate-300">
-                            导出完成后在 Finder / 资源管理器中打开目标目录
-                          </span>
-                        </label>
+                  </section>
+                ) : (
+                  <section className="space-y-4" aria-label="原片导出设置">
+                    <div className="rounded-xl border border-dark-700 bg-dark-900/45 p-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-bold text-emerald-400">01</span>
+                        <h3 className="text-xs font-semibold text-slate-200">
+                          {exportPurpose === 'nas' ? '选择已挂载的 NAS 目录' : exportPurpose === 'self_edit' ? '选择本地修图工作目录' : '选择摄影师交付目录'}
+                        </h3>
                       </div>
-                    )}
-                  </div>
+                      <p className="mt-1 pl-6 text-[11px] text-slate-500">
+                        {exportPurpose === 'nas' ? '支持 Finder 已连接的 SMB / AFP 卷；写入前会检查容量和同名冲突。' : '可以选择新建或已有文件夹，同名文件会自动安全跳过。'}
+                      </p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border px-3 py-2.5 ${
+                          targetDir ? 'border-dark-600 bg-dark-950/70' : 'border-dashed border-dark-600 bg-dark-900/50'
+                        }`}>
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${targetDir ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                          <span className={`truncate font-mono text-[11px] ${targetDir ? 'text-slate-300' : 'text-slate-500'}`} title={targetDir}>
+                            {targetDir || '尚未选择导出目录'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={browseTargetDir}
+                          disabled={isExporting}
+                          className="flex shrink-0 items-center justify-center gap-2 rounded-lg border border-dark-600 bg-dark-750 px-4 py-2.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-dark-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <FolderOpen className="h-3.5 w-3.5" />
+                          <span>{targetDir ? '更换文件夹' : '选择文件夹'}</span>
+                        </button>
+                      </div>
+                    </div>
 
-                  <div className="flex items-center space-x-2 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px]">
-                    <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400" />
-                    <span>原片绝对只读保护：系统仅执行单向安全复制，任何情况下绝不删除或修改摄影师的原片。</span>
-                  </div>
-
-                  {preflightResult && (
-                    <div className="rounded-lg border border-dark-700 bg-dark-900/70 p-3 text-[11px] space-y-2">
-                      <div className="flex items-center justify-between text-slate-300">
+                    <div className="overflow-hidden rounded-xl border border-dark-700 bg-dark-900/35">
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-dark-800/60"
+                        aria-expanded={showAdvancedOptions}
+                      >
                         <span>
-                          预检：{preflightResult.total_photos} 张 / {preflightResult.total_files} 个文件
+                          <span className="block text-xs font-semibold text-slate-300">交付选项</span>
+                          <span className="mt-0.5 block text-[10px] text-slate-500">
+                            {includeXmp ? '包含 XMP 伴侣文件' : '仅复制照片'} · {openAfterExport ? '完成后打开目录' : '完成后保持后台'}
+                          </span>
                         </span>
-                        <span className={preflightResult.has_enough_space ? 'text-emerald-400' : 'text-rose-400'}>
-                          可用 {(preflightResult.available_bytes / (1024 ** 3)).toFixed(2)} GB
-                        </span>
-                      </div>
-                      {preflightResult.conflicts.length > 0 && (
-                        <div className="space-y-1 border-t border-dark-750 pt-2">
-                          <div className="text-amber-300">
-                            {preflightResult.conflicts.length} 个同名冲突将安全跳过：
-                          </div>
-                          <div className="max-h-20 overflow-auto space-y-1 font-mono text-slate-400">
-                            {preflightResult.conflicts.map((conflict, index) => (
-                              <div key={`${conflict.target_path}-${index}`} title={conflict.source_path}>
-                                {conflict.target_path} — {conflict.reason}
-                              </div>
-                            ))}
-                          </div>
+                        {showAdvancedOptions ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                      </button>
+                      {showAdvancedOptions && (
+                        <div className="space-y-2 border-t border-dark-700 px-4 py-3">
+                          <label className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-dark-800/60">
+                            <input
+                              type="checkbox"
+                              checked={includeXmp}
+                              onChange={(event) => setIncludeXmp(event.target.checked)}
+                              className="mt-0.5 rounded border-dark-600 bg-dark-700 text-emerald-600 focus:ring-emerald-500/20"
+                            />
+                            <span>
+                              <span className="block text-[11px] font-medium text-slate-300">同时复制 XMP 伴侣文件</span>
+                              <span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">保留摄影师在 Lightroom / Camera Raw 中的已有调整。</span>
+                            </span>
+                          </label>
+                          <label className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-dark-800/60">
+                            <input
+                              type="checkbox"
+                              checked={openAfterExport}
+                              onChange={(event) => setOpenAfterExport(event.target.checked)}
+                              className="mt-0.5 rounded border-dark-600 bg-dark-700 text-emerald-600 focus:ring-emerald-500/20"
+                            />
+                            <span>
+                              <span className="block text-[11px] font-medium text-slate-300">导出完成后打开目标目录</span>
+                              <span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">完成后自动在 Finder 或资源管理器中定位。</span>
+                            </span>
+                          </label>
                         </div>
                       )}
                     </div>
-                  )}
 
-                  {errorMessage && (
-                    <div className="flex items-center space-x-2 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>{errorMessage}</span>
+                    <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.07] p-3 text-[11px] leading-relaxed text-emerald-300">
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                      <span><strong className="font-semibold">只读安全导出：</strong>单向复制、SHA-256 完整性校验，不移动、不覆盖、不删除任何原片。</span>
                     </div>
-                  )}
 
-                  <div className="flex items-center justify-between pt-3 border-t border-dark-750">
-                    <div className="font-mono text-slate-400">
-                      共选定 <span className="font-bold text-slate-100">{selectedPhotos.length}</span> 张
-                      <span className="mx-1.5">•</span>
-                      预估容量: <span className="text-slate-300">{Number(totalSizeGB) > 1 ? `${totalSizeGB} GB` : `${totalSizeMB} MB`}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={isExporting ? () => void cancelCurrentExport() : handleClose}
-                        disabled={isCancelling}
-                        className="px-4 py-2 bg-dark-750 hover:bg-dark-700 disabled:opacity-50 text-slate-300 font-medium rounded-lg transition-colors cursor-pointer"
-                      >
-                        {isCancelling ? '正在安全取消...' : isExporting ? '取消导出' : '取消'}
-                      </button>
-                      <button
-                        onClick={executeCopyRaw}
-                        disabled={isExporting || selectedPhotos.length === 0 || !canExport}
-                        className="flex items-center space-x-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold rounded-lg shadow-md transition-all cursor-pointer"
-                      >
-                        {isExporting ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>正在检查或复制 ({selectedPhotos.length} 张)...</span>
-                          </>
-                        ) : (
-                          <>
-                            <FolderCheck className="w-3.5 h-3.5" />
-                            <span>开始复制原片</span>
-                          </>
+                    {preflightResult && (
+                      <div className="rounded-xl border border-dark-700 bg-dark-900/60 p-3.5 text-[11px]">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-slate-300">
+                          <span className="font-semibold">导出预检</span>
+                          <span className={preflightResult.has_enough_space ? 'text-emerald-400' : 'text-rose-400'}>
+                            目标磁盘可用 {(preflightResult.available_bytes / (1024 ** 3)).toFixed(2)} GB
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-slate-500">
+                          <span>{preflightResult.total_photos} 张照片</span>
+                          <span>{preflightResult.total_files} 个文件</span>
+                          <span>{(preflightResult.total_bytes / (1024 ** 3)).toFixed(2)} GB</span>
+                        </div>
+                        {preflightResult.conflicts.length > 0 && (
+                          <div className="mt-3 border-t border-dark-700 pt-2.5">
+                            <div className="text-amber-300">{preflightResult.conflicts.length} 个同名文件将自动跳过</div>
+                            <div className="mt-1.5 max-h-20 space-y-1 overflow-auto font-mono text-[10px] text-slate-500">
+                              {preflightResult.conflicts.map((conflict, index) => (
+                                <div key={`${conflict.target_path}-${index}`} title={conflict.source_path}>
+                                  {conflict.target_path} — {conflict.reason}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         )}
+                      </div>
+                    )}
+
+                    {errorMessage && (
+                      <div className="flex items-start gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{errorMessage}</span>
+                      </div>
+                    )}
+
+                    <footer className="flex flex-col gap-3 border-t border-dark-700 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="text-[11px] text-slate-500">
+                        即将导出 <span className="font-semibold text-slate-200">{selectedPhotos.length} 张</span>
+                        <span className="mx-1.5">·</span>
+                        预计 <span className="font-mono text-slate-300">{formattedTotalSize}</span>
+                      </div>
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={isExporting ? () => void cancelCurrentExport() : handleClose}
+                          disabled={isCancelling}
+                          className="rounded-lg bg-dark-750 px-4 py-2.5 text-xs font-medium text-slate-300 transition-colors hover:bg-dark-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isCancelling ? '正在安全取消…' : isExporting ? '取消导出' : '取消'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void executeCopyRaw()}
+                          disabled={isExporting || selectedPhotos.length === 0 || !canExport}
+                          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-emerald-950/20 transition-all hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderCheck className="h-3.5 w-3.5" />}
+                          <span>{isExporting ? '正在检查或复制…' : exportPurpose === 'nas' ? `备份 ${selectedPhotos.length} 张到 NAS` : `安全导出 ${selectedPhotos.length} 张`}</span>
+                        </button>
+                      </div>
+                    </footer>
+                  </section>
+                )}
+              </>
+            )}
+
+            {exportPurpose === 'photographer' && exportMode === 'manifest' && (
+              <section className="space-y-4" aria-label="清单导出设置">
+                <div>
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <h3 className="text-xs font-semibold text-slate-300">选择清单格式</h3>
+                    <span className="text-[10px] text-slate-500">不会复制原片</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {manifestFormatOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setManifestFormat(option.value)}
+                        aria-pressed={manifestFormat === option.value}
+                        className={`rounded-xl border px-3 py-3 text-left transition-all ${
+                          manifestFormat === option.value
+                            ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_0_1px_rgb(59_130_246_/_0.08)]'
+                            : 'border-dark-700 bg-dark-900/45 hover:border-dark-600 hover:bg-dark-800/70'
+                        }`}
+                      >
+                        <span className={`block font-mono text-xs font-bold ${manifestFormat === option.value ? 'text-blue-400' : 'text-slate-300'}`}>
+                          {option.label}
+                        </span>
+                        <span className="mt-1 block text-[10px] text-slate-500">{option.description}</span>
                       </button>
-                    </div>
+                    ))}
                   </div>
                 </div>
-              )}
-            </>
-          )}
 
-          {/* 模式 B：导出选片清单 */}
-          {exportMode === 'manifest' && (
-            <div className="space-y-4 text-xs">
-              <div className="bg-dark-800/80 border border-dark-700 p-3.5 rounded-xl space-y-1">
-                <div className="font-semibold text-slate-200">把选中的文件名发给摄影师</div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  无需复制几十 GB 的大文件。直接导出文件名列表（如微信发给摄影师或发邮件），速度最快。
-                </p>
-              </div>
+                <div className="overflow-hidden rounded-xl border border-dark-700 bg-dark-900/65">
+                  <div className="flex items-center justify-between border-b border-dark-700 bg-dark-800/65 px-3.5 py-2.5">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-300">
+                      <FileText className="h-3.5 w-3.5 text-blue-400" />
+                      清单预览
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-500">前 5 条 / 共 {selectedPhotos.length} 条</span>
+                  </div>
+                  <pre className="min-h-28 max-h-40 select-all overflow-auto p-4 font-mono text-[11px] leading-6 text-slate-300">
+                    {selectedPhotos.slice(0, 5).map((photo) => photo.filename).join('\n') || '暂无已选照片'}
+                    {selectedPhotos.length > 5 && `\n… 以及其他 ${selectedPhotos.length - 5} 张照片`}
+                  </pre>
+                </div>
 
-              <div>
-                <label className="block font-semibold text-slate-300 mb-2">选择清单格式</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['txt', 'csv', 'json', 'html'] as ManifestFormat[]).map((fmt) => (
+                {manifestExportSuccess && (
+                  <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300" role="status">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" /></span>
+                    <span>清单已成功复制或保存，可以发送给摄影师了。</span>
+                  </div>
+                )}
+
+                {errorMessage && (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
+                <footer className="flex flex-col gap-3 border-t border-dark-700 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-[11px] text-slate-500">
+                    {manifestFormat === 'html'
+                      ? '生成包含精修标注与备注的网页指示单'
+                      : manifestFormat === 'lrsmcol'
+                        ? '在 Lightroom Classic 的“收藏夹”面板中导入 Smart Collection'
+                        : manifestFormat === 'pmselection'
+                          ? '在 Photo Mechanic 中使用 Edit → Load Selection 载入'
+                          : `生成 ${manifestFormat.toUpperCase()} 格式的 ${selectedPhotos.length} 条记录`}
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
                     <button
-                      key={fmt}
-                      onClick={() => setManifestFormat(fmt)}
-                      className={`p-2 rounded-lg border text-center font-mono font-semibold uppercase transition-all cursor-pointer text-xs ${
-                        manifestFormat === fmt
-                          ? 'border-blue-500 bg-blue-500/15 text-blue-300'
-                          : 'border-dark-700 bg-dark-800 text-slate-400 hover:border-dark-600'
-                      }`}
+                      type="button"
+                      onClick={() => void handleCopyClipboard()}
+                      disabled={selectedPhotos.length === 0 || !canExport}
+                      className="flex items-center gap-2 rounded-lg border border-dark-600 bg-dark-750 px-4 py-2.5 text-xs font-medium text-slate-200 transition-colors hover:bg-dark-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {fmt === 'html' ? 'HTML 指示单' : fmt}
+                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      <span>{copied ? '已复制' : '复制清单'}</span>
                     </button>
-                  ))}
-                </div>
-              </div>
+                    <button
+                      type="button"
+                      onClick={() => void downloadManifest()}
+                      disabled={isExporting || selectedPhotos.length === 0 || !canExport}
+                      className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-blue-950/20 transition-all hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>{manifestFormat === 'lrsmcol' ? '保存 Lightroom Collection' : manifestFormat === 'pmselection' ? '保存 Photo Mechanic Selection' : '保存清单文件'}</span>
+                    </button>
+                  </div>
+                </footer>
+              </section>
+            )}
 
-              {/* 清单预览框 */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="font-semibold text-slate-300">清单预览 (前 5 条)</label>
-                  <span className="text-[11px] text-slate-500 font-mono">共 {selectedPhotos.length} 项</span>
-                </div>
-                <pre className="bg-dark-900 border border-dark-700 rounded-xl p-3 text-[11px] font-mono text-slate-300 max-h-32 overflow-auto select-all">
-                  {selectedPhotos.slice(0, 5).map((p) => p.filename).join('\n')}
-                  {selectedPhotos.length > 5 && `\n...以及其它 ${selectedPhotos.length - 5} 张照片`}
-                </pre>
-              </div>
+            {exportPurpose === 'social' && (
+              <section className="space-y-4" aria-label="社交媒体导出设置">
+                {renderedExportResult ? (
+                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center">
+                    <Check className="mx-auto h-6 w-6 text-emerald-400" />
+                    <h3 className="mt-2 text-sm font-bold text-slate-100">社交媒体 JPEG 已生成</h3>
+                    <p className="mt-1 text-[11px] text-slate-400">成功 {renderedExportResult.success} 张，跳过 {renderedExportResult.skipped} 张，失败 {renderedExportResult.failed} 张。</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-dark-700 bg-dark-900/45 p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-500/10 text-pink-400"><ImageDown className="h-4 w-4" /></span>
+                        <div>
+                          <h3 className="text-xs font-semibold text-slate-200">社交平台通用高清</h3>
+                          <p className="mt-0.5 text-[10px] text-slate-500">JPEG · 长边不超过 2048 px · 品质 88 · 保持原始比例</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-dark-600 bg-dark-950/60 px-3 py-2.5 font-mono text-[11px] text-slate-400">
+                          <HardDrive className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{targetDir || '尚未选择保存目录'}</span>
+                        </div>
+                        <button type="button" onClick={browseTargetDir} className="rounded-lg border border-dark-600 bg-dark-750 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-dark-700">
+                          {targetDir ? '更换目录' : '选择目录'}
+                        </button>
+                      </div>
+                    </div>
+                    {errorMessage && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">{errorMessage}</div>}
+                    <div className="flex justify-end border-t border-dark-700 pt-4">
+                      <button type="button" onClick={() => void executeSocialExport()} disabled={isExporting || !canExport || selectedPhotos.length === 0} className="flex items-center gap-2 rounded-lg bg-pink-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-pink-500 disabled:opacity-40">
+                        {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                        {isExporting ? '正在生成 JPEG…' : `导出 ${selectedPhotos.length} 张 JPEG`}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
 
-              {manifestExportSuccess && (
-                <div className="flex items-center space-x-2 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs">
-                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>清单已成功复制到剪贴板或保存为文件！</span>
+            {exportPurpose === 'phone' && (
+              <section className="space-y-4" aria-label="AirDrop 手机导出">
+                <div className="rounded-xl border border-blue-500/25 bg-blue-500/[0.07] p-5 text-center">
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-500/25 bg-blue-500/10 text-blue-400"><Smartphone className="h-6 w-6" /></span>
+                  <h3 className="mt-3 text-sm font-bold text-slate-100">通过 AirDrop 发送到手机</h3>
+                  <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-slate-400">QuickPick 会生成长边不超过 2560 px、品质 90 的 JPEG，然后打开 macOS 原生 AirDrop 窗口。RAW 原片不会发送。</p>
+                  {renderedExportResult && <p className="mt-3 text-[11px] text-emerald-400">已准备 {renderedExportResult.success} 张照片，AirDrop 窗口已打开。</p>}
                 </div>
-              )}
-
-              {errorMessage && (
-                <div className="flex items-center space-x-2 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{errorMessage}。请更换文件名后重试。</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-3 border-t border-dark-750">
-                <button
-                  onClick={handleClose}
-                  className="px-4 py-2 bg-dark-750 hover:bg-dark-700 text-slate-300 font-medium rounded-lg transition-colors cursor-pointer"
-                >
-                  关闭
-                </button>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handleCopyClipboard}
-                    disabled={selectedPhotos.length === 0 || !canExport}
-                    className="flex items-center space-x-1.5 px-4 py-2 bg-dark-700 hover:bg-dark-650 text-slate-200 font-medium rounded-lg border border-dark-600 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copied ? '已复制到剪贴板' : '复制到剪贴板'}</span>
+                {errorMessage && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">{errorMessage}</div>}
+                <div className="flex justify-end border-t border-dark-700 pt-4">
+                  <button type="button" onClick={() => void shareToPhone()} disabled={isExporting || !canExport || selectedPhotos.length === 0} className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
+                    {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    {isExporting ? '正在准备照片…' : `打开 AirDrop · ${selectedPhotos.length} 张`}
                   </button>
-                  <button
-                    onClick={() => void downloadManifest()}
-                    disabled={isExporting || selectedPhotos.length === 0 || !canExport}
-                    className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-md transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>保存为清单文件</span>
-                  </button>
                 </div>
-              </div>
-            </div>
-          )}
-
+              </section>
+            )}
+          </div>
         </div>
       </div>
     </div>

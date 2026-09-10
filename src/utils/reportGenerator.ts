@@ -308,18 +308,18 @@ export function generateRetouchHtmlReport(
     .pin-marker {
       position: absolute;
       transform: translate(-50%, -50%);
-      width: 22px;
-      height: 22px;
+      width: 28px;
+      height: 28px;
       background: var(--pin-bg);
       color: white;
-      border: 2px solid white;
+      border: 3px solid white;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: 13px;
       font-weight: 800;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      box-shadow: 0 0 0 5px rgba(239,68,68,0.28), 0 3px 10px rgba(0,0,0,0.7);
     }
     .info-container { display: flex; flex-direction: column; gap: 10px; }
     .exif-row { font-size: 12px; color: var(--text-muted); }
