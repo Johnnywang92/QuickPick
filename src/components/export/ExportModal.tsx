@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useExportStore, ExportPurpose, ManifestFormat } from '../../store/exportStore';
 import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
+import { revealDirectory } from '../../services/tauriBridge';
 import {
   AlertCircle,
   Check,
@@ -51,7 +52,7 @@ const purposeOptions: Array<{
   { value: 'photographer', label: '给摄影师修图', description: '原片与专业清单', icon: UserRound },
   { value: 'self_edit', label: '给自己修图', description: '复制到本地工作区', icon: MonitorDown },
   { value: 'social', label: '发布社交媒体', description: '轻量高清 JPEG', icon: ImageDown },
-  { value: 'phone', label: '发送到手机', description: 'macOS AirDrop', icon: Smartphone },
+  { value: 'phone', label: '发送到手机', description: 'macOS AirDrop · 朋友圈推荐', icon: Smartphone },
   { value: 'nas', label: '备份到 NAS', description: '安全校验复制', icon: Server },
 ];
 
@@ -588,19 +589,52 @@ export const ExportModal: React.FC = () => {
             {exportPurpose === 'social' && (
               <section className="space-y-4" aria-label="社交媒体导出设置">
                 {renderedExportResult ? (
-                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center">
+                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-5 text-center">
                     <Check className="mx-auto h-6 w-6 text-emerald-400" />
                     <h3 className="mt-2 text-sm font-bold text-slate-100">社交媒体 JPEG 已生成</h3>
-                    <p className="mt-1 text-[11px] text-slate-400">成功 {renderedExportResult.success} 张，跳过 {renderedExportResult.skipped} 张，失败 {renderedExportResult.failed} 张。</p>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      成功 {renderedExportResult.success} 张，跳过 {renderedExportResult.skipped} 张，失败 {renderedExportResult.failed} 张。
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => void revealDirectory(renderedExportResult.target_directory)}
+                        className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/30 cursor-pointer"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5" />
+                        <span>在访达中打开（可直接拖拽至微信）</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExportPurpose('phone');
+                          void shareToPhone();
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/20 px-4 py-2 text-xs font-semibold text-blue-100 hover:bg-blue-500/30 cursor-pointer"
+                      >
+                        <Smartphone className="h-3.5 w-3.5" />
+                        <span>发到手机发朋友圈（AirDrop）</span>
+                      </button>
+                    </div>
+
+                    <p className="mt-3 text-[10px] text-slate-400">
+                      提示：受微信平台限制，朋友圈仅限手机端发布。建议通过 AirDrop 发送到 iPhone 相册后一键发布朋友圈。
+                    </p>
                   </div>
                 ) : (
                   <>
                     <div className="rounded-xl border border-dark-700 bg-dark-900/45 p-4">
                       <div className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-500/10 text-pink-400"><ImageDown className="h-4 w-4" /></span>
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-500/10 text-pink-400">
+                          <ImageDown className="h-4 w-4" />
+                        </span>
                         <div>
                           <h3 className="text-xs font-semibold text-slate-200">社交平台通用高清</h3>
-                          <p className="mt-0.5 text-[10px] text-slate-500">JPEG · 长边不超过 2048 px · 品质 88 · 保持原始比例</p>
+                          <p className="mt-0.5 text-[10px] text-slate-500">
+                            JPEG · 长边不超过 2048 px · 品质 88 · 保持原始比例
+                          </p>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -608,14 +642,49 @@ export const ExportModal: React.FC = () => {
                           <HardDrive className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">{targetDir || '尚未选择保存目录'}</span>
                         </div>
-                        <button type="button" onClick={browseTargetDir} className="rounded-lg border border-dark-600 bg-dark-750 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-dark-700">
+                        <button
+                          type="button"
+                          onClick={browseTargetDir}
+                          className="rounded-lg border border-dark-600 bg-dark-750 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-dark-700 cursor-pointer"
+                        >
                           {targetDir ? '更换目录' : '选择目录'}
                         </button>
                       </div>
+
+                      <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-left text-[11px] leading-relaxed text-slate-300">
+                        <div className="flex items-start gap-2">
+                          <span className="shrink-0 font-semibold text-emerald-400">微信 & 朋友圈指南：</span>
+                          <div className="space-y-1 text-slate-400">
+                            <p>
+                              • <strong className="text-slate-200">发朋友圈</strong>：微信官方未开放 Mac 电脑端发朋友圈。推荐左侧选择{' '}
+                              <button
+                                type="button"
+                                onClick={() => setExportPurpose('phone')}
+                                className="text-blue-400 hover:underline font-semibold cursor-pointer"
+                              >
+                                「发送到手机 (AirDrop)」
+                              </button>
+                              ，直传 iPhone 相册后手机微信一键发圈。
+                            </p>
+                            <p>
+                              • <strong className="text-slate-200">发给微信好友 / 文件传输助手</strong>：生成高清 JPEG 后，点击「在访达中打开」，将照片直接拖入微信聊天窗口即可发送。
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    {errorMessage && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">{errorMessage}</div>}
+                    {errorMessage && (
+                      <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">
+                        {errorMessage}
+                      </div>
+                    )}
                     <div className="flex justify-end border-t border-dark-700 pt-4">
-                      <button type="button" onClick={() => void executeSocialExport()} disabled={isExporting || !canExport || selectedPhotos.length === 0} className="flex items-center gap-2 rounded-lg bg-pink-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-pink-500 disabled:opacity-40">
+                      <button
+                        type="button"
+                        onClick={() => void executeSocialExport()}
+                        disabled={isExporting || !canExport || selectedPhotos.length === 0}
+                        className="flex items-center gap-2 rounded-lg bg-pink-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-pink-500 disabled:opacity-40 cursor-pointer"
+                      >
                         {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                         {isExporting ? '正在生成 JPEG…' : `导出 ${selectedPhotos.length} 张 JPEG`}
                       </button>
@@ -628,14 +697,29 @@ export const ExportModal: React.FC = () => {
             {exportPurpose === 'phone' && (
               <section className="space-y-4" aria-label="AirDrop 手机导出">
                 <div className="rounded-xl border border-blue-500/25 bg-blue-500/[0.07] p-5 text-center">
-                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-500/25 bg-blue-500/10 text-blue-400"><Smartphone className="h-6 w-6" /></span>
-                  <h3 className="mt-3 text-sm font-bold text-slate-100">通过 AirDrop 发送到手机</h3>
-                  <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-slate-400">QuickPick 会生成长边不超过 2560 px、品质 90 的 JPEG，然后打开 macOS 原生 AirDrop 窗口。RAW 原片不会发送。</p>
-                  {renderedExportResult && <p className="mt-3 text-[11px] text-emerald-400">已准备 {renderedExportResult.success} 张照片，AirDrop 窗口已打开。</p>}
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-500/25 bg-blue-500/10 text-blue-400">
+                    <Smartphone className="h-6 w-6" />
+                  </span>
+                  <h3 className="mt-3 text-sm font-bold text-slate-100">通过 AirDrop 发送到手机（发朋友圈推荐）</h3>
+                  <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-slate-400">
+                    QuickPick 会生成长边不超过 2560 px、品质 90 的社交高定 JPEG，然后唤起 macOS 原生 AirDrop 隔空投送。iPhone 接收后自动存入手机相册，即可直接在手机微信中发朋友圈。RAW 原片不会发送。
+                  </p>
+                  {renderedExportResult && (
+                    <p className="mt-3 text-[11px] text-emerald-400">已准备 {renderedExportResult.success} 张照片，AirDrop 窗口已打开。</p>
+                  )}
                 </div>
-                {errorMessage && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">{errorMessage}</div>}
+                {errorMessage && (
+                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">
+                    {errorMessage}
+                  </div>
+                )}
                 <div className="flex justify-end border-t border-dark-700 pt-4">
-                  <button type="button" onClick={() => void shareToPhone()} disabled={isExporting || !canExport || selectedPhotos.length === 0} className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
+                  <button
+                    type="button"
+                    onClick={() => void shareToPhone()}
+                    disabled={isExporting || !canExport || selectedPhotos.length === 0}
+                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40 cursor-pointer"
+                  >
                     {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     {isExporting ? '正在准备照片…' : `打开 AirDrop · ${selectedPhotos.length} 张`}
                   </button>
