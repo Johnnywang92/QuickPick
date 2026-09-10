@@ -233,28 +233,28 @@ export const FamilyRadarModal: React.FC<FamilyRadarModalProps> = ({ isOpen, onCl
         <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
           {/* 温馨预警横幅 */}
           {!hasReliableRoleData ? (
-            <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-blue-200 space-y-1">
-              <div className="flex items-center space-x-1.5 font-semibold text-blue-300">
-                <AlertTriangle className="w-4 h-4 text-blue-400" />
+            <div className="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/25 text-blue-900 dark:text-blue-200 space-y-1">
+              <div className="flex items-center space-x-1.5 font-semibold text-blue-800 dark:text-blue-300">
+                <AlertTriangle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>暂无可靠的人物身份数据</span>
               </div>
-              <p className="text-[11px] text-blue-200/80 leading-relaxed">
+              <p className="text-[11px] text-blue-950/80 dark:text-blue-200/80 leading-relaxed">
                 人脸数量不能证明人物身份，因此不会自动把单人照猜成新娘、爸爸或主讲嘉宾。请先为核心人物设置明确标签后再参考本统计。
               </p>
             </div>
           ) : warningRoles.length > 0 ? (
-            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1">
-              <div className="flex items-center space-x-1.5 font-semibold text-amber-300">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
+            <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-950 dark:text-amber-200 space-y-1">
+              <div className="flex items-center space-x-1.5 font-semibold text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>防漏提示：发现核心角色入选偏少</span>
               </div>
-              <p className="text-[11px] text-amber-200/80 leading-relaxed">
+              <p className="text-[11px] text-amber-950/85 dark:text-amber-200/80 leading-relaxed">
                 {warningMessage}
               </p>
             </div>
           ) : (
-            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <div className="p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25 text-emerald-950 dark:text-emerald-300 flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span>当前有可靠标签的角色中，暂未发现低于预警阈值的情况。</span>
             </div>
           )}

@@ -89,9 +89,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({
           {activeTab === 'overview' && (
             <div className="space-y-4">
               {/* 原片安全只读红线卡片 */}
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
-                <div className="flex items-center space-x-2 text-emerald-300 font-semibold">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <div className="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 space-y-2">
+                <div className="flex items-center space-x-2 text-emerald-800 dark:text-emerald-300 font-semibold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <span>原片绝对只读安全保障</span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
@@ -109,10 +109,10 @@ export const AboutModal: React.FC<AboutModalProps> = ({
               <div className="p-4 rounded-xl bg-dark-800/90 border border-dark-700 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2 text-slate-200 font-semibold">
-                    <Cpu className="w-4 h-4 text-emerald-400" />
+                    <Cpu className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     <span>RAW 解码引擎规格</span>
                   </div>
-                  <span className="text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">
+                  <span className="text-[11px] font-mono bg-emerald-100/90 text-emerald-800 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30 px-2 py-0.5 rounded font-semibold">
                     LibRaw {librawVersion} (动态共享库)
                   </span>
                 </div>
@@ -132,7 +132,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                 </p>
                 <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-1 pl-1">
                   <li>以独立的动态链接库形式加载 LibRaw，不与闭源业务逻辑发生静态混合编译；</li>
-                  <li>支持用户根据自身需求定制、重新编译或升级替换底层 <code className="text-amber-300 font-mono">libraw.dylib</code> / <code className="text-amber-300 font-mono">libraw.dll</code>；</li>
+                  <li>支持用户根据自身需求定制、重新编译或升级替换底层 <code className="text-amber-700 dark:text-amber-300 font-mono">libraw.dylib</code> / <code className="text-amber-700 dark:text-amber-300 font-mono">libraw.dll</code>；</li>
                   <li>随安装包附带了完整的 LGPL 2.1 协议全文及详细的动态库替换操作指引文件。</li>
                 </ul>
               </div>
@@ -146,7 +146,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 
           {activeTab === 'replacement' && (
             <div className="space-y-3 text-[11px]">
-              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200">
+              <div className="p-3 rounded-lg bg-amber-50/70 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-950 dark:text-amber-200">
                 <strong>自由替换权利保障：</strong> 您可以在不重新构建或修改 QuickPick 任何闭源代码的前提下，将本应用内置的 LibRaw 动态库替换为您自行编译或官方更新的动态库版本。
               </div>
 
@@ -165,7 +165,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
               <h4 className="text-xs font-semibold text-slate-100 pt-1">🪟 Windows 替换步骤</h4>
               <ol className="list-decimal list-inside space-y-1.5 text-slate-300 bg-dark-800/60 p-3 rounded-lg border border-dark-700 font-mono">
                 <li>完全退出 QuickPick；</li>
-                <li>在安装目录（如 Program Files\QuickPick\）中找到 <code className="text-amber-300">libraw.dll</code>；</li>
+                <li>在安装目录（如 Program Files\QuickPick\）中找到 <code className="text-amber-700 dark:text-amber-300 font-semibold">libraw.dll</code>；</li>
                 <li>将新编译的 64 位动态库重命名替换即可生效。</li>
               </ol>
             </div>

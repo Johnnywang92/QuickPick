@@ -320,15 +320,15 @@ export default function App() {
         <div className="flex items-center space-x-1.5 md:space-x-2 shrink-0 whitespace-nowrap">
           {startupWarning && (
             <div
-              className="flex max-w-[260px] lg:max-w-[360px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-xs text-amber-200 shrink-0 whitespace-nowrap"
+              className="flex max-w-[260px] lg:max-w-[360px] items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-500/15 px-2 py-1 text-xs text-amber-900 dark:text-amber-200 shrink-0 whitespace-nowrap"
               role="alert"
               title={startupWarning}
             >
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
               <span className="truncate">{startupWarning}</span>
               <button
                 onClick={() => setStartupWarning(null)}
-                className="rounded p-0.5 hover:bg-amber-500/20 shrink-0"
+                className="rounded p-0.5 hover:bg-amber-500/20 shrink-0 cursor-pointer"
                 title="关闭启动安全提示"
               >
                 <X className="h-3 w-3" />
@@ -337,34 +337,34 @@ export default function App() {
           )}
 
           {persistenceStatus === 'saving' && (
-            <div className="flex items-center gap-1.5 text-xs text-blue-300 shrink-0 whitespace-nowrap" role="status">
-              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+            <div className="flex items-center gap-1.5 text-xs text-blue-700 dark:text-blue-300 shrink-0 whitespace-nowrap" role="status">
+              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-blue-600 dark:text-blue-400" />
               <span className="hidden sm:inline">正在保存选择</span>
             </div>
           )}
 
           {isAnalyzing && analysisTotal > 0 && (
             <div
-              className="flex items-center gap-1.5 rounded-lg border border-indigo-500/25 bg-indigo-500/10 px-2 py-1 text-xs text-indigo-200 shrink-0 whitespace-nowrap"
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-400/50 bg-indigo-500/10 px-2 py-1 text-xs text-indigo-900 dark:text-indigo-200 shrink-0 whitespace-nowrap"
               role="status"
               title={`后台分析 ${analysisCompleted}/${analysisTotal}${analysisFailed ? `，失败 ${analysisFailed}` : ''}`}
             >
-              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-indigo-600 dark:text-indigo-400" />
               <span>检查 {analysisCompleted}/{analysisTotal}</span>
             </div>
           )}
 
           {persistenceStatus === 'error' && (
             <div
-              className="flex max-w-[260px] lg:max-w-[320px] items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-xs text-rose-200 shrink-0 whitespace-nowrap"
+              className="flex max-w-[260px] lg:max-w-[320px] items-center gap-1.5 rounded-lg border border-rose-400/50 bg-rose-500/15 px-2 py-1 text-xs text-rose-900 dark:text-rose-200 shrink-0 whitespace-nowrap"
               role="alert"
               title={persistenceError || undefined}
             >
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400" />
               <span className="truncate">{persistenceError || '选片结果保存失败'}</span>
               <button
                 onClick={clearPersistenceError}
-                className="rounded p-0.5 hover:bg-rose-500/20 shrink-0"
+                className="rounded p-0.5 hover:bg-rose-500/20 shrink-0 cursor-pointer"
                 title="关闭错误提示"
               >
                 <X className="h-3 w-3" />
@@ -374,16 +374,16 @@ export default function App() {
 
           {persistenceStatus !== 'error' && persistenceWarning && (
             <div
-              className="flex max-w-[260px] lg:max-w-[320px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-xs text-amber-200 shrink-0 whitespace-nowrap"
+              className="flex max-w-[260px] lg:max-w-[320px] items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-500/15 px-2 py-1 text-xs text-amber-900 dark:text-amber-200 shrink-0 whitespace-nowrap"
               role="status"
               title={persistenceWarning}
             >
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
               <span className="truncate">{persistenceWarning}</span>
               <button
                 onClick={clearPersistenceWarning}
-                className="rounded p-0.5 hover:bg-amber-500/20 shrink-0"
-                title="关闭备份提示"
+                className="rounded p-0.5 hover:bg-amber-500/20 shrink-0 cursor-pointer"
+                title="关闭提示"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -522,23 +522,23 @@ export default function App() {
               <FolderOpen className="w-4 h-4" />
               <span>选择照片文件夹开始选片</span>
             </button>
-            <div className="mt-4 w-full rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-left text-[11px] leading-relaxed text-slate-400">
-              <span className="font-semibold text-emerald-300">原片目录保持只读。</span>{' '}
+            <div className="mt-4 w-full rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5 text-left text-[11px] leading-relaxed text-slate-300">
+              <span className="font-semibold text-emerald-800 dark:text-emerald-300">原片目录保持只读。</span>{' '}
               选择记录、查看进度和预览缓存保存在系统的 QuickPick 应用数据目录，不会在照片文件夹中创建项目文件、缓存或锁。
             </div>
             {scanError && failedFolderPath && (
               <div
-                className="mt-4 w-full rounded-xl border border-rose-500/35 bg-rose-500/10 p-3 text-left"
+                className="mt-4 w-full rounded-xl border border-rose-400/50 bg-rose-500/15 p-3 text-left"
                 role="alert"
               >
-                <div className="flex items-start gap-2 text-xs text-rose-200">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div className="flex items-start gap-2 text-xs text-rose-950 dark:text-rose-200">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400" />
                   <span className="min-w-0 break-words">{scanError}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => void retryOpenFolder()}
-                  className="mt-2 rounded-lg bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25"
+                  className="mt-2 rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-900 dark:text-rose-100 hover:bg-rose-500/30 cursor-pointer"
                 >
                   重试打开
                 </button>

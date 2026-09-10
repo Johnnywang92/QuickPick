@@ -14,6 +14,8 @@ import {
   Camera,
   Maximize2,
   Scan,
+  Leaf,
+  Flower2,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -22,7 +24,7 @@ interface AlbumPreviewModalProps {
   onClose: () => void;
 }
 
-type AlbumTheme = 'ivory' | 'obsidian' | 'linen';
+type AlbumTheme = 'ivory' | 'forest' | 'linen';
 type PhotoFitMode = 'contain' | 'cover';
 
 const SpreadPhotoItem: React.FC<{
@@ -44,7 +46,7 @@ const SpreadPhotoItem: React.FC<{
     };
   }, [photo, getPreview]);
 
-  const isDarkTheme = theme === 'obsidian';
+  const isForestTheme = theme === 'forest';
 
   return (
     <div
@@ -63,8 +65,8 @@ const SpreadPhotoItem: React.FC<{
             fitMode === 'contain'
               ? clsx(
                   'max-w-full max-h-full p-1.5 md:p-2 rounded-xs shadow-[0_6px_20px_rgba(0,0,0,0.18)]',
-                  isDarkTheme
-                    ? 'bg-[#222226] ring-1 ring-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.5)]'
+                  isForestTheme
+                    ? 'bg-[#f6f7ef] ring-1 ring-[#315c43]/15 shadow-[0_8px_24px_rgba(29,68,46,0.22)]'
                     : 'bg-white ring-1 ring-black/5 shadow-[0_6px_20px_rgba(0,0,0,0.12)]',
                 )
               : 'w-full h-full shadow-md rounded-xs overflow-hidden',
@@ -85,8 +87,8 @@ const SpreadPhotoItem: React.FC<{
         <div
           className={clsx(
             'w-full h-full flex flex-col items-center justify-center p-4 rounded-xs border border-dashed animate-pulse',
-            isDarkTheme
-              ? 'bg-dark-900/60 border-dark-700 text-slate-500'
+            isForestTheme
+              ? 'bg-[#cbd9c5]/70 border-[#9eb79d] text-[#58715d]'
               : 'bg-stone-200/40 border-stone-300 text-stone-500',
           )}
         >
@@ -154,17 +156,17 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
       goldAccent: 'text-amber-700',
       pageStack: 'border-b-[#ded8ce] border-r-[#ded8ce]',
     },
-    obsidian: {
-      bookBg: 'bg-[#151518]',
-      leftGradient: 'from-white/[0.02] via-transparent to-black/40',
-      rightGradient: 'from-black/40 via-transparent to-white/[0.02]',
-      gutter: 'from-black/60 via-black/90 to-black/60',
-      spineLine: 'bg-black/80',
-      textPrimary: 'text-stone-100',
-      textSecondary: 'text-stone-400',
-      border: 'border-dark-750',
-      goldAccent: 'text-amber-400',
-      pageStack: 'border-b-dark-800 border-r-dark-800',
+    forest: {
+      bookBg: 'bg-[#dce6d4]',
+      leftGradient: 'from-[#f3f4e8]/45 via-transparent to-[#244c36]/15',
+      rightGradient: 'from-[#244c36]/15 via-transparent to-[#f3f4e8]/45',
+      gutter: 'from-[#446c50]/20 via-[#173d2b]/55 to-[#446c50]/20',
+      spineLine: 'bg-[#173d2b]/50',
+      textPrimary: 'text-[#183c2c]',
+      textSecondary: 'text-[#52705f]',
+      border: 'border-[#afc4ad]',
+      goldAccent: 'text-[#7b6a2d]',
+      pageStack: 'border-b-[#a5b99f] border-r-[#a5b99f]',
     },
     linen: {
       bookBg: 'bg-[#f4efe4]',
@@ -225,17 +227,17 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
                 象牙雅白
               </button>
               <button
-                onClick={() => setTheme('obsidian')}
+                onClick={() => setTheme('forest')}
                 className={clsx(
                   'px-2.5 py-1 rounded-md transition-all font-medium flex items-center gap-1 cursor-pointer',
-                  theme === 'obsidian'
-                    ? 'bg-amber-500/20 text-amber-300 shadow-xs border border-amber-500/30'
+                  theme === 'forest'
+                    ? 'bg-emerald-500/20 text-emerald-300 shadow-xs border border-emerald-500/35'
                     : 'text-slate-400 hover:text-slate-200',
                 )}
-                title="黑曜典藏：沉稳黑卡高反差艺术画册"
+                title="森林花园：苔藓绿纸张与轻柔花草叶影"
               >
-                <span className="w-2 h-2 rounded-full bg-[#151518] inline-block border border-amber-500/40" />
-                黑曜典藏
+                <span className="w-2 h-2 rounded-full bg-[#6f9474] inline-block border border-emerald-200/60" />
+                森林花园
               </button>
               <button
                 onClick={() => setTheme('linen')}
@@ -315,6 +317,15 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
                 'border-b-[5px] border-r-[5px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,255,255,0.08)] ring-1 ring-black/20',
               )}
             >
+              {theme === 'forest' && (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none text-[#315c43] z-0" aria-hidden="true">
+                  <Leaf className="absolute -left-3 -top-4 w-24 h-24 rotate-[22deg] opacity-[0.10]" strokeWidth={1} />
+                  <Leaf className="absolute left-[44%] -bottom-8 w-28 h-28 -rotate-[38deg] opacity-[0.07]" strokeWidth={1} />
+                  <Flower2 className="absolute -right-4 -bottom-5 w-28 h-28 -rotate-12 opacity-[0.09]" strokeWidth={0.8} />
+                  <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_14%_18%,rgba(91,126,88,0.16)_0,transparent_24%),radial-gradient(circle_at_88%_82%,rgba(60,104,73,0.13)_0,transparent_28%)]" />
+                </div>
+              )}
+
               {/* 中缝装订立体真实凹陷折痕与高光 */}
               <div
                 className={clsx(
@@ -476,8 +487,8 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
                                 <div
                                   className={clsx(
                                     'px-4 py-2.5 rounded-lg text-left text-[10px] font-mono space-y-1 border',
-                                    theme === 'obsidian'
-                                      ? 'bg-dark-900/60 border-dark-750 text-slate-400'
+                                    theme === 'forest'
+                                      ? 'bg-[#eef2e6]/75 border-[#a9bea7] text-[#506b58] shadow-2xs'
                                       : 'bg-white/60 border-stone-300/80 text-stone-600 shadow-2xs',
                                   )}
                                 >

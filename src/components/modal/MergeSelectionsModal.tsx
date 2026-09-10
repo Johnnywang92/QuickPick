@@ -182,7 +182,7 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
             className={clsx(
               'flex-1 py-2.5 text-xs font-semibold flex items-center justify-center space-x-2 border-b-2 transition-all cursor-pointer',
               activeTab === 'import'
-                ? 'border-emerald-500 text-emerald-300 bg-emerald-500/10'
+                ? 'border-emerald-500 text-emerald-800 dark:text-emerald-300 bg-emerald-500/10'
                 : 'border-transparent text-slate-400 hover:text-slate-200',
             )}
           >
@@ -194,7 +194,7 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
             className={clsx(
               'flex-1 py-2.5 text-xs font-semibold flex items-center justify-center space-x-2 border-b-2 transition-all cursor-pointer',
               activeTab === 'export'
-                ? 'border-blue-500 text-blue-300 bg-blue-500/10'
+                ? 'border-blue-500 text-blue-800 dark:text-blue-300 bg-blue-500/10'
                 : 'border-transparent text-slate-400 hover:text-slate-200',
             )}
           >
@@ -206,15 +206,15 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
         {/* 内容区域 */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
           {successMessage && (
-            <div className="flex items-center space-x-2 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <div className="flex items-center space-x-2 p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-emerald-950 dark:text-emerald-300">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <span>{successMessage}</span>
             </div>
           )}
 
           {importError && (
-            <div className="flex items-center space-x-2 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
+            <div className="flex items-center space-x-2 p-3 rounded-xl bg-rose-50/80 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-950 dark:text-rose-300">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
               <span>{importError}</span>
             </div>
           )}
@@ -223,7 +223,7 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
             <div className="space-y-4">
               {!importedPackage ? (
                 <div className="p-8 border-2 border-dashed border-dark-700 hover:border-emerald-500/60 rounded-2xl bg-dark-850/50 flex flex-col items-center justify-center text-center transition-all">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-3">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3">
                     <FileCheck className="w-6 h-6" />
                   </div>
                   <h3 className="text-sm font-semibold text-slate-200 mb-1">选择对方导出的选片工程</h3>
@@ -244,37 +244,37 @@ export const MergeSelectionsModal: React.FC<MergeSelectionsModalProps> = ({ isOp
                 <div className="space-y-4">
                   {/* 对比分析大盘卡片 */}
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                      <div className="flex items-center space-x-1.5 text-emerald-400 font-semibold mb-1">
-                        <Heart className="w-3.5 h-3.5 fill-emerald-400" />
+                    <div className="p-3 bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl">
+                      <div className="flex items-center space-x-1.5 text-emerald-700 dark:text-emerald-400 font-semibold mb-1">
+                        <Heart className="w-3.5 h-3.5 fill-emerald-600 dark:fill-emerald-400 text-emerald-600 dark:text-emerald-400" />
                         <span>心有灵犀共识</span>
                       </div>
-                      <div className="text-xl font-mono font-bold text-emerald-300">
+                      <div className="text-xl font-mono font-bold text-emerald-900 dark:text-emerald-300">
                         {analysis?.consensusSelectedCount} 张
                       </div>
-                      <span className="text-[10px] text-slate-400">双方均标为已选</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">双方均标为已选</span>
                     </div>
 
-                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
-                      <div className="flex items-center space-x-1.5 text-amber-400 font-semibold mb-1">
-                        <HelpCircle className="w-3.5 h-3.5" />
+                    <div className="p-3 bg-amber-50/70 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl">
+                      <div className="flex items-center space-x-1.5 text-amber-700 dark:text-amber-400 font-semibold mb-1">
+                        <HelpCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <span>存在意见分歧</span>
                       </div>
-                      <div className="text-xl font-mono font-bold text-amber-300">
+                      <div className="text-xl font-mono font-bold text-amber-900 dark:text-amber-300">
                         {analysis?.conflicts.length} 张
                       </div>
-                      <span className="text-[10px] text-slate-400">一人想选一人犹豫/不选</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">一人想选一人犹豫/不选</span>
                     </div>
 
-                    <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl">
-                      <div className="flex items-center space-x-1.5 text-blue-400 font-semibold mb-1">
-                        <Users className="w-3.5 h-3.5" />
+                    <div className="p-3 bg-blue-50/70 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl">
+                      <div className="flex items-center space-x-1.5 text-blue-700 dark:text-blue-400 font-semibold mb-1">
+                        <Users className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                         <span>对方额外选中</span>
                       </div>
-                      <div className="text-xl font-mono font-bold text-blue-300">
+                      <div className="text-xl font-mono font-bold text-blue-900 dark:text-blue-300">
                         {analysis?.importOnlySelectedCount} 张
                       </div>
-                      <span className="text-[10px] text-slate-400">对方选了我尚未细看</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">对方选了我尚未细看</span>
                     </div>
                   </div>
 

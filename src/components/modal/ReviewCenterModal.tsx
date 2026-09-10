@@ -80,7 +80,12 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
       count: stats.unreviewedCount,
       detail: `${stats.unreviewedCount} 张`,
       icon: EyeOff,
-      color: 'text-blue-300 bg-blue-500/10 border-blue-500/25',
+      cardClasses:
+        'border-blue-200/90 bg-blue-50/60 hover:bg-blue-100/70 hover:border-blue-300 dark:border-blue-500/25 dark:bg-blue-500/10 dark:hover:bg-blue-500/20 dark:hover:border-blue-500/40',
+      titleColor: 'text-blue-900 dark:text-blue-100',
+      iconColor: 'text-blue-600 dark:text-blue-400',
+      badgeClasses:
+        'bg-blue-100/90 text-blue-800 border border-blue-200/80 dark:bg-blue-500/20 dark:text-blue-200 dark:border-blue-500/30',
     },
     {
       filter: 'maybe' as const,
@@ -89,7 +94,12 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
       count: stats.maybeCount,
       detail: `${stats.maybeCount} 张`,
       icon: HelpCircle,
-      color: 'text-amber-300 bg-amber-500/10 border-amber-500/25',
+      cardClasses:
+        'border-amber-200/90 bg-amber-50/60 hover:bg-amber-100/70 hover:border-amber-300 dark:border-amber-500/25 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:hover:border-amber-500/40',
+      titleColor: 'text-amber-900 dark:text-amber-100',
+      iconColor: 'text-amber-600 dark:text-amber-400',
+      badgeClasses:
+        'bg-amber-100/90 text-amber-800 border border-amber-200/80 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/30',
     },
     {
       filter: 'burst' as const,
@@ -98,7 +108,12 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
       count: reviewCounts.burstPhotos,
       detail: `${reviewCounts.burstGroups} 组 · ${reviewCounts.burstPhotos} 张`,
       icon: Layers,
-      color: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/25',
+      cardClasses:
+        'border-indigo-200/90 bg-indigo-50/60 hover:bg-indigo-100/70 hover:border-indigo-300 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:hover:border-indigo-500/40',
+      titleColor: 'text-indigo-900 dark:text-indigo-100',
+      iconColor: 'text-indigo-600 dark:text-indigo-400',
+      badgeClasses:
+        'bg-indigo-100/90 text-indigo-800 border border-indigo-200/80 dark:bg-indigo-500/20 dark:text-indigo-200 dark:border-indigo-500/30',
     },
     {
       filter: 'needs_check' as const,
@@ -107,7 +122,12 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
       count: reviewCounts.needsCheck,
       detail: `${reviewCounts.needsCheck} 张`,
       icon: AlertCircle,
-      color: 'text-rose-300 bg-rose-500/10 border-rose-500/25',
+      cardClasses:
+        'border-rose-200/90 bg-rose-50/60 hover:bg-rose-100/70 hover:border-rose-300 dark:border-rose-500/25 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 dark:hover:border-rose-500/40',
+      titleColor: 'text-rose-900 dark:text-rose-100',
+      iconColor: 'text-rose-600 dark:text-rose-400',
+      badgeClasses:
+        'bg-rose-100/90 text-rose-800 border border-rose-200/80 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-500/30',
     },
   ];
 
@@ -126,7 +146,9 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
       <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl">
         <div className="flex items-center justify-between border-b border-dark-700/80 bg-dark-900/60 px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <ListChecks className="h-5 w-5 text-brand-400" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
+              <ListChecks className="h-5 w-5" />
+            </div>
             <div>
               <h2 id="review-center-title" className="text-sm font-bold text-slate-100">
                 复核中心
@@ -137,7 +159,7 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-dark-700 hover:text-slate-100"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-dark-750 hover:text-slate-100 transition-colors cursor-pointer"
             aria-label="关闭复核中心"
           >
             <X className="h-4 w-4" />
@@ -146,43 +168,72 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
 
         <div className="p-5">
           <div
-            className={`mb-4 flex items-start gap-2 rounded-xl border px-3.5 py-3 text-xs ${
+            className={`mb-4 flex items-start gap-3 rounded-xl border px-3.5 py-3 text-xs font-medium transition-colors ${
               readyToExport
-                ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
-                : 'border-amber-500/25 bg-amber-500/10 text-amber-200'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200'
+                : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200'
             }`}
           >
             {readyToExport ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
             )}
-            <span>
-              {readyToExport
-                ? '所有照片都已查看，待考虑队列也已清空。'
-                : `还有 ${stats.unreviewedCount} 张未查看、${stats.maybeCount} 张待考虑；导出时需要明确确认后才能继续。`}
-            </span>
+            <div className="flex-1 leading-relaxed">
+              {readyToExport ? (
+                <span>所有照片都已查看，待考虑队列也已清空。</span>
+              ) : (
+                <span>
+                  还有 <strong className="font-bold underline decoration-amber-400/60 decoration-2">{stats.unreviewedCount}</strong> 张未查看、
+                  <strong className="font-bold underline decoration-amber-400/60 decoration-2">{stats.maybeCount}</strong> 张待考虑；导出时需要明确确认后才能继续。
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             {queues.map((queue) => {
               const Icon = queue.icon;
+              const isEmpty = queue.count === 0;
+
               return (
                 <button
                   key={queue.filter}
                   type="button"
-                  disabled={queue.count === 0}
+                  disabled={isEmpty}
                   onClick={() => openReviewQueue(queue.filter)}
-                  className={`rounded-xl border p-4 text-left transition-colors hover:brightness-125 disabled:cursor-not-allowed disabled:opacity-40 ${queue.color}`}
+                  className={`group relative rounded-xl border p-4 text-left transition-all duration-150 ${
+                    isEmpty
+                      ? 'cursor-not-allowed opacity-60 grayscale-[30%] border-dark-700/50 bg-dark-800/30 dark:border-dark-700/60 dark:bg-dark-900/30'
+                      : `cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 ${queue.cardClasses}`
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="flex items-center gap-2 text-xs font-semibold">
-                      <Icon className="h-4 w-4" />
+                    <span
+                      className={`flex items-center gap-2 text-xs font-bold ${
+                        isEmpty ? 'text-slate-400' : queue.titleColor
+                      }`}
+                    >
+                      <Icon
+                        className={`h-4 w-4 shrink-0 ${
+                          isEmpty ? 'text-slate-400' : queue.iconColor
+                        }`}
+                      />
                       {queue.title}
                     </span>
-                    <span className="font-mono text-[11px] font-semibold">{queue.detail}</span>
+                    <span
+                      className={`rounded-md px-2 py-0.5 font-mono text-[11px] font-semibold ${
+                        isEmpty
+                          ? 'bg-slate-200/70 text-slate-500 border border-slate-300/50 dark:bg-dark-800 dark:text-slate-400 dark:border-dark-700'
+                          : queue.badgeClasses
+                      }`}
+                    >
+                      {queue.detail}
+                    </span>
                   </div>
-                  <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{queue.description}</p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-slate-300">
+                    {queue.description}
+                  </p>
                 </button>
               );
             })}
