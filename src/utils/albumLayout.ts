@@ -1,6 +1,6 @@
 import { LocalPhoto, SceneChapter } from '../types/photo';
 
-export type SpreadLayoutType = 'hero' | 'duo' | 'story_left' | 'story_right' | 'grid4';
+export type SpreadLayoutType = 'hero' | 'panoramic' | 'duo' | 'story_left' | 'story_right' | 'grid4';
 
 export interface AlbumSpread {
   spreadIndex: number;
@@ -56,15 +56,16 @@ export function generateAlbumSpreads(
     let countToTake = 2;
 
     if (remaining === 1) {
-      layout = 'hero';
+      // 若只有单张照片，默认采用震撼的跨页全景通栏大片；若多页中的单张余量，可为跨页全景
+      layout = total === 1 ? 'panoramic' : 'hero';
       countToTake = 1;
     } else if (remaining >= 4 && spreadIndex % 3 === 0) {
-      // 每隔几页来一个多图情绪版
+      // 每隔几页来一个四图情绪画板
       layout = 'grid4';
       countToTake = 4;
-    } else if (remaining >= 3 && spreadIndex % 2 === 1) {
-      // 1大2小故事对开版
-      layout = 'story_left';
+    } else if (remaining >= 3) {
+      // 三图故事对开：左右交替律动
+      layout = spreadIndex % 2 === 1 ? 'story_left' : 'story_right';
       countToTake = 3;
     } else {
       // 经典双图对开

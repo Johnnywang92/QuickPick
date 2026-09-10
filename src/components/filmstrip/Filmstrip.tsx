@@ -230,7 +230,7 @@ export const Filmstrip: React.FC = () => {
                         [{filteredIndexMap.get(photo.path)}]
                       </span>
                     )}
-                    <span className="text-[9px] font-mono text-slate-400">
+                    <span className="text-[9px] font-mono text-slate-200 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] font-medium">
                       #{idx + 1}
                     </span>
                     {chapterStart && (
@@ -298,12 +298,12 @@ export const Filmstrip: React.FC = () => {
 
                   {/* 用户选择状态徽标 */}
                   {selections[photo.id]?.state === 'selected' && (
-                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-dark-900 font-bold shadow-sm">
+                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-white font-bold shadow-sm">
                       <Check className="w-2.5 h-2.5 stroke-[3.5]" />
                     </span>
                   )}
                   {selections[photo.id]?.state === 'maybe' && (
-                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-dark-900 font-bold text-[9px] shadow-sm">
+                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-amber-950 font-extrabold text-[9px] shadow-sm">
                       ?
                     </span>
                   )}

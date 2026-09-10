@@ -37,6 +37,8 @@ import {
   X,
   History,
   Settings,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useThemeStore } from './store/themeStore';
 
@@ -139,7 +141,7 @@ export default function App() {
   const { currentPreviewUrl, previewStatus, previewError, retryCurrentPreview } = usePreviewStore();
   const { isCompareMode, isPkMode } = useCompareStore();
   const { isExportModalOpen, setExportModalOpen } = useExportStore();
-  const { isSettingsOpen, setSettingsOpen } = useThemeStore();
+  const { isSettingsOpen, setSettingsOpen, effectiveTheme, setThemeMode } = useThemeStore();
   const { isFaceLoupeOpen, isAnalyzing, analysisTotal, analysisCompleted, analysisFailed } =
     useInsightStore();
 
@@ -415,8 +417,22 @@ export default function App() {
                 : "flex items-center space-x-1.5 px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow-brand-500/20 transition-all cursor-pointer"
             }
           >
-            <FolderOpen className="w-3.5 h-3.5 text-slate-400 dark:text-slate-400" />
+            <FolderOpen className="w-3.5 h-3.5 shrink-0" />
             <span>打开照片目录</span>
+          </button>
+
+          {/* 一键深浅色模式切换 */}
+          <button
+            onClick={() => setThemeMode(effectiveTheme === 'dark' ? 'light' : 'dark')}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer"
+            title={effectiveTheme === 'dark' ? '切换为明亮浅色模式' : '切换为暗调专业模式'}
+            aria-label="切换深浅外观主题"
+          >
+            {effectiveTheme === 'dark' ? (
+              <Sun className="h-4 w-4 text-amber-400 hover:text-amber-300 transition-transform hover:scale-110" />
+            ) : (
+              <Moon className="h-4 w-4 text-indigo-500 hover:text-indigo-600 transition-transform hover:scale-110" />
+            )}
           </button>
 
           <button
@@ -477,11 +493,11 @@ export default function App() {
       {/* 主工作区 */}
       <main className="flex-1 relative flex items-center justify-center bg-dark-900 overflow-hidden">
         {photos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-8 text-center max-w-lg border border-dashed border-dark-700/90 rounded-2xl bg-dark-800/30">
-            <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/15 mb-5">
+          <div className="flex flex-col items-center justify-center p-8 md:p-10 text-center max-w-lg border border-dashed border-dark-700/90 rounded-2xl bg-dark-850/60 shadow-2xl backdrop-blur-sm">
+            <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/15 dark:ring-white/15 ring-black/5 mb-5">
               <img src="/icon.png" alt="QuickPick App Icon" className="w-full h-full object-cover" />
             </div>
-            <h2 className="text-xl font-bold text-slate-100 mb-2">
+            <h2 className="text-xl font-bold text-slate-100 mb-2 tracking-wide">
               本地安心选片，快速挑出满意照片
             </h2>
             <p className="text-xs text-slate-400 mb-6 leading-relaxed max-w-md">
@@ -490,7 +506,7 @@ export default function App() {
             </p>
             <button
               onClick={handleSelectFolder}
-              className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-blue-500/20 transition-all flex items-center space-x-2 cursor-pointer"
+              className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-500/25 transition-all flex items-center space-x-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
             >
               <FolderOpen className="w-4 h-4" />
               <span>选择照片文件夹开始选片</span>

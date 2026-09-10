@@ -225,7 +225,7 @@ export const BurstKnockoutView: React.FC = () => {
         <div className="flex items-center space-x-3">
           <button
             onClick={pkVoteLeft}
-            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-dark-950 font-bold text-xs shadow-md transition-all cursor-pointer"
+            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold text-xs shadow-md transition-all cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>左图更好 (←)</span>

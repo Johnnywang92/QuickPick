@@ -80,4 +80,19 @@ describe('useKeyboardShortcuts', () => {
     expect(setAnnotation).toHaveBeenCalled();
     expect(setSelectionState).toHaveBeenCalledWith('current', 'selected');
   });
+
+  it('navigates with ArrowDown and ArrowUp keys', () => {
+    const nextPhoto = vi.fn();
+    const prevPhoto = vi.fn();
+    useAlbumStore.setState({ nextPhoto, prevPhoto });
+
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(nextPhoto).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    expect(prevPhoto).toHaveBeenCalledTimes(1);
+  });
 });
+

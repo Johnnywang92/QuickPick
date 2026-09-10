@@ -56,4 +56,41 @@ describe('albumLayout', () => {
 
     expect(plan.spreads[0].sceneName).toBe('后段');
   });
+
+  it('generates panoramic spread for a single selected photo without dropping it', () => {
+    const photo: LocalPhoto = {
+      id: 'single_1',
+      filename: 'HERO.jpg',
+      path: '/photos/HERO.jpg',
+      fileSize: 2048,
+      format: 'jpeg',
+      isRaw: false,
+    };
+
+    const plan = generateAlbumSpreads([photo]);
+    expect(plan.totalPhotos).toBe(1);
+    expect(plan.totalSpreads).toBe(1);
+    expect(plan.spreads[0].layoutType).toBe('panoramic');
+    expect(plan.spreads[0].photos).toHaveLength(1);
+    expect(plan.spreads[0].photos[0].id).toBe('single_1');
+  });
+
+  it('places all 3 photos into story_left spread without dropping any', () => {
+    const photos: LocalPhoto[] = [1, 2, 3].map((n) => ({
+      id: `p_${n}`,
+      filename: `IMG_${n}.jpg`,
+      path: `/photos/IMG_${n}.jpg`,
+      fileSize: 1024,
+      format: 'jpeg',
+      isRaw: false,
+    }));
+
+    const plan = generateAlbumSpreads(photos);
+    expect(plan.totalPhotos).toBe(3);
+    expect(plan.totalSpreads).toBe(1);
+    expect(plan.spreads[0].layoutType).toBe('story_left');
+    expect(plan.spreads[0].photos).toHaveLength(3);
+    expect(plan.spreads[0].photos.map((p) => p.id)).toEqual(['p_1', 'p_2', 'p_3']);
+  });
 });
+

@@ -743,7 +743,7 @@ export const SplitCompareView: React.FC = () => {
               <button
                 onClick={handlePrevCandidate}
                 disabled={compareScope === 'burst' ? burstTotalCount <= 1 : compareTargetIndex === 0}
-                title="切换上一张候选片"
+                title="切换上一张候选片 (快捷键 ← / ↑ 或 K)"
                 className="p-0.5 hover:bg-dark-700 rounded disabled:opacity-30 cursor-pointer"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -751,7 +751,7 @@ export const SplitCompareView: React.FC = () => {
               <button
                 onClick={handleNextCandidate}
                 disabled={compareScope === 'burst' ? burstTotalCount <= 1 : compareTargetIndex === photos.length - 1}
-                title="切换下一张候选片"
+                title="切换下一张候选片 (快捷键 → / ↓ 或 J)"
                 className="p-0.5 hover:bg-dark-700 rounded disabled:opacity-30 cursor-pointer"
               >
                 <ChevronRight className="w-3.5 h-3.5" />

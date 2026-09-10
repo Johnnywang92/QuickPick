@@ -171,8 +171,9 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           }
           break;
 
-        // 翻页导航
+        // 翻页导航: 支持左右及上下按键 (← / → / ↑ / ↓ 或 K / J)
         case 'ArrowRight':
+        case 'ArrowDown':
         case 'j':
         case 'J':
           e.preventDefault();
@@ -184,6 +185,7 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           break;
 
         case 'ArrowLeft':
+        case 'ArrowUp':
         case 'k':
         case 'K':
           e.preventDefault();
