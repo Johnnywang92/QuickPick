@@ -223,39 +223,42 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-screen bg-dark-900 text-slate-100 select-none overflow-hidden font-sans">
       {/* 顶部工具与状态栏 */}
-      <header className="h-12 border-b border-dark-700 bg-dark-800/95 backdrop-blur flex items-center justify-between px-4 z-30 shrink-0">
+      <header className="h-12 border-b border-dark-700 bg-dark-800/95 backdrop-blur flex items-center justify-between px-3 md:px-4 z-30 shrink-0 gap-2 select-none overflow-x-auto no-scrollbar">
         {/* 左侧：Logo 与相册名称 */}
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-2.5 font-semibold tracking-wide">
-            <img src="/icon.png" alt="QuickPick Logo" className="w-6 h-6 rounded-md shadow-sm object-cover" />
-            <span className="text-base font-bold bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent">
+        <div className="flex items-center space-x-2 md:space-x-3 shrink-0 min-w-0">
+          <div className="flex items-center space-x-2 font-semibold tracking-wide shrink-0">
+            <img src="/icon.png" alt="QuickPick Logo" className="w-6 h-6 rounded-md shadow-sm object-cover shrink-0" />
+            <span className="text-sm md:text-base font-bold bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent whitespace-nowrap">
               QuickPick 极选
             </span>
           </div>
 
-          <div className="h-4 w-[1px] bg-dark-600" />
+          <div className="h-4 w-[1px] bg-dark-600 shrink-0" />
 
           {folderPath ? (
-            <div className="flex items-center space-x-2 text-xs text-slate-300">
-              <span className="text-slate-500 font-medium">相册:</span>
+            <div className="flex items-center space-x-1.5 text-xs text-slate-300 min-w-0">
+              <span className="text-slate-500 font-medium whitespace-nowrap hidden sm:inline">相册:</span>
               <span
-                className="font-semibold bg-dark-700/80 px-2 py-0.5 rounded text-slate-100 max-w-[200px] truncate"
+                className="font-semibold bg-dark-700/80 px-2 py-0.5 rounded text-slate-100 max-w-[100px] xl:max-w-[180px] truncate whitespace-nowrap"
                 title={folderPath}
               >
                 {albumName}
               </span>
             </div>
           ) : (
-            <span className="text-xs text-slate-500">未打开照片文件夹</span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">未打开照片文件夹</span>
           )}
         </div>
 
         {/* 中间：直观大盘 (已查看 / 已选 / 待考虑) */}
         {photos.length > 0 && (
-          <div className="flex items-center space-x-3 text-xs">
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
-              <Eye className="w-3.5 h-3.5 text-slate-400" />
-              <span>已查看</span>
+          <div className="flex items-center space-x-1.5 md:space-x-2 text-xs shrink-0 whitespace-nowrap">
+            <div
+              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
+              title={`已查看进度：${stats.viewedCount} / ${photos.length} 张照片`}
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="hidden xl:inline text-slate-400">已查看</span>
               <span className="font-bold text-slate-100">{stats.viewedCount}</span>
               <span className="text-slate-500">/</span>
               <span>{photos.length}</span>
@@ -264,13 +267,13 @@ export default function App() {
             <div
               onClick={() => targetGoal && setScenesModalOpen(true)}
               className={clsx(
-                'flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono select-none',
+                'flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono select-none whitespace-nowrap shrink-0',
                 targetGoal && 'cursor-pointer hover:border-dark-600 transition-colors',
               )}
-              title={targetGoal ? `选片目标：${targetGoal} 张 (点击管理目标与场景配额)` : undefined}
+              title={targetGoal ? `选片目标：${targetGoal} 张 (点击管理目标与场景配额)` : `已选照片：${stats.selectedCount} 张`}
             >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-              <span>已选</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span className="hidden xl:inline">已选</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
                 {stats.selectedCount}
               </span>
@@ -278,14 +281,14 @@ export default function App() {
                 <>
                   <span className="text-slate-500">/</span>
                   <span className="text-slate-400 text-[11px]" title={`选片总目标：${targetGoal} 张`}>
-                    目标 {targetGoal}
+                    <span className="hidden 2xl:inline">目标 </span>{targetGoal}
                   </span>
                   {stats.selectedCount >= targetGoal ? (
                     <span className="text-[10px] px-1.5 py-0.2 rounded font-sans font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
                       达标
                     </span>
                   ) : (
-                    <span className="text-[10px] text-slate-400 font-sans">
+                    <span className="hidden 2xl:inline text-[10px] text-slate-400 font-sans">
                       (差{targetGoal - stats.selectedCount})
                     </span>
                   )}
@@ -293,25 +296,31 @@ export default function App() {
               )}
             </div>
 
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
-              <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
-              <span>待考虑</span>
+            <div
+              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
+              title={`待考虑照片：${stats.maybeCount} 张`}
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="hidden xl:inline">待考虑</span>
               <span className="font-bold text-amber-600 dark:text-amber-400">{stats.maybeCount}</span>
             </div>
 
-            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono">
-              <CircleSlash2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>已不选</span>
+            <div
+              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
+              title={`已明确标记不选：${stats.skippedCount} 张`}
+            >
+              <CircleSlash2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="hidden xl:inline">已不选</span>
               <span className="font-bold text-slate-500 dark:text-slate-400">{stats.skippedCount}</span>
             </div>
           </div>
         )}
 
         {/* 右侧：操作区 (撤销 / 导出 / 打开文件夹 / 关于) */}
-        <div className="flex items-center space-x-2.5">
+        <div className="flex items-center space-x-1.5 md:space-x-2 shrink-0 whitespace-nowrap">
           {startupWarning && (
             <div
-              className="flex max-w-[360px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs text-amber-200"
+              className="flex max-w-[260px] lg:max-w-[360px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-xs text-amber-200 shrink-0 whitespace-nowrap"
               role="alert"
               title={startupWarning}
             >
@@ -319,7 +328,7 @@ export default function App() {
               <span className="truncate">{startupWarning}</span>
               <button
                 onClick={() => setStartupWarning(null)}
-                className="rounded p-0.5 hover:bg-amber-500/20"
+                className="rounded p-0.5 hover:bg-amber-500/20 shrink-0"
                 title="关闭启动安全提示"
               >
                 <X className="h-3 w-3" />
@@ -328,26 +337,26 @@ export default function App() {
           )}
 
           {persistenceStatus === 'saving' && (
-            <div className="flex items-center gap-1.5 text-xs text-blue-300" role="status">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>正在保存选择</span>
+            <div className="flex items-center gap-1.5 text-xs text-blue-300 shrink-0 whitespace-nowrap" role="status">
+              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+              <span className="hidden sm:inline">正在保存选择</span>
             </div>
           )}
 
           {isAnalyzing && analysisTotal > 0 && (
             <div
-              className="flex items-center gap-1.5 rounded-lg border border-indigo-500/25 bg-indigo-500/10 px-2.5 py-1 text-xs text-indigo-200"
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-500/25 bg-indigo-500/10 px-2 py-1 text-xs text-indigo-200 shrink-0 whitespace-nowrap"
               role="status"
               title={`后台分析 ${analysisCompleted}/${analysisTotal}${analysisFailed ? `，失败 ${analysisFailed}` : ''}`}
             >
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>后台检查 {analysisCompleted}/{analysisTotal}</span>
+              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+              <span>检查 {analysisCompleted}/{analysisTotal}</span>
             </div>
           )}
 
           {persistenceStatus === 'error' && (
             <div
-              className="flex max-w-[320px] items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-xs text-rose-200"
+              className="flex max-w-[260px] lg:max-w-[320px] items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-xs text-rose-200 shrink-0 whitespace-nowrap"
               role="alert"
               title={persistenceError || undefined}
             >
@@ -355,7 +364,7 @@ export default function App() {
               <span className="truncate">{persistenceError || '选片结果保存失败'}</span>
               <button
                 onClick={clearPersistenceError}
-                className="rounded p-0.5 hover:bg-rose-500/20"
+                className="rounded p-0.5 hover:bg-rose-500/20 shrink-0"
                 title="关闭错误提示"
               >
                 <X className="h-3 w-3" />
@@ -365,7 +374,7 @@ export default function App() {
 
           {persistenceStatus !== 'error' && persistenceWarning && (
             <div
-              className="flex max-w-[320px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs text-amber-200"
+              className="flex max-w-[260px] lg:max-w-[320px] items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-xs text-amber-200 shrink-0 whitespace-nowrap"
               role="status"
               title={persistenceWarning}
             >
@@ -373,7 +382,7 @@ export default function App() {
               <span className="truncate">{persistenceWarning}</span>
               <button
                 onClick={clearPersistenceWarning}
-                className="rounded p-0.5 hover:bg-amber-500/20"
+                className="rounded p-0.5 hover:bg-amber-500/20 shrink-0"
                 title="关闭备份提示"
               >
                 <X className="h-3 w-3" />
@@ -385,22 +394,22 @@ export default function App() {
             <button
               onClick={undoLast}
               disabled={undoStack.length === 0 || isUndoing}
-              className="flex items-center gap-1.5 rounded-lg border border-dark-600 bg-dark-700/60 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-dark-600 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer"
+              className="flex items-center gap-1 rounded-lg border border-dark-600 bg-dark-700/60 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-dark-600 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer shrink-0 whitespace-nowrap"
               title={undoStack.length > 0 ? `${undoStack[undoStack.length - 1].label} (Cmd/Ctrl+Z)` : '没有可撤销的操作'}
             >
-              <Undo2 className="h-3.5 w-3.5" />
-              <span>撤销</span>
+              <Undo2 className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden lg:inline">撤销</span>
             </button>
           )}
 
           {photos.length > 0 && (
             <button
               onClick={() => setExportModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-emerald-500/20 transition-all cursor-pointer"
+              className="flex items-center space-x-1.5 px-2.5 lg:px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-emerald-500/20 transition-all cursor-pointer shrink-0 whitespace-nowrap"
               title="批量导出入选原片或文件名清单"
             >
-              <FolderOutput className="w-3.5 h-3.5" />
-              <span>导出所选照片</span>
+              <FolderOutput className="w-3.5 h-3.5 shrink-0" />
+              <span>导出<span className="hidden sm:inline">所选照片</span></span>
               {stats.selectedCount > 0 && (
                 <span className="bg-emerald-800/90 text-emerald-200 px-1.5 py-0.2 rounded-full font-mono text-[10px]">
                   {stats.selectedCount}
@@ -411,20 +420,22 @@ export default function App() {
 
           <button
             onClick={handleSelectFolder}
-            className={
+            className={clsx(
+              'flex items-center space-x-1.5 py-1.5 text-xs font-medium rounded-lg shadow-sm transition-all cursor-pointer shrink-0 whitespace-nowrap',
               photos.length > 0
-                ? "flex items-center space-x-1.5 px-3 py-1.5 bg-dark-750 hover:bg-dark-700 text-slate-200 border border-dark-650/80 text-xs font-medium rounded-lg shadow-sm transition-all cursor-pointer"
-                : "flex items-center space-x-1.5 px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow-brand-500/20 transition-all cursor-pointer"
-            }
+                ? 'px-2.5 lg:px-3 bg-dark-750 hover:bg-dark-700 text-slate-200 border border-dark-650/80'
+                : 'px-3.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold shadow-brand-500/20',
+            )}
+            title="选择并打开照片文件夹"
           >
             <FolderOpen className="w-3.5 h-3.5 shrink-0" />
-            <span>打开照片目录</span>
+            <span>打开<span className="hidden sm:inline">照片目录</span></span>
           </button>
 
           {/* 一键深浅色模式切换 */}
           <button
             onClick={() => setThemeMode(effectiveTheme === 'dark' ? 'light' : 'dark')}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer"
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
             title={effectiveTheme === 'dark' ? '切换为明亮浅色模式' : '切换为暗调专业模式'}
             aria-label="切换深浅外观主题"
           >
@@ -437,7 +448,7 @@ export default function App() {
 
           <button
             onClick={() => setIsShortcutsOpen(true)}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer"
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
             title="查看快捷键帮助"
             aria-label="查看快捷键帮助"
           >
@@ -446,7 +457,7 @@ export default function App() {
 
           <button
             onClick={() => setSettingsOpen(true)}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer"
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
             title="偏好设置与外观主题"
             aria-label="偏好设置与外观主题"
           >
@@ -455,10 +466,10 @@ export default function App() {
 
           <button
             onClick={() => setIsAboutOpen(true)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-dark-700 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-dark-700 transition-colors cursor-pointer shrink-0"
             title="关于 QuickPick 与安全选片说明"
           >
-            <Info className="w-4 h-4" />
+            <Info className="h-4 w-4" />
           </button>
         </div>
       </header>

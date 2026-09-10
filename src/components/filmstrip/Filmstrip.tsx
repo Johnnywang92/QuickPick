@@ -254,33 +254,38 @@ export const Filmstrip: React.FC = () => {
                 borderLeftColor: chapterStart ? chapterStart.color : undefined,
                 borderLeftWidth: chapterStart ? '3px' : undefined,
               }}
-              className={`group cursor-pointer rounded-md border overflow-hidden transition-colors duration-150 ${
+              className={`group cursor-pointer rounded-md border overflow-hidden transition-colors duration-150 bg-neutral-950 ${
                 isCurrent
-                  ? 'border-brand-500 ring-2 ring-brand-500/50 bg-dark-800'
+                  ? 'border-brand-500 ring-2 ring-brand-500/50'
                   : isCompare
-                  ? 'border-blue-500 ring-2 ring-blue-500/50 bg-dark-800'
+                  ? 'border-blue-500 ring-2 ring-blue-500/50'
                   : isFilterMatch
                   ? factor > 0.15
-                    ? 'border-slate-400/90 bg-dark-800'
-                    : 'border-dark-700/80 hover:border-slate-400 bg-dark-850'
-                  : 'border-dark-800/40 bg-dark-900/60 opacity-40 hover:opacity-80'
+                    ? 'border-slate-300 dark:border-slate-500'
+                    : 'border-dark-700/80 hover:border-slate-400'
+                  : 'border-dark-700/40'
               }`}
             >
-              {/* 背景缩略图高清展示与滑动未加载时的优雅占位 */}
+              {/* 背景缩略图高清展示：保持纯黑底色杜绝浅色透白，中间主体无遮罩 */}
               {thumbnailUrl ? (
                 <>
                   <img
                     src={thumbnailUrl}
                     alt=""
                     loading="lazy"
-                    className="absolute inset-0 w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none select-none"
+                    className={`absolute inset-0 w-full h-full object-cover transition-all duration-200 pointer-events-none select-none ${
+                      isFilterMatch
+                        ? 'opacity-100'
+                        : 'opacity-40 brightness-75 grayscale-[20%] group-hover:opacity-85 group-hover:brightness-100 group-hover:grayscale-0'
+                    }`}
                   />
-                  {/* 顶部与底部半透明渐变，兼顾底图高清质感与文字信息可读性 */}
-                  <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/20 to-black/85 pointer-events-none" />
+                  {/* 仅在顶底文字区域施加微羽化保护暗区，中心画面 100% 通透纯净 */}
+                  <div className="absolute top-0 inset-x-0 h-6 bg-gradient-to-b from-black/80 to-transparent pointer-events-none" />
+                  <div className="absolute bottom-0 inset-x-0 h-6 bg-gradient-to-t from-black/85 to-transparent pointer-events-none" />
                 </>
               ) : (
-                /* 滑动时未加载完成的占位动效（避免向右滑动时一片死黑） */
-                <div className="absolute inset-0 bg-dark-800/90 animate-pulse flex items-center justify-center pointer-events-none">
+                /* 滑动时未加载完成的占位动效 */
+                <div className="absolute inset-0 bg-neutral-900 animate-pulse flex items-center justify-center pointer-events-none">
                   <div className="w-4 h-4 rounded-full border border-slate-600/40 border-t-brand-400/80 animate-spin" />
                 </div>
               )}
@@ -291,19 +296,19 @@ export const Filmstrip: React.FC = () => {
                   <div className="flex items-center space-x-1">
                     {filteredIndexMap?.has(photo.path) && (
                       <span
-                        className="text-[10px] font-mono text-amber-300 font-semibold"
+                        className="text-[10px] font-mono text-amber-300 font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
                         title={`当前筛选序号: 第 ${filteredIndexMap.get(photo.path)} 张`}
                       >
                         [{filteredIndexMap.get(photo.path)}]
                       </span>
                     )}
-                    <span className="text-[9px] font-mono text-slate-200 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] font-medium">
+                    <span className="text-[9px] font-mono text-white font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                       #{idx + 1}
                     </span>
                     {chapterStart && (
                       <span
-                        className="text-[8px] px-1 py-0.2 rounded font-sans font-bold truncate max-w-[50px]"
-                        style={{ backgroundColor: `${chapterStart.color}30`, color: chapterStart.color }}
+                        className="text-[8px] px-1 py-0.2 rounded font-sans font-bold truncate max-w-[50px] shadow-sm"
+                        style={{ backgroundColor: `${chapterStart.color}40`, color: '#ffffff', borderColor: chapterStart.color, borderWidth: '1px' }}
                         title={`流程环节起始：${chapterStart.name}`}
                       >
                         {chapterStart.name}
@@ -334,8 +339,8 @@ export const Filmstrip: React.FC = () => {
                       <span
                         className={`text-[8px] px-1 py-0.2 rounded font-mono ${
                           insight?.isBestPick
-                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
-                            : 'bg-indigo-500/20 text-indigo-300'
+                            ? 'bg-emerald-500/40 text-emerald-200 font-bold border border-emerald-400/60'
+                            : 'bg-indigo-500/30 text-indigo-200'
                         }`}
                         title={insight?.isBestPick ? '连拍组内推荐最佳瞬间' : '相似连拍'}
                       >
@@ -345,19 +350,19 @@ export const Filmstrip: React.FC = () => {
                     {uncertaintyReasons.length > 0 && (
                       <span
                         title={`建议检查: ${uncertaintyReasons.join(' · ')}`}
-                        className="text-[8px] px-0.5 py-0.2 rounded bg-indigo-500/30 text-indigo-200 font-mono flex items-center"
+                        className="text-[8px] px-0.5 py-0.2 rounded bg-indigo-500/40 text-indigo-100 font-mono flex items-center"
                       >
                         <AlertCircle className="w-2 h-2 mr-0.5 shrink-0" />
                         检查
                       </span>
                     )}
                     {isCompareMode && isCurrent && (
-                      <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/30 text-emerald-300 font-mono font-semibold">
+                      <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/40 text-emerald-200 font-mono font-semibold">
                         主
                       </span>
                     )}
                     {isCompareMode && isCompare && (
-                      <span className="text-[8px] px-1 py-0.2 rounded bg-blue-500/30 text-blue-300 font-mono font-semibold">
+                      <span className="text-[8px] px-1 py-0.2 rounded bg-blue-500/40 text-blue-200 font-mono font-semibold">
                         候
                       </span>
                     )}
@@ -376,7 +381,7 @@ export const Filmstrip: React.FC = () => {
                   )}
                   {selections[photo.id]?.state === 'skipped' && (
                     <span
-                      className="flex h-3.5 items-center justify-center rounded-full bg-slate-600 px-1 text-[8px] font-bold text-slate-100 shadow-sm"
+                      className="flex h-3.5 items-center justify-center rounded-full bg-slate-600 px-1 text-[8px] font-bold text-white shadow-sm"
                       title="已明确标记为不选"
                     >
                       不选
@@ -384,14 +389,14 @@ export const Filmstrip: React.FC = () => {
                   )}
                 </div>
 
-                <div className="truncate text-[10px] text-slate-100 font-mono font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                <div className="truncate text-[10px] text-white font-mono font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
                   {photo.filename}
                 </div>
 
                 {/* 格式、标签与用户备注底条 */}
-                <div className="flex items-center justify-between text-[9px] font-mono text-slate-300">
+                <div className="flex items-center justify-between text-[9px] font-mono text-white/90">
                   <div className="flex items-center space-x-1 overflow-hidden min-w-0 flex-1">
-                    <span className="text-[8px] bg-black/60 backdrop-blur-xs px-1 py-0.2 rounded text-slate-300 shrink-0 font-medium">
+                    <span className="text-[8px] bg-black/70 backdrop-blur-xs px-1 py-0.2 rounded text-white/90 shrink-0 font-medium">
                       {photo.isRaw ? 'RAW' : photo.format.toUpperCase()}
                     </span>
                     {(() => {
@@ -405,10 +410,10 @@ export const Filmstrip: React.FC = () => {
                           className={clsx(
                             'text-[8px] px-1 py-0.2 rounded font-sans truncate max-w-[48px] shadow-sm',
                             isRetouch
-                              ? 'bg-indigo-600/70 text-indigo-100 font-semibold'
+                              ? 'bg-indigo-600/80 text-indigo-100 font-semibold'
                               : isStraight
-                              ? 'bg-teal-600/70 text-teal-100 font-semibold'
-                              : 'bg-brand-600/70 text-brand-100',
+                              ? 'bg-teal-600/80 text-teal-100 font-semibold'
+                              : 'bg-brand-600/80 text-brand-100 font-semibold',
                           )}
                           title={`标签: ${tags.join(' · ')}`}
                         >
