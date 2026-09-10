@@ -14,8 +14,8 @@
     "baseline": "node scripts/check_baselines.js",
     "accept:media": "cargo run --release --manifest-path src-tauri/Cargo.toml --features acceptance-bin --bin real-media-acceptance --",
     "verify:mac-bundle": "node scripts/check_macos_bundle.js",
-    "bundle:mac": "bash scripts/bundle_macos_libs.sh && tauri build --bundles app,dmg",
-    "bundle:dmg": "bash scripts/bundle_macos_libs.sh && tauri build --bundles dmg",
+    "bundle:mac": "bash scripts/bundle_macos_libs.sh && tauri build --bundles app && bash scripts/build_dmg.sh",
+    "bundle:dmg": "bash scripts/build_dmg.sh",
     "gate": "npm run test:ui && npm run build && npm run clippy && npm run test:rs && npm run baseline",
     "tauri": "tauri"
   },
