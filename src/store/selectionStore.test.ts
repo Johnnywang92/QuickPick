@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSelectionStore } from './selectionStore';
+import { parseAnnotation } from '../utils/annotationUtils';
 
 const bridgeMocks = vi.hoisted(() => ({
   openProjectState: vi.fn(),
@@ -104,5 +105,30 @@ describe('selectionStore', () => {
       photoId: 'left',
       state: 'unreviewed',
     });
+  });
+
+  it('renames and removes a tag across existing photo annotations', async () => {
+    useSelectionStore.setState({
+      selections: {
+        left: {
+          photoId: 'left', state: 'selected', updatedAt: '',
+          note: JSON.stringify({ comment: '保留备注', presetTags: ['要修图', '封面'] }),
+        },
+        right: {
+          photoId: 'right', state: 'selected', updatedAt: '',
+          note: JSON.stringify({ presetTags: ['要修图'] }),
+        },
+      },
+    });
+
+    useSelectionStore.getState().replaceTagAcrossSelections('要修图', '精细修图');
+    expect(parseAnnotation(useSelectionStore.getState().selections.left.note).presetTags).toEqual(['精细修图', '封面']);
+    expect(parseAnnotation(useSelectionStore.getState().selections.left.note).comment).toBe('保留备注');
+    expect(parseAnnotation(useSelectionStore.getState().selections.right.note).presetTags).toEqual(['精细修图']);
+    await vi.waitFor(() => expect(bridgeMocks.persistSelections).toHaveBeenCalled());
+
+    useSelectionStore.getState().replaceTagAcrossSelections('精细修图', null);
+    expect(parseAnnotation(useSelectionStore.getState().selections.left.note).presetTags).toEqual(['封面']);
+    expect(parseAnnotation(useSelectionStore.getState().selections.right.note).presetTags).toEqual([]);
   });
 });

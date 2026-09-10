@@ -48,7 +48,6 @@ interface TagStore {
   addCustomTag: (tag: string) => boolean;
   renameTag: (currentTag: string, nextTag: string) => boolean;
   removeTag: (tag: string) => void;
-  removeCustomTag: (tag: string) => void;
   reorderTag: (draggedTag: string, targetTag: string) => void;
   resetDefaultTags: () => void;
 }
@@ -87,10 +86,6 @@ export const useTagStore = create<TagStore>((set, get) => ({
     const next = get().availableTags.filter((t) => t !== tagToRemove);
     saveTags(next);
     set({ availableTags: next });
-  },
-
-  removeCustomTag: (tagToRemove: string) => {
-    get().removeTag(tagToRemove);
   },
 
   reorderTag: (draggedTag: string, targetTag: string) => {

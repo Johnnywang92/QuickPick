@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { useAlbumStore } from './store/albumStore';
+import { photoMatchesFilter, useAlbumStore } from './store/albumStore';
 import { useSelectionStore } from './store/selectionStore';
 import { usePreviewStore } from './store/previewStore';
 import { useCompareStore } from './store/compareStore';
@@ -39,6 +39,7 @@ import {
   Settings,
   Sun,
   Moon,
+  Filter,
 } from 'lucide-react';
 import { useThemeStore } from './store/themeStore';
 
@@ -124,6 +125,14 @@ export default function App() {
     targetGoal,
     openFolder,
     retryOpenFolder,
+    activeFilter,
+    setActiveFilter,
+    selectedSceneId,
+    setSelectedSceneId,
+    activeTagFilter,
+    setActiveTagFilter,
+    scenes,
+    selectIndex,
   } = useAlbumStore();
   const {
     getStats,
@@ -137,13 +146,21 @@ export default function App() {
     clearPersistenceWarning,
     getAnnotation,
     setAnnotation,
+    selections,
+    viewedPhotoIds,
   } = useSelectionStore();
   const { currentPreviewUrl, previewStatus, previewError, retryCurrentPreview } = usePreviewStore();
   const { isCompareMode, isPkMode } = useCompareStore();
   const { isExportModalOpen, setExportModalOpen } = useExportStore();
   const { isSettingsOpen, setSettingsOpen, effectiveTheme, setThemeMode } = useThemeStore();
-  const { isFaceLoupeOpen, isAnalyzing, analysisTotal, analysisCompleted, analysisFailed } =
-    useInsightStore();
+  const {
+    isFaceLoupeOpen,
+    isAnalyzing,
+    analysisTotal,
+    analysisCompleted,
+    analysisFailed,
+    insights,
+  } = useInsightStore();
 
   const [engineVersion, setEngineVersion] = useState<string>('');
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
@@ -206,6 +223,49 @@ export default function App() {
 
   const currentPhoto = photos[currentIndex];
   const stats = getStats(photos.length);
+
+  // 计算当前活动筛选条件下的匹配照片索引列表
+  const matchingIndexes = useMemo(() => {
+    return photos.flatMap((photo, index) =>
+      photoMatchesFilter(
+        photo,
+        index,
+        activeFilter,
+        selectedSceneId,
+        scenes,
+        selections,
+        viewedPhotoIds,
+        insights,
+        activeTagFilter,
+      )
+        ? [index]
+        : [],
+    );
+  }, [
+    photos,
+    activeFilter,
+    selectedSceneId,
+    scenes,
+    selections,
+    viewedPhotoIds,
+    insights,
+    activeTagFilter,
+  ]);
+
+  // 当活动筛选条件下的匹配照片发生变化（如在“已选择”分类中取消勾选某照片），
+  // 如果当前选中的照片已不再符合当前筛选条件，自动将焦点平滑切换至下一张符合条件的照片
+  useEffect(() => {
+    if (photos.length === 0) return;
+    if (matchingIndexes.length > 0 && !matchingIndexes.includes(currentIndex)) {
+      const nextMatch =
+        matchingIndexes.find((idx) => idx > currentIndex) ??
+        matchingIndexes.filter((idx) => idx < currentIndex).at(-1) ??
+        matchingIndexes[0];
+      if (nextMatch !== undefined) {
+        selectIndex(nextMatch);
+      }
+    }
+  }, [matchingIndexes, currentIndex, selectIndex, photos.length]);
 
   const albumName = folderPath ? folderPath.split('/').filter(Boolean).pop() || folderPath : '';
 
@@ -601,6 +661,27 @@ export default function App() {
           <Suspense fallback={<LoadingPanel />}>
             <SplitCompareView />
           </Suspense>
+        ) : matchingIndexes.length === 0 ? (
+          <div className="flex flex-1 h-full w-full flex-col items-center justify-center p-8 text-center select-none bg-dark-900">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-dark-800 border border-dark-700 mb-3 shadow-xl text-slate-400">
+              <Filter className="h-6 w-6 text-slate-400" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-100 mb-1">当前选项暂无匹配照片</h3>
+            <p className="text-xs text-slate-400 max-w-sm mb-5 leading-relaxed">
+              当前筛选或分类条件下未找到照片。您可以切换其它选项或返回全部照片继续选片。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveFilter('all');
+                setSelectedSceneId(null);
+                setActiveTagFilter(null);
+              }}
+              className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition-all cursor-pointer"
+            >
+              查看全部照片 ({photos.length})
+            </button>
+          </div>
         ) : (
           <div className="flex h-full w-full min-w-0">
             <div className="relative min-w-0 flex-1">

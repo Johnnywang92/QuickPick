@@ -90,31 +90,27 @@ export const Filmstrip: React.FC = () => {
     }
   };
 
-  // 预计算筛选匹配项的相对序号映射表（仅当存在活动筛选时计算）
-  const filteredIndexMap = React.useMemo(() => {
-    const isFiltered =
-      activeFilter !== 'all' || selectedSceneId !== null;
-    if (!isFiltered) return null;
-    const map = new Map<string, number>();
-    let count = 0;
-    photos.forEach((p, i) => {
+  // 计算当前活动筛选条件下的匹配照片列表（保留其在全局 photos 中的 originalIndex）
+  const filteredPhotos = React.useMemo(() => {
+    const list: { photo: (typeof photos)[0]; originalIndex: number }[] = [];
+    photos.forEach((photo, index) => {
       if (
         photoMatchesFilter(
-          p,
-          i,
+          photo,
+          index,
           activeFilter,
           selectedSceneId,
           scenes,
           selections,
           viewedPhotoIds,
           insights,
+          activeTagFilter,
         )
       ) {
-        count++;
-        map.set(p.path, count);
+        list.push({ photo, originalIndex: index });
       }
     });
-    return map;
+    return list;
   }, [
     photos,
     activeFilter,
@@ -123,13 +119,22 @@ export const Filmstrip: React.FC = () => {
     selections,
     viewedPhotoIds,
     insights,
+    activeTagFilter,
   ]);
+
+  const isFiltered = activeFilter !== 'all' || selectedSceneId !== null || activeTagFilter !== null;
+  const totalItems = filteredPhotos.length;
 
   // 自动平滑居中当前选中的缩略图卡片
   useEffect(() => {
-    if (!containerRef.current || photos.length === 0) return;
+    if (!containerRef.current || totalItems === 0) return;
+    const currentFilteredIdx = filteredPhotos.findIndex(
+      (item) => item.originalIndex === currentIndex,
+    );
+    if (currentFilteredIdx < 0) return;
+
     const container = containerRef.current;
-    const itemLeft = CONTAINER_PADDING_X + currentIndex * ITEM_TOTAL;
+    const itemLeft = CONTAINER_PADDING_X + currentFilteredIdx * ITEM_TOTAL;
     const itemRight = itemLeft + ITEM_WIDTH;
     const viewLeft = container.scrollLeft;
     const viewRight = viewLeft + container.clientWidth;
@@ -142,12 +147,31 @@ export const Filmstrip: React.FC = () => {
         behavior: 'smooth',
       });
     }
-  }, [currentIndex, photos.length]);
+  }, [currentIndex, filteredPhotos, totalItems]);
 
   if (photos.length === 0) return null;
 
+  if (totalItems === 0) {
+    return (
+      <div className="h-full w-full bg-dark-850 flex items-center justify-center text-xs text-slate-400 gap-2.5 border-t border-dark-700/80 select-none">
+        <span>当前选项下暂无照片</span>
+        <button
+          type="button"
+          onClick={() => {
+            useAlbumStore.getState().setActiveFilter('all');
+            useAlbumStore.getState().setSelectedSceneId(null);
+            useAlbumStore.getState().setActiveTagFilter(null);
+          }}
+          className="px-2.5 py-1 rounded-lg bg-dark-750 hover:bg-dark-700 text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+        >
+          返回全部照片
+        </button>
+      </div>
+    );
+  }
+
   // 虚拟轨道总宽度 (撑开横向滚动条)
-  const totalWidth = CONTAINER_PADDING_X * 2 + photos.length * ITEM_TOTAL - ITEM_GAP;
+  const totalWidth = CONTAINER_PADDING_X * 2 + totalItems * ITEM_TOTAL - ITEM_GAP;
 
   // 动态计算可视窗口索引范围 (只渲染 15~20 个实际 DOM 节点)
   const startIdx = Math.max(
@@ -156,30 +180,36 @@ export const Filmstrip: React.FC = () => {
   );
   const visibleCount = Math.ceil(containerWidth / ITEM_TOTAL);
   const endIdx = Math.min(
-    photos.length - 1,
+    totalItems - 1,
     Math.floor((scrollLeft - CONTAINER_PADDING_X) / ITEM_TOTAL) + visibleCount + OVERSCAN,
   );
 
-  const visiblePhotos: { photo: (typeof photos)[0]; idx: number }[] = [];
+  const visiblePhotos: { photo: (typeof photos)[0]; originalIndex: number; filteredIndex: number }[] = [];
   for (let i = startIdx; i <= endIdx; i++) {
-    visiblePhotos.push({ photo: photos[i], idx: i });
+    if (filteredPhotos[i]) {
+      visiblePhotos.push({
+        photo: filteredPhotos[i].photo,
+        originalIndex: filteredPhotos[i].originalIndex,
+        filteredIndex: i,
+      });
+    }
   }
 
-  // 视口动态加载：当可视窗口范围变化（向右/左滑动）时，自动触发视口内及边缘缓冲照片的清晰预览预加载
+  // 视口动态加载：预加载可视范围内缩略图
   useEffect(() => {
-    if (photos.length === 0) return;
+    if (totalItems === 0) return;
     const screenCenterIdx = Math.floor(
       (scrollLeft - CONTAINER_PADDING_X + containerWidth / 2) / ITEM_TOTAL,
     );
     const sorted = [...visiblePhotos]
       .sort(
         (a, b) =>
-          Math.abs(a.idx - screenCenterIdx) - Math.abs(b.idx - screenCenterIdx),
+          Math.abs(a.filteredIndex - screenCenterIdx) - Math.abs(b.filteredIndex - screenCenterIdx),
       )
       .map((item) => item.photo);
 
     prefetchPhotos(sorted);
-  }, [startIdx, endIdx, photos, prefetchPhotos]);
+  }, [startIdx, endIdx, totalItems, prefetchPhotos]);
 
   return (
     <div
@@ -193,29 +223,18 @@ export const Filmstrip: React.FC = () => {
       <div
         style={{ width: `${totalWidth}px`, height: '100%', position: 'relative' }}
       >
-        {visiblePhotos.map(({ photo, idx }) => {
-          const isCurrent = idx === currentIndex;
-          const isCompare = isCompareMode && idx === compareTargetIndex;
-          const isFilterMatch = photoMatchesFilter(
-            photo,
-            idx,
-            activeFilter,
-            selectedSceneId,
-            scenes,
-            selections,
-            viewedPhotoIds,
-            insights,
-            activeTagFilter,
-          );
+        {visiblePhotos.map(({ photo, originalIndex, filteredIndex }) => {
+          const isCurrent = originalIndex === currentIndex;
+          const isCompare = isCompareMode && originalIndex === compareTargetIndex;
           const insight = insights[photo.id];
           const uncertaintyReasons = (insight?.reasons || []).filter(
             (reason) =>
               reason.includes('眼睛') || reason.includes('模糊') || reason.includes('相似'),
           );
-          const chapterStart = scenes.find((scene) => scene.startIndex === idx);
+          const chapterStart = scenes.find((scene) => scene.startIndex === originalIndex);
           const thumbnailUrl = previewCache.get(photo.path);
 
-          const leftPos = CONTAINER_PADDING_X + idx * ITEM_TOTAL;
+          const leftPos = CONTAINER_PADDING_X + filteredIndex * ITEM_TOTAL;
           const cardCenterX = leftPos + ITEM_WIDTH / 2;
           const { scale, factor, zIndexBoost } = calculateDockScale(
             hoverContentX,
@@ -236,7 +255,7 @@ export const Filmstrip: React.FC = () => {
           return (
             <div
               key={photo.id || photo.path}
-              onClick={() => selectIndex(idx)}
+              onClick={() => selectIndex(originalIndex)}
               style={{
                 position: 'absolute',
                 left: `${leftPos}px`,
@@ -259,11 +278,9 @@ export const Filmstrip: React.FC = () => {
                   ? 'border-brand-500 ring-2 ring-brand-500/50'
                   : isCompare
                   ? 'border-blue-500 ring-2 ring-blue-500/50'
-                  : isFilterMatch
-                  ? factor > 0.15
-                    ? 'border-slate-300 dark:border-slate-500'
-                    : 'border-dark-700/80 hover:border-slate-400'
-                  : 'border-dark-700/40'
+                  : factor > 0.15
+                  ? 'border-slate-300 dark:border-slate-500'
+                  : 'border-dark-700/80 hover:border-slate-400'
               }`}
             >
               {/* 背景缩略图高清展示：保持纯黑底色杜绝浅色透白，中间主体无遮罩 */}
@@ -273,11 +290,7 @@ export const Filmstrip: React.FC = () => {
                     src={thumbnailUrl}
                     alt=""
                     loading="lazy"
-                    className={`absolute inset-0 w-full h-full object-cover transition-all duration-200 pointer-events-none select-none ${
-                      isFilterMatch
-                        ? 'opacity-100'
-                        : 'opacity-40 brightness-75 grayscale-[20%] group-hover:opacity-85 group-hover:brightness-100 group-hover:grayscale-0'
-                    }`}
+                    className="absolute inset-0 w-full h-full object-cover opacity-100 pointer-events-none select-none transition-all duration-200"
                   />
                   {/* 仅在顶底文字区域施加微羽化保护暗区，中心画面 100% 通透纯净 */}
                   <div className="absolute top-0 inset-x-0 h-6 bg-gradient-to-b from-black/80 to-transparent pointer-events-none" />
@@ -294,17 +307,26 @@ export const Filmstrip: React.FC = () => {
               <div className="relative z-10 w-full h-full flex flex-col justify-between p-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1">
-                    {filteredIndexMap?.has(photo.path) && (
-                      <span
-                        className="text-[10px] font-mono text-amber-300 font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-                        title={`当前筛选序号: 第 ${filteredIndexMap.get(photo.path)} 张`}
-                      >
-                        [{filteredIndexMap.get(photo.path)}]
+                    {isFiltered ? (
+                      <>
+                        <span
+                          className="text-[10px] font-mono text-emerald-400 font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                          title={`当前筛选序号: 第 ${filteredIndex + 1} 张 (共 ${totalItems} 张)`}
+                        >
+                          [{filteredIndex + 1}]
+                        </span>
+                        <span
+                          className="text-[9px] font-mono text-white/70 font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                          title={`原始全局序号: 第 ${originalIndex + 1} 张`}
+                        >
+                          #{originalIndex + 1}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[9px] font-mono text-white font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        #{originalIndex + 1}
                       </span>
                     )}
-                    <span className="text-[9px] font-mono text-white font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                      #{idx + 1}
-                    </span>
                     {chapterStart && (
                       <span
                         className="text-[8px] px-1 py-0.2 rounded font-sans font-bold truncate max-w-[50px] shadow-sm"
