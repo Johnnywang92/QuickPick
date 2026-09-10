@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAlbumStore } from '../../store/albumStore';
 import { useInsightStore } from '../../store/insightStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { FaceInfo } from '../../types/photo';
+import { getStorylinePreset } from '../../utils/storylinePresets';
 import {
   Users,
   Pin,
@@ -11,6 +12,9 @@ import {
   Camera,
   Heart,
   ChevronDown,
+  Tag,
+  Check,
+  X,
 } from 'lucide-react';
 
 interface FaceCropProps {
@@ -20,6 +24,8 @@ interface FaceCropProps {
   isSelected: boolean;
   onFocus: () => void;
   onTogglePin: (e: React.MouseEvent) => void;
+  onUpdateLabel: (newLabel: string) => void;
+  suggestedRoles: { id: string; name: string; icon: string }[];
 }
 
 const FaceCropCard: React.FC<FaceCropProps> = ({
@@ -29,8 +35,12 @@ const FaceCropCard: React.FC<FaceCropProps> = ({
   isSelected,
   onFocus,
   onTogglePin,
+  onUpdateLabel,
+  suggestedRoles,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isEditingLabel, setIsEditingLabel] = useState(false);
+  const [tempLabel, setTempLabel] = useState('');
 
   useEffect(() => {
     if (!canvasRef.current || !imageUrl) return;
@@ -126,13 +136,23 @@ const FaceCropCard: React.FC<FaceCropProps> = ({
       </div>
 
       {/* 底部信息指标 */}
-      <div className="w-full mt-2 space-y-1">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-slate-300 truncate font-medium text-[11px]" title={face.label}>
-            {face.label || `人物 #${rank}`}
-          </span>
+      <div className="w-full mt-2 space-y-1 relative">
+        <div className="flex items-center justify-between text-[11px] gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditingLabel(true);
+              setTempLabel(face.label && !/^人物\s*#?\d+$/i.test(face.label) ? face.label : '');
+            }}
+            title="点击标记或更改人物角色身份标签"
+            className="flex items-center space-x-1 truncate font-medium text-[11px] text-slate-300 hover:text-brand-300 transition-colors cursor-pointer group/lbl text-left min-w-0"
+          >
+            <span className="truncate">{face.label || `人物 #${rank}`}</span>
+            <Tag className="w-2.5 h-2.5 text-slate-500 opacity-60 group-hover/lbl:opacity-100 shrink-0" />
+          </button>
           <span
-            className={`font-mono text-[10px] px-1 rounded ${
+            className={`font-mono text-[10px] px-1 rounded shrink-0 ${
               face.sharpness >= 80
                 ? 'text-emerald-400 bg-emerald-500/10'
                 : face.sharpness >= 50
@@ -143,6 +163,71 @@ const FaceCropCard: React.FC<FaceCropProps> = ({
             锐度 {Math.round(face.sharpness)}
           </span>
         </div>
+
+        {/* 快捷角色身份编辑气泡 */}
+        {isEditingLabel && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-52 bg-dark-900 border border-dark-650 rounded-xl p-2.5 shadow-2xl space-y-2 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-100"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400">设置人物身份</span>
+              <button
+                type="button"
+                onClick={() => setIsEditingLabel(false)}
+                className="text-slate-500 hover:text-slate-300 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+            {/* 常用角色快捷气泡 */}
+            <div className="flex flex-wrap gap-1">
+              {suggestedRoles.slice(0, 5).map((role) => (
+                <button
+                  key={role.id}
+                  type="button"
+                  onClick={() => {
+                    const cleanName = role.name.split('/')[0].trim();
+                    onUpdateLabel(cleanName);
+                    setIsEditingLabel(false);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-dark-800 hover:bg-brand-600/30 text-slate-300 hover:text-brand-200 border border-dark-700 text-[10px] transition-colors cursor-pointer"
+                >
+                  <span>{role.icon} {role.name.split('/')[0].trim()}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 pt-1 border-t border-dark-800">
+              <input
+                type="text"
+                value={tempLabel}
+                placeholder="自定义姓名/身份"
+                onChange={(e) => setTempLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onUpdateLabel(tempLabel);
+                    setIsEditingLabel(false);
+                  } else if (e.key === 'Escape') {
+                    setIsEditingLabel(false);
+                  }
+                }}
+                className="flex-1 min-w-0 bg-dark-950 border border-dark-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 focus:outline-none focus:border-brand-500"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateLabel(tempLabel);
+                  setIsEditingLabel(false);
+                }}
+                className="p-1 rounded bg-brand-600 hover:bg-brand-500 text-white cursor-pointer"
+                title="保存"
+              >
+                <Check className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 睁闭眼状态指示器 */}
         <div
@@ -173,7 +258,7 @@ const FaceCropCard: React.FC<FaceCropProps> = ({
 };
 
 export const FaceLoupe: React.FC = () => {
-  const { photos, currentIndex } = useAlbumStore();
+  const { photos, currentIndex, activePresetId } = useAlbumStore();
   const { currentPreviewUrl } = usePreviewStore();
   const {
     isFaceLoupeOpen,
@@ -183,8 +268,10 @@ export const FaceLoupe: React.FC = () => {
     focusedFace,
     focusFace,
     togglePinFace,
+    setFaceLabel,
   } = useInsightStore();
 
+  const activePreset = getStorylinePreset(activePresetId);
   const currentPhoto = photos[currentIndex];
   if (!currentPhoto) return null;
 
@@ -305,6 +392,10 @@ export const FaceLoupe: React.FC = () => {
               e.stopPropagation();
               togglePinFace(currentPhoto.id, face.id);
             }}
+            onUpdateLabel={(newLabel) => {
+              setFaceLabel(currentPhoto.id, face.id, newLabel);
+            }}
+            suggestedRoles={activePreset.roles}
           />
         ))}
       </div>
@@ -313,7 +404,7 @@ export const FaceLoupe: React.FC = () => {
       <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-0.5 border-t border-dark-700/40">
         <span className="flex items-center space-x-1">
           <Sparkles className="w-3 h-3 text-brand-400" />
-          <span>点击卡片对焦到对应人物 • 点击 📌 钉选新人主角 (连拍自动继承)</span>
+          <span>点击人名可直接设为新娘/主角等角色 • 点击 📌 钉选新人主角 (连拍自动继承)</span>
         </span>
         <span className="font-mono text-[10px]">快捷键 [F] 开关</span>
       </div>

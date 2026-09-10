@@ -135,6 +135,7 @@ interface InsightStore {
   focusFace: (face: FaceInfo | null) => void;
   setFaceReviewPreset: (preset: FaceReviewPreset) => void;
   togglePinFace: (photoId: string, faceId: string) => void;
+  setFaceLabel: (photoId: string, faceId: string, label: string) => void;
   startBackgroundAnalysis: (photos: LocalPhoto[]) => void;
   cancelBackgroundAnalysis: () => void;
   analyzeSinglePhoto: (photoId: string, photoPath: string, index: number) => Promise<void>;
@@ -203,6 +204,27 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     const focusedFace = get().focusedFace;
     if (focusedFace?.id === faceId) {
       set({ focusedFace: { ...focusedFace, is_pinned: !focusedFace.is_pinned } });
+    }
+  },
+
+  setFaceLabel: (photoId, faceId, label) => {
+    const trimmed = label.trim();
+    useAlbumStore.setState((state) => ({
+      photos: state.photos.map((photo) =>
+        photo.id !== photoId
+          ? photo
+          : {
+              ...photo,
+              faces: photo.faces?.map((face) =>
+                face.id === faceId ? { ...face, label: trimmed || undefined } : face,
+              ),
+            },
+      ),
+    }));
+
+    const focusedFace = get().focusedFace;
+    if (focusedFace?.id === faceId) {
+      set({ focusedFace: { ...focusedFace, label: trimmed || undefined } });
     }
   },
 

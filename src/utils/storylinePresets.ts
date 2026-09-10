@@ -106,10 +106,10 @@ export const STORYLINE_PRESETS: Record<WorkflowScene, StorylinePreset> = {
       { name: '安可返场与谢幕', weight: 15, description: '换装返场、全乐队向台下90度鞠躬谢幕' },
     ],
     roles: [
-      { id: 'lead_singer', name: '主唱 / 舞台C位', icon: '🌟', description: '绝对视觉焦点' },
-      { id: 'guitar_bass', name: '吉他手 / 贝斯手', icon: '🎸', description: 'Solo扫弦动态张力' },
+      { id: 'lead_singer', name: '主唱 / 舞台C位', icon: '🌟', description: '绝对视觉焦点', minWarningCount: 1 },
+      { id: 'guitar_bass', name: '吉他手 / 贝斯手', icon: '🎸', description: 'Solo扫弦动态张力', minWarningCount: 0 },
       { id: 'drum_keyboard', name: '鼓手 / 键盘手', icon: '🥁', description: '节拍律动与专注侧颜' },
-      { id: 'fans', name: '乐迷观众 / 荧光海', icon: '🙌', description: '台下热泪盈眶与挥臂互动' },
+      { id: 'fans', name: '乐迷观众 / 荧光海', icon: '🙌', description: '台下热烈鼓掌与挥臂互动' },
       { id: 'stage_full', name: '舞台全景舞美', icon: '🏟️', description: '灯光舞美大场景' },
     ],
   },
@@ -127,7 +127,7 @@ export const STORYLINE_PRESETS: Record<WorkflowScene, StorylinePreset> = {
       { name: '幕后花絮与谢幕', weight: 10, description: '后勤整理假发、吃便当崩人设搞笑瞬间' },
     ],
     roles: [
-      { id: 'character_a', name: '第一造型正片', icon: '👘', description: '主角色经典还原' },
+      { id: 'character_a', name: '第一造型正片', icon: '👘', description: '主角色经典还原', minWarningCount: 1 },
       { id: 'character_b', name: '第二造型正片', icon: '👗', description: '换装变体形态' },
       { id: 'closeup', name: '眼妆与美瞳特写', icon: '👁️', description: '面部与妆容精修位' },
       { id: 'full_body', name: '全身动势与剧情', icon: '🤺', description: '武器与大景构图' },
@@ -149,7 +149,7 @@ export const STORYLINE_PRESETS: Record<WorkflowScene, StorylinePreset> = {
       { name: '情绪抓拍与旅途花絮', weight: 15, description: '旅伴欢笑、迷路小插曲、随手偶遇' },
     ],
     roles: [
-      { id: 'protagonist', name: '旅拍主角 / 人像', icon: '🎒', description: '出游主角自然神态' },
+      { id: 'protagonist', name: '旅拍主角 / 人像', icon: '🎒', description: '出游主角自然神态', minWarningCount: 1 },
       { id: 'companion', name: '同行伴侣 / 亲友', icon: '👭', description: '旅途双人互动' },
       { id: 'street_life', name: '人文市井 / 当地人', icon: '🚲', description: '地道风土人情' },
       { id: 'landscape', name: '自然风光 / 建筑', icon: '🏔️', description: '宏大风景空镜' },
@@ -170,7 +170,7 @@ export const STORYLINE_PRESETS: Record<WorkflowScene, StorylinePreset> = {
       { name: '环节 5', weight: 20, description: '第五阶段拍摄' },
     ],
     roles: [
-      { id: 'primary', name: '核心主角 / 焦点人物', icon: '⭐', description: '画面重心人物' },
+      { id: 'primary', name: '核心主角 / 焦点人物', icon: '⭐', description: '画面重心人物', minWarningCount: 1 },
       { id: 'secondary', name: '重要配角 / 互动人物', icon: '👤', description: '身边互动对象' },
       { id: 'group', name: '集体合影 / 现场大景', icon: '👥', description: '多人全貌留影' },
       { id: 'details', name: '局部细节 / 静物空镜', icon: '📷', description: '环境与物件细节' },
