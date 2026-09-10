@@ -136,7 +136,6 @@ function matchingPhotoIndexes(state: AlbumStore): number[] {
       viewedPhotoIds,
       insights,
       state.activeTagFilter,
-      state.currentIndex,
     )
       ? [index]
       : [],

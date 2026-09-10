@@ -31,6 +31,7 @@ describe('albumStore filter navigation', () => {
       photos,
       currentIndex: 0,
       activeFilter: 'all',
+      activeTagFilter: null,
       selectedSceneId: null,
       scenes: [],
       activePresetId: 'general',
@@ -311,6 +312,35 @@ describe('albumStore filter navigation', () => {
       });
       expect(useAlbumStore.getState().detectedPreset?.presetId).toBe('wedding');
       expect(useAlbumStore.getState().detectedPreset?.confidence).toBe(0.9);
+    });
+  });
+
+  describe('filter switching stability and unreviewed queue navigation', () => {
+    it('switches to unreviewed without freeze and advances smoothly through remaining unreviewed photos', () => {
+      // photos: ['one', 'two', 'three', 'four']
+      // viewed: { one: true, two: true } -> 'three' (index 2) and 'four' (index 3) are unreviewed
+      useAlbumStore.setState({ currentIndex: 0 });
+      useAlbumStore.getState().setActiveFilter('unreviewed');
+
+      // Should cleanly land on first unreviewed photo (index 2: 'three')
+      expect(useAlbumStore.getState().currentIndex).toBe(2);
+
+      // Moving to nextPhoto should land on index 3 ('four')
+      useAlbumStore.getState().nextPhoto();
+      expect(useAlbumStore.getState().currentIndex).toBe(3);
+
+      // When already on a selected photo (index 3: 'four'), switching to 'selected' keeps index 3
+      useAlbumStore.getState().setActiveFilter('selected');
+      expect(useAlbumStore.getState().currentIndex).toBe(3);
+
+      // When on a non-selected photo (e.g. index 2: 'three'), switching to 'selected' jumps to index 1 ('two')
+      useAlbumStore.setState({ currentIndex: 2 });
+      useAlbumStore.getState().setActiveFilter('selected');
+      expect(useAlbumStore.getState().currentIndex).toBe(1);
+
+      // Switching to 'all' preserves currentIndex
+      useAlbumStore.getState().setActiveFilter('all');
+      expect(useAlbumStore.getState().currentIndex).toBe(1);
     });
   });
 });
