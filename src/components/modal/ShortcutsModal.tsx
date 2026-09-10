@@ -26,11 +26,18 @@ const SHORTCUT_GROUPS = [
     ],
   },
   {
+    title: '调色与预览',
+    items: [
+      ['L', '打开或关闭 3D LUT 胶片调色'],
+      ['\\（按住）', '按住临时查看未调色原片'],
+      ['B', '一键切换莱卡高反差黑白检查'],
+    ],
+  },
+  {
     title: '比较',
     items: [
       ['C', '进入或退出双图比较'],
       ['S', '交换左右照片'],
-      ['B（按住）', '临时闪烁显示候选照片'],
       ['Esc', '退出比较或重置筛选'],
     ],
   },
@@ -57,7 +64,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ onClose }) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl">
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl">
       <div className="flex items-center justify-between border-b border-dark-700/80 bg-dark-900/60 px-5 py-4">
         <div className="flex items-center gap-2.5">
           <Keyboard className="h-5 w-5 text-brand-400" />
@@ -78,7 +85,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ onClose }) => {
         </button>
       </div>
 
-      <div className="grid gap-3 p-5 sm:grid-cols-3">
+      <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
         {SHORTCUT_GROUPS.map((group) => (
           <section key={group.title} className="rounded-xl border border-dark-700 bg-dark-900/55 p-3">
             <h3 className="mb-2 text-xs font-semibold text-slate-200">{group.title}</h3>

@@ -6,6 +6,9 @@ import { useSelectionStore } from '../../store/selectionStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { useInsightStore } from '../../store/insightStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useLutStore } from '../../store/lutStore';
+import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
+import { LutControlBar } from './LutControlBar';
 import {
   ArrowRightLeft,
   X,
@@ -62,6 +65,15 @@ export const SplitCompareView: React.FC = () => {
   const leftImageContainerRef = useRef<Container | null>(null);
   const rightImageContainerRef = useRef<Container | null>(null);
   const leftSpriteRef = useRef<Sprite | null>(null);
+  const rightSpriteRef = useRef<Sprite | null>(null);
+
+  const activeLutId = useLutStore((state) => state.activeLutId);
+  const isLutEnabled = useLutStore((state) => state.isEnabled);
+  const lutIntensity = useLutStore((state) => state.intensity);
+  const isLutBypassComparing = useLutStore((state) => state.isBypassComparing);
+  const getCustomLutData = useLutStore((state) => state.getCustomLutData);
+  const leftLutFilterRef = useRef<LutFilter | null>(null);
+  const rightLutFilterRef = useRef<LutFilter | null>(null);
 
   const [leftZoom, setLeftZoom] = useState<number>(100);
   const [rightZoom, setRightZoom] = useState<number>(100);
@@ -353,6 +365,7 @@ export const SplitCompareView: React.FC = () => {
         container.removeChildren();
 
         const sprite = new Sprite(texture);
+        rightSpriteRef.current = sprite;
         sprite.anchor.set(0.5);
 
         const app = rightAppRef.current;
@@ -379,8 +392,60 @@ export const SplitCompareView: React.FC = () => {
 
     return () => {
       isCurrent = false;
+      rightSpriteRef.current = null;
     };
   }, [comparePreviewUrl, rightReady, rightLoadAttempt]);
+
+  // 双图分屏同步应用 3D LUT 滤镜
+  useEffect(() => {
+    const leftSprite = leftSpriteRef.current;
+    const rightSprite = rightSpriteRef.current;
+    if (!leftSprite && !rightSprite) return;
+
+    const effectiveIntensity =
+      !isLutEnabled || isLutBypassComparing || !activeLutId ? 0.0 : lutIntensity;
+
+    if (!activeLutId || effectiveIntensity <= 0.001) {
+      if (leftSprite) leftSprite.filters = [];
+      if (rightSprite) rightSprite.filters = [];
+      return;
+    }
+
+    try {
+      const customData = activeLutId.startsWith('custom_') ? getCustomLutData(activeLutId) : undefined;
+      const { texture, size } = getOrCreateLutTexture(activeLutId, customData || undefined);
+
+      if (leftSprite) {
+        if (!leftLutFilterRef.current) {
+          leftLutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
+        } else {
+          leftLutFilterRef.current.updateLut(texture, size);
+          leftLutFilterRef.current.intensity = effectiveIntensity;
+        }
+        leftSprite.filters = [leftLutFilterRef.current];
+      }
+
+      if (rightSprite) {
+        if (!rightLutFilterRef.current) {
+          rightLutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
+        } else {
+          rightLutFilterRef.current.updateLut(texture, size);
+          rightLutFilterRef.current.intensity = effectiveIntensity;
+        }
+        rightSprite.filters = [rightLutFilterRef.current];
+      }
+    } catch (err) {
+      console.error('应用双图比对 3D LUT 失败:', err);
+    }
+  }, [
+    activeLutId,
+    isLutEnabled,
+    lutIntensity,
+    isLutBypassComparing,
+    getCustomLutData,
+    leftRenderStatus,
+    rightRenderStatus,
+  ]);
 
   // 滚轮缩放处理 (支持双画布联动)
   const handleWheel = (e: React.WheelEvent, isLeft: boolean) => {
@@ -555,6 +620,8 @@ export const SplitCompareView: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
+          <LutControlBar />
+
           <button
             onClick={swapComparePhotos}
             title="主备底片互换位置 (快捷键 [S])"

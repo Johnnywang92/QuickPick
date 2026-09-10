@@ -3,6 +3,9 @@ import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js'
 import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useLutStore } from '../../store/lutStore';
+import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
+import { LutControlBar } from './LutControlBar';
 import { VisualPin } from '../../types/photo';
 import clsx from 'clsx';
 
@@ -37,6 +40,13 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const focusedFace = useInsightStore((state) => state.focusedFace);
   const effectiveTheme = useThemeStore((state) => state.effectiveTheme);
   const canvasBgColor = effectiveTheme === 'light' ? 0xf8fafc : 0x0d0f12;
+
+  const activeLutId = useLutStore((state) => state.activeLutId);
+  const isLutEnabled = useLutStore((state) => state.isEnabled);
+  const lutIntensity = useLutStore((state) => state.intensity);
+  const isLutBypassComparing = useLutStore((state) => state.isBypassComparing);
+  const getCustomLutData = useLutStore((state) => state.getCustomLutData);
+  const lutFilterRef = useRef<LutFilter | null>(null);
 
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isPanning, setIsPanning] = useState<boolean>(false);
@@ -207,6 +217,37 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       isCurrent = false;
     };
   }, [fitImageToViewport, imageUrl, pixiStatus, loadAttempt]);
+
+  // 应用 3D LUT 胶片调色实时预览 Filter
+  useEffect(() => {
+    const sprite = spriteRef.current;
+    if (!sprite) return;
+
+    const effectiveIntensity =
+      !isLutEnabled || isLutBypassComparing || !activeLutId ? 0.0 : lutIntensity;
+
+    if (!activeLutId || effectiveIntensity <= 0.001) {
+      sprite.filters = [];
+      return;
+    }
+
+    try {
+      const customData = activeLutId.startsWith('custom_') ? getCustomLutData(activeLutId) : undefined;
+      const { texture, size } = getOrCreateLutTexture(activeLutId, customData || undefined);
+
+      if (!lutFilterRef.current) {
+        lutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
+      } else {
+        lutFilterRef.current.updateLut(texture, size);
+        lutFilterRef.current.intensity = effectiveIntensity;
+      }
+
+      sprite.filters = [lutFilterRef.current];
+    } catch (err) {
+      console.error('应用 3D LUT 滤镜失败:', err);
+      sprite.filters = [];
+    }
+  }, [activeLutId, isLutEnabled, lutIntensity, isLutBypassComparing, getCustomLutData, imageStatus]);
 
   // 渲染图上 Pin 针标记层
   useEffect(() => {
@@ -414,50 +455,55 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
 
-      {/* 悬浮缩放控制栏 */}
-      <div className="absolute top-4 right-4 z-10 flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300 text-xs">
-        <span className="font-mono text-slate-400 w-12 text-center">{zoomLevel}%</span>
-        <div className="w-[1px] h-3.5 bg-dark-600" />
-        <button
-          onClick={resetToFit}
-          title="适应屏幕"
-          className="p-1 hover:bg-dark-700 rounded transition-colors"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={zoomTo100}
-          title="1:1 显示当前内嵌或代理预览的实际像素，不代表完整 RAW 像素"
-          className="px-1.5 py-0.5 hover:bg-dark-700 rounded text-[11px] font-mono transition-colors"
-        >
-          1:1 预览
-        </button>
-        <button
-          onClick={() => {
-            if (imageContainerRef.current) {
-              const s = Math.min(imageContainerRef.current.scale.x * 1.25, 8.0);
-              imageContainerRef.current.scale.set(s);
-              setZoomLevel(Math.round(s * 100));
-            }
-          }}
-          title="放大"
-          className="p-1 hover:bg-dark-700 rounded transition-colors"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => {
-            if (imageContainerRef.current) {
-              const s = Math.max(imageContainerRef.current.scale.x * 0.8, 0.1);
-              imageContainerRef.current.scale.set(s);
-              setZoomLevel(Math.round(s * 100));
-            }
-          }}
-          title="缩小"
-          className="p-1 hover:bg-dark-700 rounded transition-colors"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
+      {/* 悬浮控制栏（3D LUT 胶片调色 + 缩放控制） */}
+      <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
+        <LutControlBar />
+
+        {/* 悬浮缩放控制栏 */}
+        <div className="flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300 text-xs">
+          <span className="font-mono text-slate-400 w-12 text-center">{zoomLevel}%</span>
+          <div className="w-[1px] h-3.5 bg-dark-600" />
+          <button
+            onClick={resetToFit}
+            title="适应屏幕"
+            className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={zoomTo100}
+            title="1:1 显示当前内嵌或代理预览的实际像素，不代表完整 RAW 像素"
+            className="px-1.5 py-0.5 hover:bg-dark-700 rounded text-[11px] font-mono transition-colors cursor-pointer"
+          >
+            1:1 预览
+          </button>
+          <button
+            onClick={() => {
+              if (imageContainerRef.current) {
+                const s = Math.min(imageContainerRef.current.scale.x * 1.25, 8.0);
+                imageContainerRef.current.scale.set(s);
+                setZoomLevel(Math.round(s * 100));
+              }
+            }}
+            title="放大"
+            className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => {
+              if (imageContainerRef.current) {
+                const s = Math.max(imageContainerRef.current.scale.x * 0.8, 0.1);
+                imageContainerRef.current.scale.set(s);
+                setZoomLevel(Math.round(s * 100));
+              }
+            }}
+            title="缩小"
+            className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

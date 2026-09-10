@@ -4,6 +4,7 @@ import { useSelectionStore } from '../store/selectionStore';
 import { useCompareStore } from '../store/compareStore';
 import { useInsightStore } from '../store/insightStore';
 import { useTagStore } from '../store/tagStore';
+import { useLutStore } from '../store/lutStore';
 
 interface KeyboardShortcutsOptions {
   onToggleRetouch?: () => void;
@@ -82,6 +83,40 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
             options?.onToggleRetouch?.();
           }
           break;
+
+        // 3D LUT 胶片调色开关 [L]
+        case 'l':
+        case 'L': {
+          e.preventDefault();
+          const { activeLutId, setActiveLutId, toggleEnabled } = useLutStore.getState();
+          if (!activeLutId) {
+            setActiveLutId('kodak_portra_400');
+          } else {
+            toggleEnabled();
+          }
+          break;
+        }
+
+        // 黑白影调检查模式 [B]
+        case 'b':
+        case 'B': {
+          e.preventDefault();
+          const { activeLutId, isEnabled, setActiveLutId, toggleEnabled } = useLutStore.getState();
+          if (activeLutId === 'leica_monochrome' && isEnabled) {
+            toggleEnabled();
+          } else {
+            setActiveLutId('leica_monochrome');
+          }
+          break;
+        }
+
+        // 按住瞬时旁路对比原片 [\]
+        case '\\': {
+          e.preventDefault();
+          useLutStore.getState().setIsBypassComparing(true);
+          break;
+        }
+
         // 选择 / 取消选择 [空格 Space]
         case ' ':
           e.preventDefault();
@@ -212,9 +247,17 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === '\\') {
+        useLutStore.getState().setIsBypassComparing(false);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, [
     photos,

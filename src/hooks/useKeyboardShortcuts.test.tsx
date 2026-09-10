@@ -4,6 +4,7 @@ import { useKeyboardShortcuts } from './useKeyboardShortcuts';
 import { useAlbumStore } from '../store/albumStore';
 import { useSelectionStore } from '../store/selectionStore';
 import { useCompareStore } from '../store/compareStore';
+import { useLutStore } from '../store/lutStore';
 import { photoFixture } from '../test/photoFixture';
 
 describe('useKeyboardShortcuts', () => {
@@ -93,6 +94,38 @@ describe('useKeyboardShortcuts', () => {
 
     fireEvent.keyDown(window, { key: 'ArrowUp' });
     expect(prevPhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles LUT with L key, toggles monochrome with B key, and bypasses with backslash', () => {
+    useLutStore.setState({
+      activeLutId: null,
+      isEnabled: true,
+      isBypassComparing: false,
+    });
+
+    renderHook(() => useKeyboardShortcuts());
+
+    // Press L -> activates default Portra 400
+    fireEvent.keyDown(window, { key: 'l' });
+    expect(useLutStore.getState().activeLutId).toBe('kodak_portra_400');
+    expect(useLutStore.getState().isEnabled).toBe(true);
+
+    // Press L again -> toggles off
+    fireEvent.keyDown(window, { key: 'l' });
+    expect(useLutStore.getState().isEnabled).toBe(false);
+
+    // Press B -> activates Leica monochrome
+    fireEvent.keyDown(window, { key: 'b' });
+    expect(useLutStore.getState().activeLutId).toBe('leica_monochrome');
+    expect(useLutStore.getState().isEnabled).toBe(true);
+
+    // Hold \ -> bypass comparing
+    fireEvent.keyDown(window, { key: '\\' });
+    expect(useLutStore.getState().isBypassComparing).toBe(true);
+
+    // Release \ -> restores
+    fireEvent.keyUp(window, { key: '\\' });
+    expect(useLutStore.getState().isBypassComparing).toBe(false);
   });
 });
 
