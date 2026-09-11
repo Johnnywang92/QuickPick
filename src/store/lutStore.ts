@@ -21,9 +21,11 @@ interface LutState {
   isPanelOpen: boolean;
   customLuts: CustomLutItem[];
   photoLuts: Record<string, PhotoLutConfig>;
+  hoverLutId: string | null;
 
   // Actions
   setActiveLutId: (id: string | null) => void;
+  setHoverLutId: (id: string | null) => void;
   toggleEnabled: () => void;
   setIntensity: (intensity: number) => void;
   setIsBypassComparing: (comparing: boolean) => void;
@@ -119,10 +121,11 @@ export const useLutStore = create<LutState>((set, get) => ({
   isPanelOpen: false,
   customLuts: loadInitialCustomLuts(),
   photoLuts: loadInitialPhotoLuts(),
+  hoverLutId: null,
 
   setActiveLutId: (id) => {
     const isEnabled = id !== null ? true : get().isEnabled;
-    set({ activeLutId: id, isEnabled });
+    set({ activeLutId: id, isEnabled, hoverLutId: null });
     const { intensity } = get();
     try {
       localStorage.setItem(
@@ -133,6 +136,8 @@ export const useLutStore = create<LutState>((set, get) => ({
       // 忽略
     }
   },
+
+  setHoverLutId: (id) => set({ hoverLutId: id }),
 
   toggleEnabled: () => {
     const next = !get().isEnabled;
@@ -238,7 +243,7 @@ export const useLutStore = create<LutState>((set, get) => ({
       const targetIntensity = typeof intensity === 'number' ? intensity : get().intensity;
       current[photoId] = { lutId, intensity: targetIntensity };
     }
-    set({ photoLuts: current });
+    set({ photoLuts: current, hoverLutId: null });
     try {
       localStorage.setItem(STORAGE_KEY_PHOTO_LUTS, JSON.stringify(current));
     } catch {

@@ -42,9 +42,15 @@ fn safe_stem(path: &Path, index: usize) -> String {
         .unwrap_or_else(|| format!("QuickPick_{:04}", index + 1))
 }
 
+#[derive(Clone, Copy)]
+struct AxisCoord {
+    i0: usize,
+    i1: usize,
+    frac: f32,
+}
+
 #[inline(always)]
-fn sample_lut_point(data: &[u8], size: usize, r: usize, g: usize, b: usize) -> (f32, f32, f32) {
-    let offset = (g * size * size + b * size + r) * 4;
+fn sample_lut_offset(data: &[u8], offset: usize) -> (f32, f32, f32) {
     if offset + 2 < data.len() {
         (
             data[offset] as f32,
@@ -62,75 +68,114 @@ pub fn apply_3d_lut_rgb(
     size: usize,
     intensity: f32,
 ) {
-    if size < 2 || lut_data.len() < size * size * size * 4 {
+    if size < 2 || lut_data.len() < size * size * size * 4 || intensity <= 0.001 {
         return;
     }
+
     let max_idx = (size - 1) as f32;
+    let mut axis_table = [AxisCoord { i0: 0, i1: 0, frac: 0.0 }; 256];
+    for (v, item) in axis_table.iter_mut().enumerate() {
+        let x = (v as f32 / 255.0) * max_idx;
+        let i0 = x.floor() as usize;
+        let i1 = (i0 + 1).min(size - 1);
+        *item = AxisCoord {
+            i0,
+            i1,
+            frac: x - i0 as f32,
+        };
+    }
 
-    for pixel in rgb.as_chunks_mut::<3>().0 {
-        let r_orig = pixel[0] as f32;
-        let g_orig = pixel[1] as f32;
-        let b_orig = pixel[2] as f32;
+    let width = size * size;
+    let slice_bytes = width * 4;
+    let col_bytes = size * 4;
 
-        let x = (r_orig / 255.0) * max_idx;
-        let y = (g_orig / 255.0) * max_idx;
-        let z = (b_orig / 255.0) * max_idx;
+    let process_chunk = |pixels: &mut [u8]| {
+        for pixel in pixels.as_chunks_mut::<3>().0 {
+            let r_coord = axis_table[pixel[0] as usize];
+            let g_coord = axis_table[pixel[1] as usize];
+            let b_coord = axis_table[pixel[2] as usize];
 
-        let r0 = x.floor() as usize;
-        let r1 = (r0 + 1).min(size - 1);
-        let g0 = y.floor() as usize;
-        let g1 = (g0 + 1).min(size - 1);
-        let b0 = z.floor() as usize;
-        let b1 = (b0 + 1).min(size - 1);
+            let r0 = r_coord.i0 * 4;
+            let r1 = r_coord.i1 * 4;
+            let g0 = g_coord.i0 * slice_bytes;
+            let g1 = g_coord.i1 * slice_bytes;
+            let b0 = b_coord.i0 * col_bytes;
+            let b1 = b_coord.i1 * col_bytes;
 
-        let fr = x - r0 as f32;
-        let fg = y - g0 as f32;
-        let fb = z - b0 as f32;
+            let fr = r_coord.frac;
+            let fg = g_coord.frac;
+            let fb = b_coord.frac;
 
-        let (c000_r, c000_g, c000_b) = sample_lut_point(lut_data, size, r0, g0, b0);
-        let (c100_r, c100_g, c100_b) = sample_lut_point(lut_data, size, r1, g0, b0);
-        let (c010_r, c010_g, c010_b) = sample_lut_point(lut_data, size, r0, g1, b0);
-        let (c110_r, c110_g, c110_b) = sample_lut_point(lut_data, size, r1, g1, b0);
-        let (c001_r, c001_g, c001_b) = sample_lut_point(lut_data, size, r0, g0, b1);
-        let (c101_r, c101_g, c101_b) = sample_lut_point(lut_data, size, r1, g0, b1);
-        let (c011_r, c011_g, c011_b) = sample_lut_point(lut_data, size, r0, g1, b1);
-        let (c111_r, c111_g, c111_b) = sample_lut_point(lut_data, size, r1, g1, b1);
+            let c000 = sample_lut_offset(lut_data, g0 + b0 + r0);
+            let c100 = sample_lut_offset(lut_data, g0 + b0 + r1);
+            let c010 = sample_lut_offset(lut_data, g1 + b0 + r0);
+            let c110 = sample_lut_offset(lut_data, g1 + b0 + r1);
+            let c001 = sample_lut_offset(lut_data, g0 + b1 + r0);
+            let c101 = sample_lut_offset(lut_data, g0 + b1 + r1);
+            let c011 = sample_lut_offset(lut_data, g1 + b1 + r0);
+            let c111 = sample_lut_offset(lut_data, g1 + b1 + r1);
 
-        // Blend along R
-        let c00_r = (1.0 - fr) * c000_r + fr * c100_r;
-        let c00_g = (1.0 - fr) * c000_g + fr * c100_g;
-        let c00_b = (1.0 - fr) * c000_b + fr * c100_b;
+            // Interpolate along R
+            let c00_r = (1.0 - fr) * c000.0 + fr * c100.0;
+            let c00_g = (1.0 - fr) * c000.1 + fr * c100.1;
+            let c00_b = (1.0 - fr) * c000.2 + fr * c100.2;
 
-        let c10_r = (1.0 - fr) * c010_r + fr * c110_r;
-        let c10_g = (1.0 - fr) * c010_g + fr * c110_g;
-        let c10_b = (1.0 - fr) * c010_b + fr * c110_b;
+            let c10_r = (1.0 - fr) * c010.0 + fr * c110.0;
+            let c10_g = (1.0 - fr) * c010.1 + fr * c110.1;
+            let c10_b = (1.0 - fr) * c010.2 + fr * c110.2;
 
-        let c01_r = (1.0 - fr) * c001_r + fr * c101_r;
-        let c01_g = (1.0 - fr) * c001_g + fr * c101_g;
-        let c01_b = (1.0 - fr) * c001_b + fr * c101_b;
+            let c01_r = (1.0 - fr) * c001.0 + fr * c101.0;
+            let c01_g = (1.0 - fr) * c001.1 + fr * c101.1;
+            let c01_b = (1.0 - fr) * c001.2 + fr * c101.2;
 
-        let c11_r = (1.0 - fr) * c011_r + fr * c111_r;
-        let c11_g = (1.0 - fr) * c011_g + fr * c111_g;
-        let c11_b = (1.0 - fr) * c011_b + fr * c111_b;
+            let c11_r = (1.0 - fr) * c011.0 + fr * c111.0;
+            let c11_g = (1.0 - fr) * c011.1 + fr * c111.1;
+            let c11_b = (1.0 - fr) * c011.2 + fr * c111.2;
 
-        // Blend along G
-        let c0_r = (1.0 - fg) * c00_r + fg * c10_r;
-        let c0_g = (1.0 - fg) * c00_g + fg * c10_g;
-        let c0_b = (1.0 - fg) * c00_b + fg * c10_b;
+            // Interpolate along G
+            let c0_r = (1.0 - fg) * c00_r + fg * c10_r;
+            let c0_g = (1.0 - fg) * c00_g + fg * c10_g;
+            let c0_b = (1.0 - fg) * c00_b + fg * c10_b;
 
-        let c1_r = (1.0 - fg) * c01_r + fg * c11_r;
-        let c1_g = (1.0 - fg) * c01_g + fg * c11_g;
-        let c1_b = (1.0 - fg) * c01_b + fg * c11_b;
+            let c1_r = (1.0 - fg) * c01_r + fg * c11_r;
+            let c1_g = (1.0 - fg) * c01_g + fg * c11_g;
+            let c1_b = (1.0 - fg) * c01_b + fg * c11_b;
 
-        // Blend along B
-        let lut_r = (1.0 - fb) * c0_r + fb * c1_r;
-        let lut_g = (1.0 - fb) * c0_g + fb * c1_g;
-        let lut_b = (1.0 - fb) * c0_b + fb * c1_b;
+            // Interpolate along B
+            let lut_r = (1.0 - fb) * c0_r + fb * c1_r;
+            let lut_g = (1.0 - fb) * c0_g + fb * c1_g;
+            let lut_b = (1.0 - fb) * c0_b + fb * c1_b;
 
-        // Blend with original using intensity
-        pixel[0] = ((1.0 - intensity) * r_orig + intensity * lut_r).clamp(0.0, 255.0) as u8;
-        pixel[1] = ((1.0 - intensity) * g_orig + intensity * lut_g).clamp(0.0, 255.0) as u8;
-        pixel[2] = ((1.0 - intensity) * b_orig + intensity * lut_b).clamp(0.0, 255.0) as u8;
+            let r_orig = pixel[0] as f32;
+            let g_orig = pixel[1] as f32;
+            let b_orig = pixel[2] as f32;
+
+            pixel[0] = ((1.0 - intensity) * r_orig + intensity * lut_r).clamp(0.0, 255.0) as u8;
+            pixel[1] = ((1.0 - intensity) * g_orig + intensity * lut_g).clamp(0.0, 255.0) as u8;
+            pixel[2] = ((1.0 - intensity) * b_orig + intensity * lut_b).clamp(0.0, 255.0) as u8;
+        }
+    };
+
+    let total_pixels = rgb.len() / 3;
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(16);
+
+    // 小图（< 4096 像素）直接单线程运行，避免多线程调度开销
+    if total_pixels < 4096 || num_threads <= 1 {
+        process_chunk(rgb);
+    } else {
+        let chunk_pixels = total_pixels.div_ceil(num_threads);
+        let chunk_bytes = chunk_pixels * 3;
+
+        std::thread::scope(|s| {
+            for chunk in rgb.chunks_mut(chunk_bytes) {
+                s.spawn(|| {
+                    process_chunk(chunk);
+                });
+            }
+        });
     }
 }
 
@@ -392,5 +437,31 @@ mod tests {
         apply_3d_lut_rgb(&mut pixel_half, &lut_bytes, size, 0.5);
         // 50% 浓度混合后应接近 127/128
         assert!((pixel_half[0] as i32 - 127).abs() <= 2);
+    }
+
+    #[test]
+    fn applies_3d_lut_multithreaded_on_large_buffer() {
+        let size = 2;
+        let mut lut_bytes = vec![0u8; size * size * size * 4];
+        for b in 0..size {
+            for g in 0..size {
+                for r in 0..size {
+                    let offset = (g * size * size + b * size + r) * 4;
+                    lut_bytes[offset] = if r == 0 { 255 } else { 0 };
+                    lut_bytes[offset + 1] = if g == 0 { 255 } else { 0 };
+                    lut_bytes[offset + 2] = if b == 0 { 255 } else { 0 };
+                    lut_bytes[offset + 3] = 255;
+                }
+            }
+        }
+
+        // 大于 4096 像素，触发多线程 std::thread::scope 路径
+        let pixel_count = 8192;
+        let mut buffer = vec![0u8; pixel_count * 3];
+        apply_3d_lut_rgb(&mut buffer, &lut_bytes, size, 1.0);
+
+        for &chunk in buffer.as_chunks::<3>().0 {
+            assert_eq!(chunk, [255, 255, 255]);
+        }
     }
 }

@@ -85,4 +85,18 @@ LUT_3D_SIZE 2
     expect(useLutStore.getState().customLuts).toHaveLength(0);
     expect(useLutStore.getState().activeLutId).toBeNull();
   });
+
+  it('handles hoverLutId state transitions', () => {
+    expect(useLutStore.getState().hoverLutId).toBeNull();
+
+    useLutStore.getState().setHoverLutId('kodak_portra_400');
+    expect(useLutStore.getState().hoverLutId).toBe('kodak_portra_400');
+
+    useLutStore.getState().setHoverLutId('__bypass__');
+    expect(useLutStore.getState().hoverLutId).toBe('__bypass__');
+
+    // Selecting a LUT clears hover
+    useLutStore.getState().setActiveLutId('fuji_classic_chrome');
+    expect(useLutStore.getState().hoverLutId).toBeNull();
+  });
 });

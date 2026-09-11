@@ -132,4 +132,27 @@ describe('LutControlBar', () => {
     fireEvent.click(clearBtn);
     expect(Object.keys(useLutStore.getState().photoLuts).length).toBe(0);
   });
+
+  it('triggers hover quick-peek preview on mouse enter and leaves cleanly', () => {
+    render(<LutControlBar />);
+    fireEvent.click(screen.getByText('3D LUT 胶片预览'));
+
+    const fujiPreset = screen.getByText('Fuji Classic Chrome');
+    fireEvent.mouseEnter(fujiPreset);
+
+    expect(useLutStore.getState().hoverLutId).toBe('fuji_classic_chrome');
+    expect(screen.getByText(/Fuji Classic Chrome \(预览中\)/)).toBeInTheDocument();
+
+    fireEvent.mouseLeave(fujiPreset);
+    expect(useLutStore.getState().hoverLutId).toBeNull();
+    expect(screen.queryByText(/预览中/)).not.toBeInTheDocument();
+
+    const rawPreset = screen.getByText(/原片直出/);
+    fireEvent.mouseEnter(rawPreset);
+    expect(useLutStore.getState().hoverLutId).toBe('__bypass__');
+    expect(screen.getByText(/原片直出 \(预览中\)/)).toBeInTheDocument();
+
+    fireEvent.mouseLeave(rawPreset);
+    expect(useLutStore.getState().hoverLutId).toBeNull();
+  });
 });

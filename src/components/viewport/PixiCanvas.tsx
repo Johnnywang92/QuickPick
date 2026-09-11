@@ -46,6 +46,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const currentIndex = useAlbumStore((state) => state.currentIndex);
   const activeLutId = useLutStore((state) => state.activeLutId);
   const photoLuts = useLutStore((state) => state.photoLuts);
+  const hoverLutId = useLutStore((state) => state.hoverLutId);
   const isLutEnabled = useLutStore((state) => state.isEnabled);
   const lutIntensity = useLutStore((state) => state.intensity);
   const isLutBypassComparing = useLutStore((state) => state.isBypassComparing);
@@ -56,6 +57,12 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const currentPhotoLut = currentPhoto ? photoLuts[currentPhoto.id] : null;
   const effectiveLutId = currentPhoto ? currentPhotoLut?.lutId ?? null : activeLutId;
   const effectiveLutIntensity = currentPhoto ? (currentPhotoLut ? currentPhotoLut.intensity : lutIntensity) : lutIntensity;
+  const activeDisplayLutId =
+    hoverLutId === '__bypass__'
+      ? null
+      : hoverLutId !== null
+      ? hoverLutId
+      : effectiveLutId;
 
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isPanning, setIsPanning] = useState<boolean>(false);
@@ -293,17 +300,22 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     const sprite = spriteRef.current;
     if (!sprite) return;
 
+    const isHovering = hoverLutId !== null;
     const effectiveIntensity =
-      !isLutEnabled || isLutBypassComparing || !effectiveLutId ? 0.0 : effectiveLutIntensity;
+      (!isLutEnabled && !isHovering) || isLutBypassComparing || !activeDisplayLutId
+        ? 0.0
+        : effectiveLutIntensity > 0
+        ? effectiveLutIntensity
+        : 0.85;
 
-    if (!effectiveLutId || effectiveIntensity <= 0.001) {
+    if (!activeDisplayLutId || effectiveIntensity <= 0.001) {
       sprite.filters = [];
       return;
     }
 
     try {
-      const customData = effectiveLutId.startsWith('custom_') ? getCustomLutData(effectiveLutId) : undefined;
-      const { texture, size } = getOrCreateLutTexture(effectiveLutId, customData || undefined);
+      const customData = activeDisplayLutId.startsWith('custom_') ? getCustomLutData(activeDisplayLutId) : undefined;
+      const { texture, size } = getOrCreateLutTexture(activeDisplayLutId, customData || undefined);
 
       if (!lutFilterRef.current) {
         lutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
@@ -317,7 +329,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       console.error('应用 3D LUT 滤镜失败:', err);
       sprite.filters = [];
     }
-  }, [effectiveLutId, effectiveLutIntensity, isLutEnabled, isLutBypassComparing, getCustomLutData, imageStatus, textureVersion]);
+  }, [activeDisplayLutId, effectiveLutIntensity, isLutEnabled, isLutBypassComparing, hoverLutId, getCustomLutData, imageStatus, textureVersion]);
 
   // 渲染图上 Pin 针标记层
   useEffect(() => {

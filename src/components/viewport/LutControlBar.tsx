@@ -25,7 +25,9 @@ export const LutControlBar: React.FC = () => {
     isPanelOpen,
     customLuts,
     photoLuts,
+    hoverLutId,
     setActiveLutId,
+    setHoverLutId,
     toggleEnabled,
     setIntensity,
     setIsBypassComparing,
@@ -51,16 +53,32 @@ export const LutControlBar: React.FC = () => {
   const effectiveLutId = currentPhoto ? currentPhotoLut?.lutId ?? null : activeLutId;
   const effectiveIntensity = currentPhoto ? (currentPhotoLut ? currentPhotoLut.intensity : intensity) : intensity;
 
-  // 获取当前生效的 LUT 名称
+  // 获取当前生效的 LUT 名称与 Hover 预览名称
   const currentBuiltin = BUILTIN_LUTS.find((l) => l.id === effectiveLutId);
   const currentCustom = customLuts.find((l) => l.id === effectiveLutId);
   const currentName = currentBuiltin?.name || currentCustom?.name;
+
+  const isHovering = hoverLutId !== null;
+  const hoverBuiltin = BUILTIN_LUTS.find((l) => l.id === hoverLutId);
+  const hoverCustom = customLuts.find((l) => l.id === hoverLutId);
+  const hoverName =
+    hoverLutId === '__bypass__'
+      ? '原片直出'
+      : hoverBuiltin?.name || hoverCustom?.name || '';
+
+  const handleTogglePanel = () => {
+    if (isPanelOpen) {
+      setHoverLutId(null);
+    }
+    togglePanelOpen();
+  };
 
   // 批量应用候选
   const selectedPhotoIds = photos.filter((p) => selections[p.id]?.state === 'selected').map((p) => p.id);
   const totalLutsAppliedCount = Object.keys(photoLuts).length;
 
   const handleSelectLut = (lutId: string | null) => {
+    setHoverLutId(null);
     if (currentPhoto) {
       if (lutId === null) {
         clearPhotoLut(currentPhoto.id);
@@ -131,18 +149,22 @@ export const LutControlBar: React.FC = () => {
       {/* 顶部胶囊快捷条 */}
       <div className="flex items-center space-x-1.5 bg-dark-800/85 backdrop-blur-md border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300">
         <button
-          onClick={togglePanelOpen}
+          onClick={handleTogglePanel}
           className={clsx(
             'flex items-center space-x-1.5 px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer',
-            effectiveLutId && isEnabled
+            isHovering
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+              : effectiveLutId && isEnabled
               ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 shadow-sm'
               : 'hover:bg-dark-700 text-slate-300',
           )}
           title="点击展开 3D LUT 胶片调色预设库"
         >
-          <Film className="w-3.5 h-3.5 text-indigo-400" />
+          <Film className={clsx('w-3.5 h-3.5', isHovering ? 'text-amber-400' : 'text-indigo-400')} />
           <span className="font-sans">
-            {effectiveLutId && isEnabled
+            {isHovering
+              ? `${hoverName} (预览中)`
+              : effectiveLutId && isEnabled
               ? `${currentName || '胶片调色'} (${Math.round(effectiveIntensity * 100)}%)`
               : '3D LUT 胶片预览'}
           </span>
@@ -190,7 +212,10 @@ export const LutControlBar: React.FC = () => {
 
       {/* 展开的 LUT 调色面板 Popover */}
       {isPanelOpen && (
-        <div className="absolute right-0 top-10 z-50 w-76 rounded-2xl border border-dark-700 bg-dark-900/95 p-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 text-slate-200 space-y-3">
+        <div
+          onMouseLeave={() => setHoverLutId(null)}
+          className="absolute right-0 top-10 z-50 w-76 rounded-2xl border border-dark-700 bg-dark-900/95 p-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 text-slate-200 space-y-3"
+        >
           {/* 面板头部 */}
           <div className="flex items-center justify-between pb-2 border-b border-dark-750">
             <div className="flex items-center space-x-2">
@@ -205,7 +230,10 @@ export const LutControlBar: React.FC = () => {
               </div>
             </div>
             <button
-              onClick={() => setIsPanelOpen(false)}
+              onClick={() => {
+                setHoverLutId(null);
+                setIsPanelOpen(false);
+              }}
               className="p-1 text-slate-400 hover:text-slate-200 hover:bg-dark-800 rounded-lg cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -217,10 +245,14 @@ export const LutControlBar: React.FC = () => {
             {/* 原片直出选项 */}
             <button
               onClick={() => handleSelectLut(null)}
+              onMouseEnter={() => setHoverLutId('__bypass__')}
+              onMouseLeave={() => setHoverLutId(null)}
               className={clsx(
                 'w-full flex items-center justify-between p-2 rounded-xl border text-left transition-all cursor-pointer',
                 effectiveLutId === null
                   ? 'bg-indigo-600/20 border-indigo-500 text-indigo-200 shadow-sm'
+                  : hoverLutId === '__bypass__'
+                  ? 'bg-dark-800 border-indigo-500/60 text-slate-200'
                   : 'bg-dark-850/70 border-dark-750 hover:bg-dark-800 text-slate-300',
               )}
             >
@@ -236,14 +268,19 @@ export const LutControlBar: React.FC = () => {
             {/* 内置 7 款摄影级胶片预设 */}
             {BUILTIN_LUTS.map((lut) => {
               const isSelected = effectiveLutId === lut.id;
+              const isHovered = hoverLutId === lut.id;
               return (
                 <button
                   key={lut.id}
                   onClick={() => handleSelectLut(lut.id)}
+                  onMouseEnter={() => setHoverLutId(lut.id)}
+                  onMouseLeave={() => setHoverLutId(null)}
                   className={clsx(
                     'w-full flex items-center justify-between p-2 rounded-xl border text-left transition-all cursor-pointer',
                     isSelected
                       ? 'bg-indigo-600/25 border-indigo-500 text-indigo-200 shadow-sm ring-1 ring-indigo-500/50'
+                      : isHovered
+                      ? 'bg-dark-800 border-indigo-500/60 text-slate-200 ring-1 ring-indigo-500/30'
                       : 'bg-dark-850/70 border-dark-750 hover:bg-dark-800 text-slate-300',
                   )}
                 >
@@ -267,14 +304,19 @@ export const LutControlBar: React.FC = () => {
                 <div className="text-[10px] text-slate-400 font-semibold mb-1">自定义导入 LUT</div>
                 {customLuts.map((custom) => {
                   const isSelected = effectiveLutId === custom.id;
+                  const isHovered = hoverLutId === custom.id;
                   return (
                     <div
                       key={custom.id}
                       onClick={() => handleSelectLut(custom.id)}
+                      onMouseEnter={() => setHoverLutId(custom.id)}
+                      onMouseLeave={() => setHoverLutId(null)}
                       className={clsx(
                         'flex items-center justify-between p-2 rounded-xl border text-left transition-all cursor-pointer mb-1.5',
                         isSelected
                           ? 'bg-indigo-600/25 border-indigo-500 text-indigo-200'
+                          : isHovered
+                          ? 'bg-dark-800 border-indigo-500/60 text-slate-200 ring-1 ring-indigo-500/30'
                           : 'bg-dark-850/70 border-dark-750 hover:bg-dark-800 text-slate-300',
                       )}
                     >
