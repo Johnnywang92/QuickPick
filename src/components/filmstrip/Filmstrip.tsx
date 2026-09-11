@@ -101,6 +101,13 @@ export const Filmstrip: React.FC = () => {
     });
   };
 
+  // 实体鼠标滚轮横向映射：当使用普通鼠标垂直滚轮时，自动转化为胶片栏横向滚动
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (Math.abs(e.deltaY) > 0 && Math.abs(e.deltaX) === 0 && containerRef.current) {
+      containerRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
   // 计算当前活动筛选条件下的匹配照片列表（仅在 unreviewed 下解构 currentIndex，其余常规选片翻页 0 计算消耗）
   const filterCurrentIndex = activeFilter === 'unreviewed' ? currentIndex : undefined;
   const filteredPhotos = React.useMemo(() => {
@@ -233,6 +240,7 @@ export const Filmstrip: React.FC = () => {
     <div
       ref={containerRef}
       onScroll={handleScroll}
+      onWheel={handleWheel}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       className="h-full w-full bg-dark-850 overflow-x-auto overflow-y-hidden select-none relative scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-transparent"

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js';
 import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
+import { useAlbumStore } from '../../store/albumStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useLutStore } from '../../store/lutStore';
 import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
@@ -88,6 +89,52 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     keepPinMarkersReadable();
     setZoomLevel(Math.round(fitScale * 100));
   }, [getFitScale, keepPinMarkersReadable]);
+
+  // 视口平移越界硬约束算法：防止照片被拖丢出屏幕，并在全屏/缩小状态强吸附中心
+  const clampPosition = useCallback(
+    (x: number, y: number, scale: number): { x: number; y: number } => {
+      if (!appRef.current || !spriteRef.current) return { x, y };
+      const app = appRef.current;
+      const sprite = spriteRef.current;
+      const fitScale = getFitScale();
+
+      // 当图片在适配全屏比例（或以下）时，强制锚定屏幕绝对中心，杜绝任何偏斜
+      if (scale <= fitScale + 0.005) {
+        return { x: app.screen.width / 2, y: app.screen.height / 2 };
+      }
+
+      const imgW = sprite.texture.width * scale;
+      const imgH = sprite.texture.height * scale;
+      const W = app.screen.width;
+      const H = app.screen.height;
+
+      let clampedX = x;
+      let clampedY = y;
+
+      // 水平方向边界保护：允许留有适度缓冲余量 (slack)，保证摄影师能滑至最边缘细节，但绝不脱出视野
+      if (imgW <= W) {
+        clampedX = W / 2;
+      } else {
+        const slackX = Math.min(W * 0.25, 120);
+        const minX = W - imgW / 2 - slackX;
+        const maxX = imgW / 2 + slackX;
+        clampedX = Math.max(minX, Math.min(maxX, x));
+      }
+
+      // 垂直方向边界保护
+      if (imgH <= H) {
+        clampedY = H / 2;
+      } else {
+        const slackY = Math.min(H * 0.25, 120);
+        const minY = H - imgH / 2 - slackY;
+        const maxY = imgH / 2 + slackY;
+        clampedY = Math.max(minY, Math.min(maxY, y));
+      }
+
+      return { x: clampedX, y: clampedY };
+    },
+    [getFitScale],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -338,7 +385,25 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     keepPinMarkersReadable();
   }, [focusedFace, keepPinMarkersReadable]);
 
-  // 滚轮与触控板手势监听：区分双指捏合缩放 (Pinch)、双指滑动平移 (Pan) 与实体鼠标滚轮
+  // 触控板轻扫切图跟踪引用
+  const swipeDeltaXRef = useRef(0);
+  const swipeCooldownRef = useRef(0);
+  const swipeResetTimeoutRef = useRef<number | null>(null);
+
+  // 全局鼠标按键释放与窗口失焦监听：彻底杜绝鼠标快速甩出窗口外部松手时的“粘滞拖拽”
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsPanning(false);
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('blur', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('blur', handleGlobalMouseUp);
+    };
+  }, []);
+
+  // 滚轮与触控板手势监听：区分双指捏合缩放 (Pinch)、双指滑动平移 (Pan)、全屏双指轻扫切图与实体鼠标滚轮
   const handleWheel = (e: React.WheelEvent) => {
     if (!imageContainerRef.current || !appRef.current || !containerRef.current || !spriteRef.current) return;
     e.preventDefault();
@@ -374,13 +439,17 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         container.y = app.screen.height / 2;
         setZoomLevel(Math.round(fitScale * 100));
       } else {
-        // 放大时（检查对焦/细节），以光标指针为中心进行平滑缩放
+        // 放大时（检查对焦/细节），以光标指针为中心进行平滑缩放，并施加视口边界安全约束
         const rect = containerRef.current.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
-        container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
+        const rawX = mouseX - (mouseX - container.x) * (newScale / oldScale);
+        const rawY = mouseY - (mouseY - container.y) * (newScale / oldScale);
+        const { x: clampedX, y: clampedY } = clampPosition(rawX, rawY, newScale);
+
+        container.x = clampedX;
+        container.y = clampedY;
         container.scale.set(newScale);
         setZoomLevel(Math.round(newScale * 100));
       }
@@ -388,12 +457,39 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       return;
     }
 
-    // 2. 双指滑动平移 (Pan: !e.ctrlKey)
-    // 仅在放大状态 (scale > fitScale) 下响应双指平移，方便摄影师移动视角查看各处细节
+    // 2. 双指滑动平移或轻扫切图 (Pan / Swipe: !e.ctrlKey)
     if (oldScale > fitScale + 0.005) {
-      container.x -= e.deltaX;
-      container.y -= e.deltaY;
+      // 放大状态：双指平移视角查看细节，施加边界硬约束
+      const rawX = container.x - e.deltaX;
+      const rawY = container.y - e.deltaY;
+      const { x: clampedX, y: clampedY } = clampPosition(rawX, rawY, oldScale);
+      container.x = clampedX;
+      container.y = clampedY;
       keepPinMarkersReadable();
+    } else {
+      // 全屏未放大状态：触控板双指横向轻扫触发切换上一张/下一张
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2) {
+        swipeDeltaXRef.current += e.deltaX;
+        if (swipeResetTimeoutRef.current) {
+          clearTimeout(swipeResetTimeoutRef.current);
+        }
+        swipeResetTimeoutRef.current = window.setTimeout(() => {
+          swipeDeltaXRef.current = 0;
+        }, 280);
+
+        const now = performance.now();
+        if (now - swipeCooldownRef.current > 350) {
+          if (swipeDeltaXRef.current > 70) {
+            useAlbumStore.getState().nextPhoto();
+            swipeDeltaXRef.current = 0;
+            swipeCooldownRef.current = now;
+          } else if (swipeDeltaXRef.current < -70) {
+            useAlbumStore.getState().prevPhoto();
+            swipeDeltaXRef.current = 0;
+            swipeCooldownRef.current = now;
+          }
+        }
+      }
     }
   };
 
@@ -410,8 +506,12 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      container.x = mouseX - (mouseX - container.x) * (targetScale / container.scale.x);
-      container.y = mouseY - (mouseY - container.y) * (targetScale / container.scale.y);
+      const rawX = mouseX - (mouseX - container.x) * (targetScale / container.scale.x);
+      const rawY = mouseY - (mouseY - container.y) * (targetScale / container.scale.y);
+      const { x: clampedX, y: clampedY } = clampPosition(rawX, rawY, targetScale);
+
+      container.x = clampedX;
+      container.y = clampedY;
       container.scale.set(targetScale);
       setZoomLevel(Math.round(targetScale * 100));
     } else {
@@ -420,24 +520,35 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     keepPinMarkersReadable();
   };
 
-  // 鼠标拖动画布
+  // 鼠标拖动画布：仅在放大查看细节时响应平移，全屏适配状态禁止破坏居中
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0 || e.button === 1) {
-      setIsPanning(true);
-      dragStartRef.current = { x: e.clientX, y: e.clientY };
       mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+      const fitScale = getFitScale();
+      const currentScale = imageContainerRef.current?.scale.x ?? 1.0;
+
+      if (currentScale > fitScale + 0.01) {
+        setIsPanning(true);
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+      }
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isPanning || !imageContainerRef.current) return;
+    const container = imageContainerRef.current;
     const dx = e.clientX - dragStartRef.current.x;
     const dy = e.clientY - dragStartRef.current.y;
 
-    imageContainerRef.current.x += dx;
-    imageContainerRef.current.y += dy;
+    const rawX = container.x + dx;
+    const rawY = container.y + dy;
+    const { x: clampedX, y: clampedY } = clampPosition(rawX, rawY, container.scale.x);
+
+    container.x = clampedX;
+    container.y = clampedY;
 
     dragStartRef.current = { x: e.clientX, y: e.clientY };
+    keepPinMarkersReadable();
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
@@ -486,6 +597,9 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     setZoomLevel(100);
   };
 
+  const fitZoom = Math.round(getFitScale() * 100);
+  const isZoomed = zoomLevel > fitZoom + 1;
+
   return (
     <div
       ref={containerRef}
@@ -497,7 +611,13 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       onMouseLeave={handleMouseUp}
       className={clsx(
         'relative w-full h-full overflow-hidden bg-dark-900 select-none',
-        isAddingPin ? 'cursor-crosshair' : isPanning ? 'cursor-grabbing' : 'cursor-grab',
+        isAddingPin
+          ? 'cursor-crosshair'
+          : isPanning
+          ? 'cursor-grabbing'
+          : isZoomed
+          ? 'cursor-grab'
+          : 'cursor-default',
       )}
     >
       {isAddingPin && (

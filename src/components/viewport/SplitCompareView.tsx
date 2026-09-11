@@ -469,6 +469,64 @@ export const SplitCompareView: React.FC = () => {
     return Math.min((app.screen.width * 0.9) / sprite.texture.width, (app.screen.height * 0.9) / sprite.texture.height, 1.0);
   };
 
+  // 视口平移越界硬约束算法：防止对比画面被拖出视口，最小比例吸附中央
+  const clampPosition = (
+    x: number,
+    y: number,
+    scale: number,
+    app: Application | null,
+    sprite: Sprite | null,
+    fitScale: number,
+  ): { x: number; y: number } => {
+    if (!app || !sprite) return { x, y };
+
+    if (scale <= fitScale + 0.005) {
+      return { x: app.screen.width / 2, y: app.screen.height / 2 };
+    }
+
+    const imgW = sprite.texture.width * scale;
+    const imgH = sprite.texture.height * scale;
+    const W = app.screen.width;
+    const H = app.screen.height;
+
+    let clampedX = x;
+    let clampedY = y;
+
+    if (imgW <= W) {
+      clampedX = W / 2;
+    } else {
+      const slackX = Math.min(W * 0.25, 120);
+      const minX = W - imgW / 2 - slackX;
+      const maxX = imgW / 2 + slackX;
+      clampedX = Math.max(minX, Math.min(maxX, x));
+    }
+
+    if (imgH <= H) {
+      clampedY = H / 2;
+    } else {
+      const slackY = Math.min(H * 0.25, 120);
+      const minY = H - imgH / 2 - slackY;
+      const maxY = imgH / 2 + slackY;
+      clampedY = Math.max(minY, Math.min(maxY, y));
+    }
+
+    return { x: clampedX, y: clampedY };
+  };
+
+  // 全局鼠标按键释放与失焦监听：杜绝分屏对比中鼠标划过分割线或窗外松开后的粘滞拖拽
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      leftIsPanning.current = false;
+      rightIsPanning.current = false;
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('blur', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('blur', handleGlobalMouseUp);
+    };
+  }, []);
+
   // 滚轮与触控板缩放处理 (支持双指捏合缩放、双指滑动平移与双画布联动)
   const handleWheel = (e: React.WheelEvent, isLeft: boolean) => {
     e.preventDefault();
@@ -485,10 +543,11 @@ export const SplitCompareView: React.FC = () => {
     const applyZoom = (
       container: Container | null,
       app: Application | null,
+      sprite: Sprite | null,
       fitScale: number,
       setZoom: (z: number) => void,
     ) => {
-      if (!container || !app) return;
+      if (!container || !app || !sprite) return;
       const oldScale = container.scale.x;
       const zoomFactor = isPinchZoom
         ? Math.exp(-e.deltaY * 0.01)
@@ -507,54 +566,84 @@ export const SplitCompareView: React.FC = () => {
         container.y = app.screen.height / 2;
         setZoom(Math.round(fitScale * 100));
       } else {
-        if (rect) {
-          container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
-          container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
-        }
+        const rawX = rect ? mouseX - (mouseX - container.x) * (newScale / oldScale) : container.x;
+        const rawY = rect ? mouseY - (mouseY - container.y) * (newScale / oldScale) : container.y;
+        const { x: clampedX, y: clampedY } = clampPosition(rawX, rawY, newScale, app, sprite, fitScale);
+
+        container.x = clampedX;
+        container.y = clampedY;
         container.scale.set(newScale);
         setZoom(Math.round(newScale * 100));
       }
     };
 
-    const applyPan = (container: Container | null, fitScale: number) => {
-      if (!container) return;
+    const applyPan = (
+      container: Container | null,
+      app: Application | null,
+      sprite: Sprite | null,
+      fitScale: number,
+    ) => {
+      if (!container || !app || !sprite) return;
       if (container.scale.x > fitScale + 0.005) {
-        container.x -= e.deltaX;
-        container.y -= e.deltaY;
+        const rawX = container.x - e.deltaX;
+        const rawY = container.y - e.deltaY;
+        const { x: clampedX, y: clampedY } = clampPosition(rawX, rawY, container.scale.x, app, sprite, fitScale);
+        container.x = clampedX;
+        container.y = clampedY;
       }
     };
 
     if (isPinchZoom || isModifierZoom || isMouseWheel) {
       if (syncZoomAndPan) {
-        applyZoom(leftImageContainerRef.current, leftAppRef.current, getLeftFitScale(), setLeftZoom);
-        applyZoom(rightImageContainerRef.current, rightAppRef.current, getRightFitScale(), setRightZoom);
+        applyZoom(leftImageContainerRef.current, leftAppRef.current, leftSpriteRef.current, getLeftFitScale(), setLeftZoom);
+        applyZoom(rightImageContainerRef.current, rightAppRef.current, rightSpriteRef.current, getRightFitScale(), setRightZoom);
       } else {
         if (isLeft) {
-          applyZoom(leftImageContainerRef.current, leftAppRef.current, getLeftFitScale(), setLeftZoom);
+          applyZoom(leftImageContainerRef.current, leftAppRef.current, leftSpriteRef.current, getLeftFitScale(), setLeftZoom);
         } else {
-          applyZoom(rightImageContainerRef.current, rightAppRef.current, getRightFitScale(), setRightZoom);
+          applyZoom(rightImageContainerRef.current, rightAppRef.current, rightSpriteRef.current, getRightFitScale(), setRightZoom);
         }
       }
     } else {
       if (syncZoomAndPan) {
-        applyPan(leftImageContainerRef.current, getLeftFitScale());
-        applyPan(rightImageContainerRef.current, getRightFitScale());
+        applyPan(leftImageContainerRef.current, leftAppRef.current, leftSpriteRef.current, getLeftFitScale());
+        applyPan(rightImageContainerRef.current, rightAppRef.current, rightSpriteRef.current, getRightFitScale());
       } else {
         if (isLeft) {
-          applyPan(leftImageContainerRef.current, getLeftFitScale());
+          applyPan(leftImageContainerRef.current, leftAppRef.current, leftSpriteRef.current, getLeftFitScale());
         } else {
-          applyPan(rightImageContainerRef.current, getRightFitScale());
+          applyPan(rightImageContainerRef.current, rightAppRef.current, rightSpriteRef.current, getRightFitScale());
         }
       }
     }
   };
 
-  // 鼠标拖拽平移 (支持双画布联动)
+  // 鼠标拖拽平移 (仅在放大状态下响应，全屏适配禁止破坏居中)
   const handleMouseDown = (e: React.MouseEvent, isLeft: boolean) => {
     if (e.button === 0 || e.button === 1) {
-      if (isLeft) leftIsPanning.current = true;
-      else rightIsPanning.current = true;
-      dragStartRef.current = { x: e.clientX, y: e.clientY };
+      const leftFit = getLeftFitScale();
+      const rightFit = getRightFitScale();
+      const leftScale = leftImageContainerRef.current?.scale.x ?? 1.0;
+      const rightScale = rightImageContainerRef.current?.scale.x ?? 1.0;
+
+      const canPanLeft = leftScale > leftFit + 0.01;
+      const canPanRight = rightScale > rightFit + 0.01;
+
+      if (syncZoomAndPan) {
+        if (canPanLeft || canPanRight) {
+          leftIsPanning.current = true;
+          rightIsPanning.current = true;
+          dragStartRef.current = { x: e.clientX, y: e.clientY };
+        }
+      } else {
+        if (isLeft && canPanLeft) {
+          leftIsPanning.current = true;
+          dragStartRef.current = { x: e.clientX, y: e.clientY };
+        } else if (!isLeft && canPanRight) {
+          rightIsPanning.current = true;
+          dragStartRef.current = { x: e.clientX, y: e.clientY };
+        }
+      }
     }
   };
 
@@ -566,22 +655,35 @@ export const SplitCompareView: React.FC = () => {
     const dy = e.clientY - dragStartRef.current.y;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
 
+    const leftContainer = leftImageContainerRef.current;
+    const rightContainer = rightImageContainerRef.current;
+    const leftApp = leftAppRef.current;
+    const rightApp = rightAppRef.current;
+    const leftSprite = leftSpriteRef.current;
+    const rightSprite = rightSpriteRef.current;
+    const leftFit = getLeftFitScale();
+    const rightFit = getRightFitScale();
+
     if (syncZoomAndPan) {
-      if (leftImageContainerRef.current) {
-        leftImageContainerRef.current.x += dx;
-        leftImageContainerRef.current.y += dy;
+      if (leftContainer && leftContainer.scale.x > leftFit + 0.01) {
+        const { x, y } = clampPosition(leftContainer.x + dx, leftContainer.y + dy, leftContainer.scale.x, leftApp, leftSprite, leftFit);
+        leftContainer.x = x;
+        leftContainer.y = y;
       }
-      if (rightImageContainerRef.current) {
-        rightImageContainerRef.current.x += dx;
-        rightImageContainerRef.current.y += dy;
+      if (rightContainer && rightContainer.scale.x > rightFit + 0.01) {
+        const { x, y } = clampPosition(rightContainer.x + dx, rightContainer.y + dy, rightContainer.scale.x, rightApp, rightSprite, rightFit);
+        rightContainer.x = x;
+        rightContainer.y = y;
       }
     } else {
-      if (leftIsPanning.current && leftImageContainerRef.current) {
-        leftImageContainerRef.current.x += dx;
-        leftImageContainerRef.current.y += dy;
-      } else if (rightIsPanning.current && rightImageContainerRef.current) {
-        rightImageContainerRef.current.x += dx;
-        rightImageContainerRef.current.y += dy;
+      if (leftIsPanning.current && leftContainer && leftContainer.scale.x > leftFit + 0.01) {
+        const { x, y } = clampPosition(leftContainer.x + dx, leftContainer.y + dy, leftContainer.scale.x, leftApp, leftSprite, leftFit);
+        leftContainer.x = x;
+        leftContainer.y = y;
+      } else if (rightIsPanning.current && rightContainer && rightContainer.scale.x > rightFit + 0.01) {
+        const { x, y } = clampPosition(rightContainer.x + dx, rightContainer.y + dy, rightContainer.scale.x, rightApp, rightSprite, rightFit);
+        rightContainer.x = x;
+        rightContainer.y = y;
       }
     }
   };
@@ -727,7 +829,11 @@ export const SplitCompareView: React.FC = () => {
           ref={leftContainerRef}
           onWheel={(e) => handleWheel(e, true)}
           onMouseDown={(e) => handleMouseDown(e, true)}
-          className="flex-1 h-full relative border-r border-dark-700 bg-dark-900 cursor-grab active:cursor-grabbing overflow-hidden"
+          className={`flex-1 h-full relative border-r border-dark-700 bg-dark-900 overflow-hidden ${
+            leftZoom > Math.round(getLeftFitScale() * 100) + 1
+              ? 'cursor-grab active:cursor-grabbing'
+              : 'cursor-default'
+          }`}
         >
           {(previewStatus === 'loading' || leftRenderStatus === 'initializing' || leftRenderStatus === 'loading') && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-dark-900/55">
@@ -825,7 +931,11 @@ export const SplitCompareView: React.FC = () => {
           ref={rightContainerRef}
           onWheel={(e) => handleWheel(e, false)}
           onMouseDown={(e) => handleMouseDown(e, false)}
-          className="flex-1 h-full relative bg-dark-900 cursor-grab active:cursor-grabbing overflow-hidden"
+          className={`flex-1 h-full relative bg-dark-900 overflow-hidden ${
+            rightZoom > Math.round(getRightFitScale() * 100) + 1
+              ? 'cursor-grab active:cursor-grabbing'
+              : 'cursor-default'
+          }`}
         >
           {(comparePreviewStatus === 'loading' || rightRenderStatus === 'initializing' || rightRenderStatus === 'loading') && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-dark-900/55">
