@@ -30,6 +30,7 @@ describe('LutControlBar', () => {
     expect(screen.getByText('3D LUT 胶片色彩预览')).toBeInTheDocument();
     expect(screen.getByText('Kodak Portra 400')).toBeInTheDocument();
     expect(screen.getByText('Fuji Classic Chrome')).toBeInTheDocument();
+    expect(screen.getByText('CCD Vintage Digicam')).toBeInTheDocument();
   });
 
   it('selects a preset from the popover', () => {

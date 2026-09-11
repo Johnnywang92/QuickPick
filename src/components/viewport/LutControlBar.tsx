@@ -265,7 +265,7 @@ export const LutControlBar: React.FC = () => {
               </div>
             </button>
 
-            {/* 内置 7 款摄影级胶片预设 */}
+            {/* 内置摄影级胶片与复古预设 */}
             {BUILTIN_LUTS.map((lut) => {
               const isSelected = effectiveLutId === lut.id;
               const isHovered = hoverLutId === lut.id;

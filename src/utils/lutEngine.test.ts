@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { BUILTIN_LUTS, generateBuiltinLutData, parseCubeLut } from './lutEngine';
 
 describe('lutEngine', () => {
-  it('defines 7 high quality built-in photographic film presets', () => {
-    expect(BUILTIN_LUTS).toHaveLength(7);
+  it('defines 8 high quality built-in photographic film and vintage presets', () => {
+    expect(BUILTIN_LUTS).toHaveLength(8);
     const ids = BUILTIN_LUTS.map((l) => l.id);
     expect(ids).toContain('kodak_portra_400');
     expect(ids).toContain('fuji_classic_chrome');
+    expect(ids).toContain('ccd_vintage_digital');
     expect(ids).toContain('wedding_pure_white');
     expect(ids).toContain('cinematic_teal_orange');
     expect(ids).toContain('leica_monochrome');
@@ -43,6 +44,16 @@ describe('lutEngine', () => {
       expect(data[i]).toBe(data[i + 1]);
       expect(data[i + 1]).toBe(data[i + 2]);
     }
+  });
+
+  it('correctly generates CCD vintage digital preset with rich saturation and warm highlights', () => {
+    const data = generateBuiltinLutData('ccd_vintage_digital', 16);
+    expect(data.length).toBe(16 * 16 * 16 * 4);
+
+    // Deep black input (pixel index 0) has gentle lifted black level
+    expect(data[0]).toBeGreaterThan(0);
+    expect(data[1]).toBeGreaterThan(0);
+    expect(data[2]).toBeGreaterThan(0);
   });
 
   it('parses standard .cube file syntax correctly', () => {

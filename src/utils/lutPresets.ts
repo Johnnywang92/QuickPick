@@ -22,6 +22,13 @@ export const BUILTIN_LUTS: LutPreset[] = [
     size: 33,
   },
   {
+    id: 'ccd_vintage_digital',
+    name: 'CCD Vintage Digicam',
+    tag: '千禧复古 CCD',
+    description: '浓郁原色饱和度、暖白高光溢出与复古油画质感，还原千禧年经典卡片机氛围',
+    size: 33,
+  },
+  {
     id: 'wedding_pure_white',
     name: 'Pure White Bridal',
     tag: '日系通透纯白',
@@ -127,6 +134,35 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
             // 富士特有的暗部偏青与高光微品红
             outR = outR * 1.02;
             outB = outB * 0.96 + (1 - lum) * 0.03;
+            break;
+          }
+
+          case 'ccd_vintage_digital': {
+            // 千禧年复古 CCD 传感器风格：浓郁原色油画质感、高饱和宝石蓝天与微透暖光
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+            // 1. 中阶与原色饱和度强化 (经典 CCD 标志性油画感原色)
+            const satR = lum + (r - lum) * 1.22;
+            const satG = lum + (g - lum) * 1.18;
+            const satB = lum + (b - lum) * 1.26;
+
+            // 2. CCD 适度反差 S 曲线 (硬朗明暗与层次感)
+            const curveR = sCurve(satR, 1.34);
+            const curveG = sCurve(satG, 1.32);
+            const curveB = sCurve(satB, 1.36);
+
+            // 3. 高光温润奶白微暖泛光，阴影微冷净透
+            const highlightWeight = Math.pow(lum, 1.6);
+            const shadowWeight = Math.pow(1 - lum, 1.5);
+
+            outR = curveR + highlightWeight * 0.04;
+            outG = curveG + highlightWeight * 0.02;
+            outB = curveB - highlightWeight * 0.02 + shadowWeight * 0.03;
+
+            // 4. 黑平阶与微雾感：适度抬升暗部底阶 (黑位约 0.025)，还原经典卡片机氛围
+            outR = 0.025 + outR * 0.96;
+            outG = 0.022 + outG * 0.96;
+            outB = 0.030 + outB * 0.95;
             break;
           }
 
