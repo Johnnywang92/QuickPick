@@ -67,21 +67,27 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     }
   }, []);
 
+  const getFitScale = useCallback(() => {
+    if (!appRef.current || !spriteRef.current) return 1.0;
+    const app = appRef.current;
+    const sprite = spriteRef.current;
+    const scaleX = (app.screen.width * 0.92) / sprite.texture.width;
+    const scaleY = (app.screen.height * 0.92) / sprite.texture.height;
+    return Math.min(scaleX, scaleY, 1.0);
+  }, []);
+
   const fitImageToViewport = useCallback(() => {
     if (!imageContainerRef.current || !appRef.current || !spriteRef.current) return;
     const app = appRef.current;
-    const sprite = spriteRef.current;
     const container = imageContainerRef.current;
-    const scaleX = (app.screen.width * 0.92) / sprite.texture.width;
-    const scaleY = (app.screen.height * 0.92) / sprite.texture.height;
-    const fitScale = Math.min(scaleX, scaleY, 1.0);
+    const fitScale = getFitScale();
 
     container.x = app.screen.width / 2;
     container.y = app.screen.height / 2;
     container.scale.set(fitScale);
     keepPinMarkersReadable();
     setZoomLevel(Math.round(fitScale * 100));
-  }, [keepPinMarkersReadable]);
+  }, [getFitScale, keepPinMarkersReadable]);
 
   useEffect(() => {
     let isMounted = true;
@@ -332,35 +338,86 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     keepPinMarkersReadable();
   }, [focusedFace, keepPinMarkersReadable]);
 
-  // 滚轮与触控板缩放事件监听（支持以鼠标光标为中心缩放，及 Mac 触控板指数平滑捏合）
+  // 滚轮与触控板手势监听：区分双指捏合缩放 (Pinch)、双指滑动平移 (Pan) 与实体鼠标滚轮
   const handleWheel = (e: React.WheelEvent) => {
-    if (!imageContainerRef.current || !appRef.current || !containerRef.current) return;
+    if (!imageContainerRef.current || !appRef.current || !containerRef.current || !spriteRef.current) return;
     e.preventDefault();
 
     const container = imageContainerRef.current;
+    const app = appRef.current;
+    const fitScale = getFitScale();
     const oldScale = container.scale.x;
 
-    // 针对 Mac 触控板捏合手势（带 ctrlKey）使用指数平滑插值，普通滚轮则使用标准阶梯步进
-    const zoomFactor = e.ctrlKey
-      ? Math.exp(-e.deltaY * 0.01)
-      : e.deltaY < 0
-      ? 1.15
-      : 0.85;
+    // 1. 双指捏合缩放 (Pinch-to-zoom: macOS 标准触发 e.ctrlKey === true) 或 按住 Cmd/Alt 的滚轮缩放
+    const isPinchZoom = e.ctrlKey;
+    const isModifierZoom = e.metaKey || e.altKey;
+    // 物理鼠标滚轮通常为较大整数阶梯 (如 100/120) 且无 X 轴分量
+    const isMouseWheel = e.deltaMode !== 0 || (Math.abs(e.deltaY) >= 50 && e.deltaX === 0);
 
-    const newScale = Math.max(0.1, Math.min(oldScale * zoomFactor, 8.0));
-    if (Math.abs(newScale - oldScale) < 0.0001) return;
+    if (isPinchZoom || isModifierZoom || isMouseWheel) {
+      const zoomFactor = isPinchZoom
+        ? Math.exp(-e.deltaY * 0.01)
+        : isModifierZoom
+        ? Math.exp(-e.deltaY * 0.005)
+        : e.deltaY < 0
+        ? 1.15
+        : 0.85;
 
-    // 计算鼠标在视口中的坐标，实现专业级光标中心缩放（指哪放大哪）
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+      const targetScale = oldScale * zoomFactor;
+      // 设定底片缩放最小为 fitScale（整图完全适配视口），杜绝缩小成左下角/右下角邮票
+      const newScale = Math.max(fitScale, Math.min(targetScale, 8.0));
 
-    container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
-    container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
-    container.scale.set(newScale);
+      if (newScale <= fitScale + 0.001) {
+        // 当缩小到完整全屏展示或以下时，强约束吸附居中，彻底消除左下/右下偏移
+        container.scale.set(fitScale);
+        container.x = app.screen.width / 2;
+        container.y = app.screen.height / 2;
+        setZoomLevel(Math.round(fitScale * 100));
+      } else {
+        // 放大时（检查对焦/细节），以光标指针为中心进行平滑缩放
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
 
+        container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
+        container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
+        container.scale.set(newScale);
+        setZoomLevel(Math.round(newScale * 100));
+      }
+      keepPinMarkersReadable();
+      return;
+    }
+
+    // 2. 双指滑动平移 (Pan: !e.ctrlKey)
+    // 仅在放大状态 (scale > fitScale) 下响应双指平移，方便摄影师移动视角查看各处细节
+    if (oldScale > fitScale + 0.005) {
+      container.x -= e.deltaX;
+      container.y -= e.deltaY;
+      keepPinMarkersReadable();
+    }
+  };
+
+  // 双击画布切换放大对焦与全屏适配
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (!imageContainerRef.current || !appRef.current || !spriteRef.current || !containerRef.current) return;
+    const container = imageContainerRef.current;
+    const fitScale = getFitScale();
+    const isCurrentlyFit = Math.abs(container.scale.x - fitScale) < 0.05;
+
+    if (isCurrentlyFit) {
+      const targetScale = Math.max(1.0, fitScale * 2.0);
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      container.x = mouseX - (mouseX - container.x) * (targetScale / container.scale.x);
+      container.y = mouseY - (mouseY - container.y) * (targetScale / container.scale.y);
+      container.scale.set(targetScale);
+      setZoomLevel(Math.round(targetScale * 100));
+    } else {
+      fitImageToViewport();
+    }
     keepPinMarkersReadable();
-    setZoomLevel(Math.round(newScale * 100));
   };
 
   // 鼠标拖动画布
@@ -433,6 +490,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     <div
       ref={containerRef}
       onWheel={handleWheel}
+      onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

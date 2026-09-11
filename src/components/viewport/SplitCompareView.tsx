@@ -455,42 +455,96 @@ export const SplitCompareView: React.FC = () => {
     rightTextureVersion,
   ]);
 
-  // 滚轮与触控板缩放处理 (支持光标中心缩放与双画布联动)
+  const getLeftFitScale = () => {
+    if (!leftAppRef.current || !leftSpriteRef.current) return 1.0;
+    const app = leftAppRef.current;
+    const sprite = leftSpriteRef.current;
+    return Math.min((app.screen.width * 0.9) / sprite.texture.width, (app.screen.height * 0.9) / sprite.texture.height, 1.0);
+  };
+
+  const getRightFitScale = () => {
+    if (!rightAppRef.current || !rightSpriteRef.current) return 1.0;
+    const app = rightAppRef.current;
+    const sprite = rightSpriteRef.current;
+    return Math.min((app.screen.width * 0.9) / sprite.texture.width, (app.screen.height * 0.9) / sprite.texture.height, 1.0);
+  };
+
+  // 滚轮与触控板缩放处理 (支持双指捏合缩放、双指滑动平移与双画布联动)
   const handleWheel = (e: React.WheelEvent, isLeft: boolean) => {
     e.preventDefault();
-    const factor = e.ctrlKey
-      ? Math.exp(-e.deltaY * 0.01)
-      : e.deltaY < 0
-      ? 1.15
-      : 0.85;
+
+    const isPinchZoom = e.ctrlKey;
+    const isModifierZoom = e.metaKey || e.altKey;
+    const isMouseWheel = e.deltaMode !== 0 || (Math.abs(e.deltaY) >= 50 && e.deltaX === 0);
 
     const targetWrapper = isLeft ? leftContainerRef.current : rightContainerRef.current;
     const rect = targetWrapper?.getBoundingClientRect();
     const mouseX = rect ? e.clientX - rect.left : 0;
     const mouseY = rect ? e.clientY - rect.top : 0;
 
-    const applyZoom = (container: Container | null, setZoom: (z: number) => void) => {
-      if (!container) return;
+    const applyZoom = (
+      container: Container | null,
+      app: Application | null,
+      fitScale: number,
+      setZoom: (z: number) => void,
+    ) => {
+      if (!container || !app) return;
       const oldScale = container.scale.x;
-      const newScale = Math.max(0.1, Math.min(oldScale * factor, 8.0));
-      if (Math.abs(newScale - oldScale) < 0.0001) return;
+      const zoomFactor = isPinchZoom
+        ? Math.exp(-e.deltaY * 0.01)
+        : isModifierZoom
+        ? Math.exp(-e.deltaY * 0.005)
+        : e.deltaY < 0
+        ? 1.15
+        : 0.85;
 
-      if (rect) {
-        container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
-        container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
+      const targetScale = oldScale * zoomFactor;
+      const newScale = Math.max(fitScale, Math.min(targetScale, 8.0));
+
+      if (newScale <= fitScale + 0.001) {
+        container.scale.set(fitScale);
+        container.x = app.screen.width / 2;
+        container.y = app.screen.height / 2;
+        setZoom(Math.round(fitScale * 100));
+      } else {
+        if (rect) {
+          container.x = mouseX - (mouseX - container.x) * (newScale / oldScale);
+          container.y = mouseY - (mouseY - container.y) * (newScale / oldScale);
+        }
+        container.scale.set(newScale);
+        setZoom(Math.round(newScale * 100));
       }
-      container.scale.set(newScale);
-      setZoom(Math.round(newScale * 100));
     };
 
-    if (syncZoomAndPan) {
-      applyZoom(leftImageContainerRef.current, setLeftZoom);
-      applyZoom(rightImageContainerRef.current, setRightZoom);
-    } else {
-      if (isLeft) {
-        applyZoom(leftImageContainerRef.current, setLeftZoom);
+    const applyPan = (container: Container | null, fitScale: number) => {
+      if (!container) return;
+      if (container.scale.x > fitScale + 0.005) {
+        container.x -= e.deltaX;
+        container.y -= e.deltaY;
+      }
+    };
+
+    if (isPinchZoom || isModifierZoom || isMouseWheel) {
+      if (syncZoomAndPan) {
+        applyZoom(leftImageContainerRef.current, leftAppRef.current, getLeftFitScale(), setLeftZoom);
+        applyZoom(rightImageContainerRef.current, rightAppRef.current, getRightFitScale(), setRightZoom);
       } else {
-        applyZoom(rightImageContainerRef.current, setRightZoom);
+        if (isLeft) {
+          applyZoom(leftImageContainerRef.current, leftAppRef.current, getLeftFitScale(), setLeftZoom);
+        } else {
+          applyZoom(rightImageContainerRef.current, rightAppRef.current, getRightFitScale(), setRightZoom);
+        }
+      }
+    } else {
+      if (syncZoomAndPan) {
+        applyPan(leftImageContainerRef.current, getLeftFitScale());
+        applyPan(rightImageContainerRef.current, getRightFitScale());
+      } else {
+        if (isLeft) {
+          applyPan(leftImageContainerRef.current, getLeftFitScale());
+        } else {
+          applyPan(rightImageContainerRef.current, getRightFitScale());
+        }
       }
     }
   };
