@@ -68,6 +68,7 @@ export const SplitCompareView: React.FC = () => {
   const rightSpriteRef = useRef<Sprite | null>(null);
 
   const activeLutId = useLutStore((state) => state.activeLutId);
+  const photoLuts = useLutStore((state) => state.photoLuts);
   const isLutEnabled = useLutStore((state) => state.isEnabled);
   const lutIntensity = useLutStore((state) => state.intensity);
   const isLutBypassComparing = useLutStore((state) => state.isBypassComparing);
@@ -95,6 +96,19 @@ export const SplitCompareView: React.FC = () => {
 
   const leftPhoto = photos[currentIndex];
   const rightPhoto = compareTargetIndex !== null ? photos[compareTargetIndex] : null;
+
+  const leftLutConfig = leftPhoto ? photoLuts[leftPhoto.id] : null;
+  const rightLutConfig = rightPhoto ? photoLuts[rightPhoto.id] : null;
+
+  const leftEffectiveLutId = leftPhoto ? leftLutConfig?.lutId ?? null : activeLutId;
+  const leftEffectiveIntensity = !isLutEnabled || isLutBypassComparing || !leftEffectiveLutId
+    ? 0.0
+    : (leftLutConfig?.intensity ?? lutIntensity);
+
+  const rightEffectiveLutId = rightPhoto ? rightLutConfig?.lutId ?? null : activeLutId;
+  const rightEffectiveIntensity = !isLutEnabled || isLutBypassComparing || !rightEffectiveLutId
+    ? 0.0
+    : (rightLutConfig?.intensity ?? lutIntensity);
 
   const leftBurstId = leftPhoto?.burstGroupId;
 
@@ -403,51 +417,60 @@ export const SplitCompareView: React.FC = () => {
   }, [comparePreviewUrl, rightReady, rightLoadAttempt]);
 
   // 双图分屏同步应用 3D LUT 滤镜
+  // 应用 3D LUT 胶片调色实时对比 Filter (左右视图独立支持不同 LUT 渲染)
   useEffect(() => {
     const leftSprite = leftSpriteRef.current;
     const rightSprite = rightSpriteRef.current;
     if (!leftSprite && !rightSprite) return;
 
-    const effectiveIntensity =
-      !isLutEnabled || isLutBypassComparing || !activeLutId ? 0.0 : lutIntensity;
+    if (leftSprite) {
+      if (!leftEffectiveLutId || leftEffectiveIntensity <= 0.001) {
+        leftSprite.filters = [];
+      } else {
+        try {
+          const customData = leftEffectiveLutId.startsWith('custom_') ? getCustomLutData(leftEffectiveLutId) : undefined;
+          const { texture, size } = getOrCreateLutTexture(leftEffectiveLutId, customData || undefined);
 
-    if (!activeLutId || effectiveIntensity <= 0.001) {
-      if (leftSprite) leftSprite.filters = [];
-      if (rightSprite) rightSprite.filters = [];
-      return;
+          if (!leftLutFilterRef.current) {
+            leftLutFilterRef.current = new LutFilter(texture, size, leftEffectiveIntensity);
+          } else {
+            leftLutFilterRef.current.updateLut(texture, size);
+            leftLutFilterRef.current.intensity = leftEffectiveIntensity;
+          }
+          leftSprite.filters = [leftLutFilterRef.current];
+        } catch (err) {
+          console.error('应用左图 3D LUT 失败:', err);
+          leftSprite.filters = [];
+        }
+      }
     }
 
-    try {
-      const customData = activeLutId.startsWith('custom_') ? getCustomLutData(activeLutId) : undefined;
-      const { texture, size } = getOrCreateLutTexture(activeLutId, customData || undefined);
+    if (rightSprite) {
+      if (!rightEffectiveLutId || rightEffectiveIntensity <= 0.001) {
+        rightSprite.filters = [];
+      } else {
+        try {
+          const customData = rightEffectiveLutId.startsWith('custom_') ? getCustomLutData(rightEffectiveLutId) : undefined;
+          const { texture, size } = getOrCreateLutTexture(rightEffectiveLutId, customData || undefined);
 
-      if (leftSprite) {
-        if (!leftLutFilterRef.current) {
-          leftLutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
-        } else {
-          leftLutFilterRef.current.updateLut(texture, size);
-          leftLutFilterRef.current.intensity = effectiveIntensity;
+          if (!rightLutFilterRef.current) {
+            rightLutFilterRef.current = new LutFilter(texture, size, rightEffectiveIntensity);
+          } else {
+            rightLutFilterRef.current.updateLut(texture, size);
+            rightLutFilterRef.current.intensity = rightEffectiveIntensity;
+          }
+          rightSprite.filters = [rightLutFilterRef.current];
+        } catch (err) {
+          console.error('应用右图 3D LUT 失败:', err);
+          rightSprite.filters = [];
         }
-        leftSprite.filters = [leftLutFilterRef.current];
       }
-
-      if (rightSprite) {
-        if (!rightLutFilterRef.current) {
-          rightLutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
-        } else {
-          rightLutFilterRef.current.updateLut(texture, size);
-          rightLutFilterRef.current.intensity = effectiveIntensity;
-        }
-        rightSprite.filters = [rightLutFilterRef.current];
-      }
-    } catch (err) {
-      console.error('应用双图比对 3D LUT 失败:', err);
     }
   }, [
-    activeLutId,
-    isLutEnabled,
-    lutIntensity,
-    isLutBypassComparing,
+    leftEffectiveLutId,
+    leftEffectiveIntensity,
+    rightEffectiveLutId,
+    rightEffectiveIntensity,
     getCustomLutData,
     leftRenderStatus,
     rightRenderStatus,

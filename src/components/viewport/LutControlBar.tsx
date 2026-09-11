@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
 import { useLutStore } from '../../store/lutStore';
-import { BUILTIN_LUTS } from '../../utils/lutEngine';
+import { useAlbumStore } from '../../store/albumStore';
+import { useSelectionStore } from '../../store/selectionStore';
+import { BUILTIN_LUTS } from '../../utils/lutPresets';
 import {
   Film,
   Sparkles,
@@ -10,6 +12,7 @@ import {
   X,
   Check,
   Trash2,
+  Layers,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -21,6 +24,7 @@ export const LutControlBar: React.FC = () => {
     isBypassComparing,
     isPanelOpen,
     customLuts,
+    photoLuts,
     setActiveLutId,
     toggleEnabled,
     setIntensity,
@@ -29,14 +33,67 @@ export const LutControlBar: React.FC = () => {
     togglePanelOpen,
     importCubeContent,
     removeCustomLut,
+    setPhotoLut,
+    clearPhotoLut,
+    batchApplyLut,
+    clearAllPhotoLuts,
   } = useLutStore();
+
+  const { photos, currentIndex } = useAlbumStore();
+  const selections = useSelectionStore((s) => s.selections);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const currentPhoto = photos[currentIndex];
+  const currentPhotoLut = currentPhoto ? photoLuts[currentPhoto.id] : null;
+
+  // 单张图片生效的 LUT 与浓度：如果当前有照片，优先以单照片的设置生效；若单照片未设置则为 null（原片直出）；如果完全没有载入图库，则跟随全局 activeLutId
+  const effectiveLutId = currentPhoto ? currentPhotoLut?.lutId ?? null : activeLutId;
+  const effectiveIntensity = currentPhoto ? (currentPhotoLut ? currentPhotoLut.intensity : intensity) : intensity;
+
   // 获取当前生效的 LUT 名称
-  const currentBuiltin = BUILTIN_LUTS.find((l) => l.id === activeLutId);
-  const currentCustom = customLuts.find((l) => l.id === activeLutId);
+  const currentBuiltin = BUILTIN_LUTS.find((l) => l.id === effectiveLutId);
+  const currentCustom = customLuts.find((l) => l.id === effectiveLutId);
   const currentName = currentBuiltin?.name || currentCustom?.name;
+
+  // 批量应用候选
+  const selectedPhotoIds = photos.filter((p) => selections[p.id]?.state === 'selected').map((p) => p.id);
+  const totalLutsAppliedCount = Object.keys(photoLuts).length;
+
+  const handleSelectLut = (lutId: string | null) => {
+    if (currentPhoto) {
+      if (lutId === null) {
+        clearPhotoLut(currentPhoto.id);
+      } else {
+        setPhotoLut(currentPhoto.id, lutId, effectiveIntensity);
+      }
+    }
+    setActiveLutId(lutId);
+  };
+
+  const handleIntensityChange = (val: number) => {
+    setIntensity(val);
+    if (currentPhoto && effectiveLutId) {
+      setPhotoLut(currentPhoto.id, effectiveLutId, val);
+    }
+  };
+
+  const handleApplyToSelected = () => {
+    const targetLutId = effectiveLutId || activeLutId;
+    if (!targetLutId || selectedPhotoIds.length === 0) return;
+    batchApplyLut(selectedPhotoIds, targetLutId, effectiveIntensity);
+  };
+
+  const handleApplyToAll = () => {
+    const targetLutId = effectiveLutId || activeLutId;
+    if (!targetLutId || photos.length === 0) return;
+    batchApplyLut(photos.map((p) => p.id), targetLutId, effectiveIntensity);
+  };
+
+  const handleClearAll = () => {
+    clearAllPhotoLuts();
+    setActiveLutId(null);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -47,7 +104,10 @@ export const LutControlBar: React.FC = () => {
       const content = event.target?.result;
       if (typeof content === 'string') {
         try {
-          importCubeContent(content, file.name);
+          const newId = importCubeContent(content, file.name);
+          if (currentPhoto) {
+            setPhotoLut(currentPhoto.id, newId, effectiveIntensity);
+          }
         } catch (err) {
           alert(`导入 .cube 文件失败: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -74,7 +134,7 @@ export const LutControlBar: React.FC = () => {
           onClick={togglePanelOpen}
           className={clsx(
             'flex items-center space-x-1.5 px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer',
-            activeLutId && isEnabled
+            effectiveLutId && isEnabled
               ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 shadow-sm'
               : 'hover:bg-dark-700 text-slate-300',
           )}
@@ -82,13 +142,13 @@ export const LutControlBar: React.FC = () => {
         >
           <Film className="w-3.5 h-3.5 text-indigo-400" />
           <span className="font-sans">
-            {activeLutId && isEnabled
-              ? `${currentName || '胶片调色'} (${Math.round(intensity * 100)}%)`
+            {effectiveLutId && isEnabled
+              ? `${currentName || '胶片调色'} (${Math.round(effectiveIntensity * 100)}%)`
               : '3D LUT 胶片预览'}
           </span>
         </button>
 
-        {activeLutId && (
+        {effectiveLutId && (
           <>
             <div className="w-[1px] h-3.5 bg-dark-600" />
 
@@ -156,10 +216,10 @@ export const LutControlBar: React.FC = () => {
           <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
             {/* 原片直出选项 */}
             <button
-              onClick={() => setActiveLutId(null)}
+              onClick={() => handleSelectLut(null)}
               className={clsx(
                 'w-full flex items-center justify-between p-2 rounded-xl border text-left transition-all cursor-pointer',
-                activeLutId === null
+                effectiveLutId === null
                   ? 'bg-indigo-600/20 border-indigo-500 text-indigo-200 shadow-sm'
                   : 'bg-dark-850/70 border-dark-750 hover:bg-dark-800 text-slate-300',
               )}
@@ -167,7 +227,7 @@ export const LutControlBar: React.FC = () => {
               <div>
                 <div className="font-semibold text-xs flex items-center gap-1.5">
                   <span>原片直出 (Raw / Bypass)</span>
-                  {activeLutId === null && <Check className="w-3 h-3 text-indigo-400" />}
+                  {effectiveLutId === null && <Check className="w-3 h-3 text-indigo-400" />}
                 </div>
                 <div className="text-[10px] text-slate-400">相机原生色彩，不施加任何色彩模拟</div>
               </div>
@@ -175,11 +235,11 @@ export const LutControlBar: React.FC = () => {
 
             {/* 内置 7 款摄影级胶片预设 */}
             {BUILTIN_LUTS.map((lut) => {
-              const isSelected = activeLutId === lut.id;
+              const isSelected = effectiveLutId === lut.id;
               return (
                 <button
                   key={lut.id}
-                  onClick={() => setActiveLutId(lut.id)}
+                  onClick={() => handleSelectLut(lut.id)}
                   className={clsx(
                     'w-full flex items-center justify-between p-2 rounded-xl border text-left transition-all cursor-pointer',
                     isSelected
@@ -206,11 +266,11 @@ export const LutControlBar: React.FC = () => {
               <div className="pt-2 border-t border-dark-750/70">
                 <div className="text-[10px] text-slate-400 font-semibold mb-1">自定义导入 LUT</div>
                 {customLuts.map((custom) => {
-                  const isSelected = activeLutId === custom.id;
+                  const isSelected = effectiveLutId === custom.id;
                   return (
                     <div
                       key={custom.id}
-                      onClick={() => setActiveLutId(custom.id)}
+                      onClick={() => handleSelectLut(custom.id)}
                       className={clsx(
                         'flex items-center justify-between p-2 rounded-xl border text-left transition-all cursor-pointer mb-1.5',
                         isSelected
@@ -242,7 +302,7 @@ export const LutControlBar: React.FC = () => {
           </div>
 
           {/* 风格强度滑块 */}
-          {activeLutId && (
+          {effectiveLutId && (
             <div className="pt-2 border-t border-dark-750 space-y-1.5">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="flex items-center gap-1.5 text-slate-400 font-medium">
@@ -250,7 +310,7 @@ export const LutControlBar: React.FC = () => {
                   风格渲染浓度
                 </span>
                 <span className="font-mono font-bold text-indigo-300">
-                  {Math.round(intensity * 100)}%
+                  {Math.round(effectiveIntensity * 100)}%
                 </span>
               </div>
               <input
@@ -258,12 +318,57 @@ export const LutControlBar: React.FC = () => {
                 min="0"
                 max="1"
                 step="0.01"
-                value={intensity}
-                onChange={(e) => setIntensity(parseFloat(e.target.value))}
+                value={effectiveIntensity}
+                onChange={(e) => handleIntensityChange(parseFloat(e.target.value))}
                 className="w-full accent-indigo-500 h-1.5 bg-dark-800 rounded-lg appearance-none cursor-pointer"
               />
             </div>
           )}
+
+          {/* 批量应用管理 */}
+          <div className="pt-2 border-t border-dark-750 space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Layers className="w-3 h-3 text-indigo-400" />
+                批量统一调色
+              </span>
+              {currentName && (
+                <span className="text-[10px] text-indigo-300 truncate max-w-[100px]" title={currentName}>
+                  {currentName}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                onClick={handleApplyToSelected}
+                disabled={!effectiveLutId || selectedPhotoIds.length === 0}
+                className="py-1.5 px-2 rounded-lg bg-dark-800 hover:bg-dark-750 disabled:opacity-40 disabled:hover:bg-dark-800 border border-dark-700 text-slate-200 text-[10px] font-medium transition-colors cursor-pointer disabled:cursor-not-allowed text-center"
+                title={selectedPhotoIds.length === 0 ? '当前没有标记为已挑选的照片' : `应用到 ${selectedPhotoIds.length} 张已选照片`}
+              >
+                应用到已选 ({selectedPhotoIds.length})
+              </button>
+              <button
+                onClick={handleApplyToAll}
+                disabled={!effectiveLutId || photos.length === 0}
+                className="py-1.5 px-2 rounded-lg bg-dark-800 hover:bg-dark-750 disabled:opacity-40 disabled:hover:bg-dark-800 border border-dark-700 text-slate-200 text-[10px] font-medium transition-colors cursor-pointer disabled:cursor-not-allowed text-center"
+                title={`将当前滤镜批量应用到全部 ${photos.length} 张照片`}
+              >
+                应用到全部 ({photos.length})
+              </button>
+            </div>
+
+            {totalLutsAppliedCount > 0 && (
+              <button
+                onClick={handleClearAll}
+                className="w-full py-1 rounded-lg hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30 text-slate-400 hover:text-rose-300 text-[9.5px] transition-colors cursor-pointer flex items-center justify-center gap-1"
+                title="重置所有照片的 LUT 设置，恢复为原片直出"
+              >
+                <Trash2 className="w-2.5 h-2.5" />
+                <span>清除全部照片调色 ({totalLutsAppliedCount} 张已调色)</span>
+              </button>
+            )}
+          </div>
 
           {/* 底部操作与导入 */}
           <div className="pt-2 border-t border-dark-750 flex items-center justify-between gap-2">

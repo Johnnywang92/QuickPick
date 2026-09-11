@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useExportStore, ExportPurpose, ManifestFormat } from '../../store/exportStore';
 import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
+import { useLutStore } from '../../store/lutStore';
 import { revealDirectory } from '../../services/tauriBridge';
 import {
   AlertCircle,
@@ -89,6 +90,8 @@ export const ExportModal: React.FC = () => {
     resetExportState,
     exportTagFilter,
     setExportTagFilter,
+    bakeLutEffect,
+    setBakeLutEffect,
   } = useExportStore();
 
   const [copied, setCopied] = useState(false);
@@ -97,10 +100,12 @@ export const ExportModal: React.FC = () => {
   const { photos } = useAlbumStore();
   const { getStats, selections } = useSelectionStore();
   const { availableTags } = useTagStore();
+  const photoLuts = useLutStore((s) => s.photoLuts);
 
   if (!isExportModalOpen) return null;
 
   const selectedPhotos = getSelectedPhotos();
+  const photosWithLutCount = selectedPhotos.filter((p) => Boolean(photoLuts[p.id]?.lutId)).length;
   const allSelectedPhotos = photos.filter((p) => selections[p.id]?.state === 'selected');
   const selectedTagCounts: Record<string, number> = {};
   allSelectedPhotos.forEach((p) => {
@@ -672,6 +677,37 @@ export const ExportModal: React.FC = () => {
                           </div>
                         </div>
                       </div>
+
+                      {/* 3D LUT 胶片效果烧录选项 */}
+                      <div className="mt-3 flex items-center justify-between rounded-lg border border-purple-500/25 bg-purple-500/10 p-3 text-xs text-left">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">🎨</span>
+                          <div>
+                            <div className="font-semibold text-slate-100 flex items-center gap-1.5">
+                              <span>导出时烧录 3D LUT 胶片效果</span>
+                              {photosWithLutCount > 0 && (
+                                <span className="rounded bg-purple-500/25 px-1.5 py-0.5 text-[10px] font-mono text-purple-300 border border-purple-500/40">
+                                  {photosWithLutCount} 张已调色
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              {bakeLutEffect
+                                ? `已开启：已调色的照片将自动烧录其对应的 3D LUT 胶片风格导出 JPEG（${photosWithLutCount} 张）`
+                                : '未开启：导出相机原生 JPEG，不叠加 3D LUT 调色'}
+                            </p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                          <input
+                            type="checkbox"
+                            checked={bakeLutEffect}
+                            onChange={(e) => setBakeLutEffect(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                      </div>
                     </div>
                     {errorMessage && (
                       <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">
@@ -707,6 +743,37 @@ export const ExportModal: React.FC = () => {
                   {renderedExportResult && (
                     <p className="mt-3 text-[11px] text-emerald-400">已准备 {renderedExportResult.success} 张照片，AirDrop 窗口已打开。</p>
                   )}
+                </div>
+
+                {/* 3D LUT 胶片效果烧录选项 */}
+                <div className="flex items-center justify-between rounded-lg border border-purple-500/25 bg-purple-500/10 p-3 text-xs text-left">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base">🎨</span>
+                    <div>
+                      <div className="font-semibold text-slate-100 flex items-center gap-1.5">
+                        <span>投送时烧录 3D LUT 胶片效果</span>
+                        {photosWithLutCount > 0 && (
+                          <span className="rounded bg-purple-500/25 px-1.5 py-0.5 text-[10px] font-mono text-purple-300 border border-purple-500/40">
+                            {photosWithLutCount} 张已调色
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {bakeLutEffect
+                          ? `已开启：已调色的照片渲染对应 3D LUT 胶片风格后投送至手机（${photosWithLutCount} 张）`
+                          : '未开启：投送相机原生 JPEG，不叠加 3D LUT 调色'}
+                      </p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                    <input
+                      type="checkbox"
+                      checked={bakeLutEffect}
+                      onChange={(e) => setBakeLutEffect(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
                 </div>
                 {errorMessage && (
                   <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">

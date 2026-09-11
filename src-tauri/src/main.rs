@@ -4,7 +4,7 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use quickpick_lib::engine::delivery::{
-    open_airdrop, render_shareable_jpegs, DeliveryPhotoInput, RenderedExportResult,
+    open_airdrop, render_shareable_jpegs, DeliveryPhotoInput, LutTablePayload, RenderedExportResult,
 };
 use quickpick_lib::engine::{load_photo_preview, scan_directory_fast};
 use quickpick_lib::libraw_ffi::get_libraw_version;
@@ -390,6 +390,7 @@ async fn export_shareable_jpegs(
     target_dir: String,
     max_edge: u32,
     quality: u8,
+    lut_tables: Option<std::collections::HashMap<String, LutTablePayload>>,
 ) -> Result<RenderedExportResult, String> {
     let app_data_dir = app_data_directory(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -399,6 +400,7 @@ async fn export_shareable_jpegs(
             std::path::Path::new(&target_dir),
             max_edge,
             quality,
+            lut_tables.as_ref(),
         )
     })
     .await
@@ -409,6 +411,7 @@ async fn export_shareable_jpegs(
 async fn share_photos_via_air_drop(
     app: tauri::AppHandle,
     photos: Vec<DeliveryPhotoInput>,
+    lut_tables: Option<std::collections::HashMap<String, LutTablePayload>>,
 ) -> Result<RenderedExportResult, String> {
     let app_data_dir = app_data_directory(&app)?;
     let share_dir = app_data_dir
@@ -418,7 +421,7 @@ async fn share_photos_via_air_drop(
         .map_err(|error| format!("创建 AirDrop 临时目录失败: {error}"))?;
     let cache_root = app_data_dir.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        render_shareable_jpegs(&cache_root, &photos, &share_dir, 2560, 90)
+        render_shareable_jpegs(&cache_root, &photos, &share_dir, 2560, 90, lut_tables.as_ref())
     })
     .await
     .map_err(|error| format!("准备 AirDrop 照片异常结束: {error}"))??;

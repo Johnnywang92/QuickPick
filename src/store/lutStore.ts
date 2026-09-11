@@ -1,11 +1,16 @@
 import { create } from 'zustand';
-import { parseCubeLut } from '../utils/lutEngine';
+import { parseCubeLut } from '../utils/lutPresets';
 
 export interface CustomLutItem {
   id: string;
   name: string;
   size: number;
   dataBase64: string; // Base64 编码的 Uint8Array 贴图数据，方便序列化
+}
+
+export interface PhotoLutConfig {
+  lutId: string;
+  intensity: number;
 }
 
 interface LutState {
@@ -15,6 +20,7 @@ interface LutState {
   isBypassComparing: boolean;
   isPanelOpen: boolean;
   customLuts: CustomLutItem[];
+  photoLuts: Record<string, PhotoLutConfig>;
 
   // Actions
   setActiveLutId: (id: string | null) => void;
@@ -27,10 +33,18 @@ interface LutState {
   removeCustomLut: (id: string) => void;
   getCustomLutData: (id: string) => { size: number; data: Uint8Array } | null;
   getEffectiveIntensity: () => number;
+
+  // 单片及批量管理 Actions
+  setPhotoLut: (photoId: string, lutId: string | null, intensity?: number) => void;
+  getPhotoLut: (photoId: string | null | undefined) => PhotoLutConfig | null;
+  batchApplyLut: (photoIds: string[], lutId: string, intensity?: number) => void;
+  clearPhotoLut: (photoId: string) => void;
+  clearAllPhotoLuts: () => void;
 }
 
 const STORAGE_KEY_LUT = 'quickpick_lut_settings_v1';
 const STORAGE_KEY_CUSTOM_LUTS = 'quickpick_custom_luts_v1';
+const STORAGE_KEY_PHOTO_LUTS = 'quickpick_photo_luts_v1';
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -82,6 +96,19 @@ function loadInitialCustomLuts(): CustomLutItem[] {
   return [];
 }
 
+function loadInitialPhotoLuts(): Record<string, PhotoLutConfig> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PHOTO_LUTS);
+    if (raw) {
+      const map = JSON.parse(raw);
+      if (typeof map === 'object' && map !== null) return map;
+    }
+  } catch {
+    // 忽略异常
+  }
+  return {};
+}
+
 const initialSettings = loadInitialSettings();
 
 export const useLutStore = create<LutState>((set, get) => ({
@@ -91,6 +118,7 @@ export const useLutStore = create<LutState>((set, get) => ({
   isBypassComparing: false,
   isPanelOpen: false,
   customLuts: loadInitialCustomLuts(),
+  photoLuts: loadInitialPhotoLuts(),
 
   setActiveLutId: (id) => {
     const isEnabled = id !== null ? true : get().isEnabled;
@@ -199,5 +227,63 @@ export const useLutStore = create<LutState>((set, get) => ({
       return 0.0;
     }
     return intensity;
+  },
+
+  setPhotoLut: (photoId, lutId, intensity) => {
+    if (!photoId) return;
+    const current = { ...get().photoLuts };
+    if (!lutId) {
+      delete current[photoId];
+    } else {
+      const targetIntensity = typeof intensity === 'number' ? intensity : get().intensity;
+      current[photoId] = { lutId, intensity: targetIntensity };
+    }
+    set({ photoLuts: current });
+    try {
+      localStorage.setItem(STORAGE_KEY_PHOTO_LUTS, JSON.stringify(current));
+    } catch {
+      // 忽略
+    }
+  },
+
+  getPhotoLut: (photoId) => {
+    if (!photoId) return null;
+    return get().photoLuts[photoId] || null;
+  },
+
+  batchApplyLut: (photoIds, lutId, intensity) => {
+    if (!photoIds || photoIds.length === 0 || !lutId) return;
+    const current = { ...get().photoLuts };
+    const targetIntensity = typeof intensity === 'number' ? intensity : get().intensity;
+    for (const id of photoIds) {
+      current[id] = { lutId, intensity: targetIntensity };
+    }
+    set({ photoLuts: current });
+    try {
+      localStorage.setItem(STORAGE_KEY_PHOTO_LUTS, JSON.stringify(current));
+    } catch {
+      // 忽略
+    }
+  },
+
+  clearPhotoLut: (photoId) => {
+    if (!photoId) return;
+    const current = { ...get().photoLuts };
+    delete current[photoId];
+    set({ photoLuts: current });
+    try {
+      localStorage.setItem(STORAGE_KEY_PHOTO_LUTS, JSON.stringify(current));
+    } catch {
+      // 忽略
+    }
+  },
+
+  clearAllPhotoLuts: () => {
+    set({ photoLuts: {} });
+    try {
+      localStorage.removeItem(STORAGE_KEY_PHOTO_LUTS);
+    } catch {
+      // 忽略
+    }
   },
 }));

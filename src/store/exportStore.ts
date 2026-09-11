@@ -16,6 +16,8 @@ import {
 } from '../services/tauriBridge';
 import { useAlbumStore } from './albumStore';
 import { useSelectionStore } from './selectionStore';
+import { useLutStore } from './lutStore';
+import { generateBuiltinLutData } from '../utils/lutPresets';
 import { generateRetouchHtmlReport } from '../utils/reportGenerator';
 import { parseAnnotation } from '../utils/annotationUtils';
 
@@ -59,6 +61,43 @@ function escapeLuaString(value: string): string {
     .replace(/\n/g, '\\n');
 }
 
+function buildLutTablesForPhotos(
+  photoConfigs: Array<{ lutId?: string | null }>,
+): Record<string, { size: number; data_base64: string }> {
+  const lutStore = useLutStore.getState();
+  const tables: Record<string, { size: number; data_base64: string }> = {};
+
+  for (const item of photoConfigs) {
+    if (!item.lutId || tables[item.lutId]) continue;
+
+    if (item.lutId.startsWith('custom_')) {
+      const custom = lutStore.customLuts.find((c) => c.id === item.lutId);
+      if (custom) {
+        tables[item.lutId] = {
+          size: custom.size,
+          data_base64: custom.dataBase64,
+        };
+      }
+    } else {
+      try {
+        const rawData = generateBuiltinLutData(item.lutId, 33);
+        let binary = '';
+        for (let i = 0; i < rawData.byteLength; i++) {
+          binary += String.fromCharCode(rawData[i]);
+        }
+        tables[item.lutId] = {
+          size: 33,
+          data_base64: window.btoa(binary),
+        };
+      } catch (e) {
+        console.warn('生成内置 LUT 导出数据失败', e);
+      }
+    }
+  }
+
+  return tables;
+}
+
 interface ExportStore {
   isExportModalOpen: boolean;
   exportMode: ExportMode;
@@ -77,6 +116,7 @@ interface ExportStore {
   manifestExportSuccess: boolean;
   renderedExportResult: RenderedExportResult | null;
   exportTagFilter: string | null;
+  bakeLutEffect: boolean;
 
   // Actions
   setExportModalOpen: (open: boolean) => void;
@@ -87,6 +127,7 @@ interface ExportStore {
   setOpenAfterExport: (open: boolean) => void;
   setManifestFormat: (fmt: ManifestFormat) => void;
   setExportTagFilter: (tag: string | null) => void;
+  setBakeLutEffect: (bake: boolean) => void;
   browseTargetDir: () => Promise<void>;
   getSelectedPhotos: () => LocalPhoto[];
 
@@ -109,6 +150,7 @@ export const useExportStore = create<ExportStore>((set, get) => ({
   includeXmp: true,
   openAfterExport: true,
   manifestFormat: 'txt',
+  bakeLutEffect: true,
 
   isExporting: false,
   isCancelling: false,
@@ -177,6 +219,10 @@ export const useExportStore = create<ExportStore>((set, get) => ({
 
   setExportTagFilter: (tag: string | null) => {
     set({ exportTagFilter: tag, preflightResult: null });
+  },
+
+  setBakeLutEffect: (bake: boolean) => {
+    set({ bakeLutEffect: bake });
   },
 
   browseTargetDir: async () => {
@@ -341,12 +387,18 @@ export const useExportStore = create<ExportStore>((set, get) => ({
       const { scenes, photos: allPhotos } = useAlbumStore.getState();
       const reportItems = selectedPhotos.map((photo) => {
         const photoIndex = allPhotos.findIndex((p) => p.id === photo.id);
-        const scene = scenes.find((s) => s.startIndex <= photoIndex && photoIndex <= s.endIndex);
-        const selection = selections[photo.id] || {
-          photoId: photo.id,
-          state: 'selected' as const,
-          note: '',
-          updatedAt: '',
+        const selection = selections[photo.id];
+        const scene = scenes.find(
+          (s) => photoIndex >= s.startIndex && photoIndex <= s.endIndex,
+        ) || {
+          id: 'default',
+          name: '全片场景',
+          color: '#3B82F6',
+          startIndex: 0,
+          endIndex: selectedPhotos.length,
+          startPath: photo.path,
+          endPath: photo.path,
+          photoCount: selectedPhotos.length,
         };
         return {
           photo,
@@ -381,7 +433,6 @@ export const useExportStore = create<ExportStore>((set, get) => ({
     }
 
     if (manifestFormat === 'pmselection') {
-      // Photo Mechanic 的 Load Selection 接受 UTF-8 文本中每行一个绝对路径。
       return photos.map((photo) => {
         const source = selectedPhotos.find((item) => item.filename === photo.filename && relativePhotoPath(item.path, folderPath) === photo.relativePath);
         return source?.path || photo.relativePath;
@@ -429,7 +480,7 @@ export const useExportStore = create<ExportStore>((set, get) => ({
 
   executeSocialExport: async () => {
     const selectedPhotos = get().getSelectedPhotos();
-    const { targetDir } = get();
+    const { targetDir, bakeLutEffect } = get();
     if (selectedPhotos.length === 0) {
       set({ errorMessage: '当前没有标记为“已选”的照片' });
       return;
@@ -440,11 +491,25 @@ export const useExportStore = create<ExportStore>((set, get) => ({
     }
     set({ isExporting: true, errorMessage: null, renderedExportResult: null });
     try {
+      const photoLuts = useLutStore.getState().photoLuts;
+      const exportItems = selectedPhotos.map((photo) => {
+        const config = bakeLutEffect ? photoLuts[photo.id] : undefined;
+        return {
+          id: photo.id,
+          path: photo.path,
+          lutId: config?.lutId || null,
+          lutIntensity: config?.intensity || null,
+        };
+      });
+
+      const lutTables = bakeLutEffect ? buildLutTablesForPhotos(exportItems) : undefined;
+
       const result = await exportShareableJpegs(
-        selectedPhotos.map((photo) => ({ id: photo.id, path: photo.path })),
+        exportItems,
         targetDir,
         2048,
         88,
+        lutTables,
       );
       set({ isExporting: false, renderedExportResult: result });
     } catch (error) {
@@ -457,15 +522,27 @@ export const useExportStore = create<ExportStore>((set, get) => ({
 
   shareToPhone: async () => {
     const selectedPhotos = get().getSelectedPhotos();
+    const { bakeLutEffect } = get();
     if (selectedPhotos.length === 0) {
       set({ errorMessage: '当前没有标记为“已选”的照片' });
       return;
     }
     set({ isExporting: true, errorMessage: null, renderedExportResult: null });
     try {
-      const result = await sharePhotosViaAirDrop(
-        selectedPhotos.map((photo) => ({ id: photo.id, path: photo.path })),
-      );
+      const photoLuts = useLutStore.getState().photoLuts;
+      const exportItems = selectedPhotos.map((photo) => {
+        const config = bakeLutEffect ? photoLuts[photo.id] : undefined;
+        return {
+          id: photo.id,
+          path: photo.path,
+          lutId: config?.lutId || null,
+          lutIntensity: config?.intensity || null,
+        };
+      });
+
+      const lutTables = bakeLutEffect ? buildLutTablesForPhotos(exportItems) : undefined;
+
+      const result = await sharePhotosViaAirDrop(exportItems, lutTables);
       set({ isExporting: false, renderedExportResult: result });
     } catch (error) {
       set({

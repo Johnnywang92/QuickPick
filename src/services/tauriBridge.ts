@@ -521,6 +521,13 @@ export async function saveManifestFile(
 export interface DeliveryPhotoInput {
   id: string;
   path: string;
+  lutId?: string | null;
+  lutIntensity?: number | null;
+}
+
+export interface LutTablePayload {
+  size: number;
+  data_base64: string;
 }
 
 export interface RenderedExportResult {
@@ -538,6 +545,7 @@ export async function exportShareableJpegs(
   targetDir: string,
   maxEdge: number,
   quality: number,
+  lutTables?: Record<string, LutTablePayload>,
 ): Promise<RenderedExportResult> {
   if (!isTauri()) {
     return {
@@ -551,14 +559,23 @@ export async function exportShareableJpegs(
     };
   }
   return await invoke<RenderedExportResult>('export_shareable_jpegs', {
-    photos,
+    photos: photos.map((p) => ({
+      id: p.id,
+      path: p.path,
+      lut_id: p.lutId ?? null,
+      lut_intensity: p.lutIntensity ?? null,
+    })),
     targetDir,
     maxEdge,
     quality,
+    lutTables: lutTables ?? null,
   });
 }
 
-export async function sharePhotosViaAirDrop(photos: DeliveryPhotoInput[]): Promise<RenderedExportResult> {
+export async function sharePhotosViaAirDrop(
+  photos: DeliveryPhotoInput[],
+  lutTables?: Record<string, LutTablePayload>,
+): Promise<RenderedExportResult> {
   if (!isTauri()) {
     return {
       total: photos.length,
@@ -570,7 +587,15 @@ export async function sharePhotosViaAirDrop(photos: DeliveryPhotoInput[]): Promi
       errors: [],
     };
   }
-  return await invoke<RenderedExportResult>('share_photos_via_air_drop', { photos });
+  return await invoke<RenderedExportResult>('share_photos_via_air_drop', {
+    photos: photos.map((p) => ({
+      id: p.id,
+      path: p.path,
+      lut_id: p.lutId ?? null,
+      lut_intensity: p.lutIntensity ?? null,
+    })),
+    lutTables: lutTables ?? null,
+  });
 }
 
 export async function exportPhotos(options: ExportOptions, jobId: string): Promise<ExportResult> {

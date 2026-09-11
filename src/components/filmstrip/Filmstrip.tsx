@@ -4,6 +4,8 @@ import { useCompareStore } from '../../store/compareStore';
 import { useInsightStore } from '../../store/insightStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { useSelectionStore } from '../../store/selectionStore';
+import { useLutStore } from '../../store/lutStore';
+import { BUILTIN_LUTS } from '../../utils/lutPresets';
 import { parseAnnotation } from '../../utils/annotationUtils';
 import { calculateDockScale } from '../../utils/dockEffect';
 import { Check, MessageSquare, AlertCircle } from 'lucide-react';
@@ -32,6 +34,8 @@ export const Filmstrip: React.FC = () => {
   const insights = useInsightStore((s) => s.insights);
   const selections = useSelectionStore((s) => s.selections);
   const viewedPhotoIds = useSelectionStore((s) => s.viewedPhotoIds);
+  const photoLuts = useLutStore((s) => s.photoLuts);
+  const customLuts = useLutStore((s) => s.customLuts);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -260,6 +264,14 @@ export const Filmstrip: React.FC = () => {
           const chapterStart = scenes.find((scene) => scene.startIndex === originalIndex);
           const thumbnailUrl = previewCache.get(photo.path);
 
+          const photoLut = photoLuts[photo.id];
+          let lutDisplayName = '';
+          if (photoLut?.lutId) {
+            const b = BUILTIN_LUTS.find((l) => l.id === photoLut.lutId);
+            const c = customLuts.find((l) => l.id === photoLut.lutId);
+            lutDisplayName = b?.name || c?.name || 'LUT';
+          }
+
           const leftPos = CONTAINER_PADDING_X + filteredIndex * ITEM_TOTAL;
           const cardCenterX = leftPos + ITEM_WIDTH / 2;
           const { scale, factor, zIndexBoost } = calculateDockScale(
@@ -402,6 +414,15 @@ export const Filmstrip: React.FC = () => {
                       >
                         <AlertCircle className="w-2 h-2 mr-0.5 shrink-0" />
                         检查
+                      </span>
+                    )}
+                    {photoLut?.lutId && (
+                      <span
+                        className="text-[8px] px-1 py-0.2 rounded bg-purple-500/35 text-purple-200 border border-purple-400/40 font-mono font-medium flex items-center gap-0.5 shrink-0 shadow-sm"
+                        title={`3D LUT 胶片调色: ${lutDisplayName} (${Math.round(photoLut.intensity * 100)}%)`}
+                      >
+                        <span className="text-[7.5px]">🎨</span>
+                        <span className="truncate max-w-[38px]">{lutDisplayName}</span>
                       </span>
                     )}
                     {isCompareMode && isCurrent && (
