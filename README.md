@@ -17,6 +17,25 @@ QuickPick 是面向普通用户的本地选片工具，帮助用户从摄影师�
 
 辅助分析只显示“可能模糊”“建议检查眼睛”“未见明显问题”“组内推荐最佳”或“无法分析”等复核提示。它不会自动选择或排除照片，也不应替代用户查看原图。
 
+## 下载与安装
+
+前往 [GitHub Releases](https://github.com/JohnnyBoyStudio/QuickPick/releases) 下载最新发行版：
+
+- **macOS (Apple Silicon M1/M2/M3/M4 系列)**：
+  1. 下载 `QuickPick_0.1.0_aarch64.dmg` 安装镜像；
+  2. 双击打开，将 **QuickPick** 图标拖拽至 **Applications** 应用程序文件夹。
+- **Windows / Intel Mac**：支持筹备中，可参照后文开发环境指南自行编译。
+
+> [!TIP]
+> **🍎 macOS 首次打开安全提示**
+> 由于个人开源应用尚未购买昂贵的 Apple 商业证书公证，首次在 macOS 打开可能会提示“无法验证开发者”或“已被移入废纸篓”。这是 macOS Gatekeeper 正常拦截：
+> 1. 打开系统的 **「设置」->「隐私与安全性」**，下拉找到 QuickPick 提示，点击 **「仍要打开」**；
+> 2. 或者在“访达”应用程序文件夹中，**按住 Control 键（或鼠标右键）点击 QuickPick 图标选择「打开」**；
+> 3. 或者打开终端执行一条解除隔离命令：
+>    ```bash
+>    xattr -cr /Applications/QuickPick.app
+>    ```
+
 ## 快捷键
 
 | 快捷键 | 操作 |

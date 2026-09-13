@@ -1,4 +1,4 @@
-name: QuickPick CI & Quality Gate
+name: CI Quality Gate
 
 on:
   push:
@@ -7,15 +7,15 @@ on:
     branches: [ master, main ]
 
 jobs:
-  quality-gate:
-    name: Engineering Quality Gate (macOS)
+  test-and-verify:
+    name: Lint, Test & Quality Gate
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies (LibRaw & LittleCMS2)
+      - name: Install System Dependencies (LibRaw & Little-CMS2)
         run: |
           brew install libraw little-cms2 pkg-config
 
@@ -25,22 +25,18 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Setup Rust toolchain
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
-      - name: Install Node dependencies
-        run: npm install
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
 
-      - name: Step 1 - Frontend Build & Typecheck
-        run: npm run build
+      - name: Install Node Dependencies
+        run: npm ci
 
-      - name: Step 2 - Backend Static Analysis (Clippy Zero-Warning)
-        run: npm run clippy
-
-      - name: Step 3 - Backend Unit & Integration Tests (27 Tests)
-        run: npm run test:rs
-
-      - name: Step 4 - Performance & Distribution Baselines
-        run: npm run baseline
+      - name: Run Full Quality Gate
+        run: npm run gate
