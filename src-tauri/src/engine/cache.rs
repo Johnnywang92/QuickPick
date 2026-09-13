@@ -79,7 +79,7 @@ fn preview_cache_key(photo_id: &str, photo_path: &Path) -> Result<String, String
     } else {
         photo_id.to_string()
     };
-    let version = format!("preview-v1:{identity}:{}:{modified_nanos}", metadata.len());
+    let version = format!("preview-v2:{identity}:{}:{modified_nanos}", metadata.len());
     Ok(format!("{:x}", Sha256::digest(version.as_bytes())))
 }
 
@@ -145,23 +145,32 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
     }
 
     let (bytes, mime) = crate::engine::load_source_photo_preview(photo_path)?;
-    // 对高分辨率大图 (如数十兆的机内 JPEG)，在写入本地缓存前自动等比规范化至 2K (max edge 2048px)。
-    // 这将使本地缓存控制在 ~200KB，消除向前端 IPC 传输数十兆 Base64 的严重卡顿。
-    let (bytes_to_cache, mime_to_cache) = if bytes.len() > 1_000_000 {
-        if let Ok(img) = image::load_from_memory(&bytes) {
+    let orientation = crate::engine::exif::extract_orientation(&bytes)
+        .or_else(|| crate::engine::exif::extract_orientation_from_file(photo_path))
+        .unwrap_or(1);
+
+    // 对高分辨率大图 (如数十兆机内 JPEG) 或具有 EXIF 旋转标记的照片，在写入本地缓存前自动校正方向并等比规范化至 2K (max edge 2048px)。
+    // 这消除向前端 IPC 传输数十兆 Base64 的严重卡顿，同时保证相机竖拍照片在 Pixi 视口及分析中方向正确。
+    let (bytes_to_cache, mime_to_cache) = if orientation > 1 || bytes.len() > 1_000_000 {
+        if let Ok(mut img) = image::load_from_memory(&bytes) {
+            if orientation > 1 {
+                img = crate::engine::exif::apply_orientation(img, orientation);
+            }
             let (w, h) = img.dimensions();
-            if w.max(h) > DEFAULT_PROXY_MAX_EDGE {
+            let should_resize = w.max(h) > DEFAULT_PROXY_MAX_EDGE;
+            let final_img = if should_resize {
                 let scale = DEFAULT_PROXY_MAX_EDGE as f32 / (w.max(h) as f32);
                 let nw = ((w as f32 * scale).round() as u32).max(1);
                 let nh = ((h as f32 * scale).round() as u32).max(1);
-                let resized = img.resize(nw, nh, image::imageops::FilterType::Triangle);
-                let mut jpeg_buf = Vec::new();
-                let mut cursor = std::io::Cursor::new(&mut jpeg_buf);
-                if resized.write_to(&mut cursor, image::ImageFormat::Jpeg).is_ok() {
-                    (jpeg_buf, "image/jpeg".to_string())
-                } else {
-                    (bytes, mime)
-                }
+                img.resize(nw, nh, image::imageops::FilterType::Triangle)
+            } else {
+                img
+            };
+
+            let mut jpeg_buf = Vec::new();
+            let mut cursor = std::io::Cursor::new(&mut jpeg_buf);
+            if final_img.write_to(&mut cursor, image::ImageFormat::Jpeg).is_ok() {
+                (jpeg_buf, "image/jpeg".to_string())
             } else {
                 (bytes, mime)
             }
@@ -328,7 +337,14 @@ pub fn generate_proxy_for_photo<C: AsRef<Path>, P: AsRef<Path>>(
 
     // 1. 抽取原图内嵌高画质图像 (绕过已有代理，直读源底片避免读旧写旧)
     let (img_bytes, _) = crate::engine::load_source_photo_preview(p)?;
-    let img = image::load_from_memory(&img_bytes).map_err(|e| format!("解码图片失败: {}", e))?;
+    let mut img = image::load_from_memory(&img_bytes).map_err(|e| format!("解码图片失败: {}", e))?;
+
+    let orientation = crate::engine::exif::extract_orientation(&img_bytes)
+        .or_else(|| crate::engine::exif::extract_orientation_from_file(p))
+        .unwrap_or(1);
+    if orientation > 1 {
+        img = crate::engine::exif::apply_orientation(img, orientation);
+    }
 
     let (w, h) = img.dimensions();
     let (target_w, target_h, resized_img) = if w.max(h) > max_edge {
@@ -415,7 +431,13 @@ pub fn build_folder_cache<C: AsRef<Path>, P: AsRef<Path>>(
 
         // 提前预计算人脸与指标（首部 6 个为 Top 6 关键特写，后续为背景人脸）
         let faces = if let Ok((bytes, _)) = crate::engine::load_source_photo_preview(p) {
-            if let Ok(img) = image::load_from_memory(&bytes) {
+            if let Ok(mut img) = image::load_from_memory(&bytes) {
+                let orientation = crate::engine::exif::extract_orientation(&bytes)
+                    .or_else(|| crate::engine::exif::extract_orientation_from_file(p))
+                    .unwrap_or(1);
+                if orientation > 1 {
+                    img = crate::engine::exif::apply_orientation(img, orientation);
+                }
                 let raw_faces = detect_faces_heuristic(&img);
                 let (mut top6, mut background) =
                     sort_and_truncate_faces(raw_faces, img.width() as f32, img.height() as f32, 6);
@@ -625,6 +647,61 @@ mod tests {
         assert!(found.is_some());
         assert_eq!(found.unwrap(), proxy_p);
         assert!(!source_dir.join(CACHE_DIR_NAME).exists());
+
+        // 清理
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_load_cached_preview_rotates_orientation() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("qp_orient_test_{}", uuid::Uuid::new_v4()));
+        let source_dir = temp_dir.join("source");
+        let cache_root = temp_dir.join("app-cache");
+        fs::create_dir_all(&source_dir).unwrap();
+
+        // 1. 生成 120x80 (横向) 原生像素的 JPEG
+        let img = image::DynamicImage::ImageRgb8(image::RgbImage::new(120, 80));
+        let mut raw_jpeg = Vec::new();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut raw_jpeg),
+            image::ImageFormat::Jpeg,
+        )
+        .unwrap();
+
+        // 2. 注入 EXIF APP1 (Orientation = 6, 90° CW 竖拍)
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II\x2a\x00");
+        tiff.extend_from_slice(&8u32.to_le_bytes()); // IFD0 offset
+        tiff.extend_from_slice(&1u16.to_le_bytes()); // 1 entry
+        tiff.extend_from_slice(&0x0112u16.to_le_bytes()); // Tag 0x0112 (Orientation)
+        tiff.extend_from_slice(&3u16.to_le_bytes()); // SHORT
+        tiff.extend_from_slice(&1u32.to_le_bytes()); // Count 1
+        tiff.extend_from_slice(&6u32.to_le_bytes()); // Value 6
+        tiff.extend_from_slice(&0u32.to_le_bytes()); // next IFD pointer
+
+        let mut oriented_jpeg = Vec::new();
+        oriented_jpeg.extend_from_slice(&raw_jpeg[0..2]); // SOI (0xFFD8)
+        oriented_jpeg.extend_from_slice(&[0xFF, 0xE1]); // APP1
+        let app1_len = (tiff.len() + 6 + 2) as u16;
+        oriented_jpeg.extend_from_slice(&app1_len.to_be_bytes());
+        oriented_jpeg.extend_from_slice(b"Exif\0\0");
+        oriented_jpeg.extend_from_slice(&tiff);
+        oriented_jpeg.extend_from_slice(&raw_jpeg[2..]);
+
+        let photo_path = source_dir.join("portrait.jpg");
+        fs::write(&photo_path, &oriented_jpeg).unwrap();
+
+        // 3. 加载预览缓存
+        let (cached_bytes, mime) =
+            load_cached_preview(&cache_root, "photo-portrait-1", &photo_path).unwrap();
+        assert_eq!(mime, "image/jpeg");
+
+        // 4. 验证缓存图像已经物理旋转为 80x120 (竖向正立)
+        let decoded =
+            image::load_from_memory(&cached_bytes).expect("Cached preview should be valid image");
+        assert_eq!(decoded.width(), 80);
+        assert_eq!(decoded.height(), 120);
 
         // 清理
         let _ = fs::remove_dir_all(&temp_dir);

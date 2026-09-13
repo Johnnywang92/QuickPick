@@ -123,6 +123,108 @@ pub fn parse_jpeg_app1(bytes: &[u8]) -> Option<ExifMetadata> {
     None
 }
 
+/// 从 TIFF 字节流解析 IFD0 中的 Orientation 标签 (0x0112)
+pub fn extract_orientation_from_tiff(tiff_data: &[u8]) -> Option<u32> {
+    let reader = TiffReader::new(tiff_data)?;
+    let ifd0_offset = reader.u32_at(4)? as usize;
+    let count = reader.u16_at(ifd0_offset)? as usize;
+    let entries_start = ifd0_offset + 2;
+
+    for i in 0..count {
+        let entry_offset = entries_start.checked_add(i * 12)?;
+        let tag = reader.u16_at(entry_offset)?;
+        if tag == 0x0112 {
+            let type_id = reader.u16_at(entry_offset + 2)?;
+            if type_id == 3 {
+                return reader.u16_at(entry_offset + 8).map(|v| v as u32);
+            } else if type_id == 4 {
+                return reader.u32_at(entry_offset + 8);
+            }
+        }
+    }
+    None
+}
+
+/// 从 JPEG APP1 节或 TIFF 字节中提取 Orientation 旋转方向 (1..=8)
+pub fn extract_orientation(bytes: &[u8]) -> Option<u32> {
+    if bytes.len() < 16 {
+        return None;
+    }
+
+    // 1. JPEG 格式检测 (0xFFD8)
+    if bytes.starts_with(&[0xFF, 0xD8]) {
+        let mut idx = 2;
+        while idx + 4 < bytes.len() {
+            if bytes[idx] != 0xFF {
+                if let Some(pos) = bytes[idx..].iter().position(|&b| b == 0xFF) {
+                    idx += pos;
+                    if idx + 4 >= bytes.len() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            let marker = bytes[idx + 1];
+            if marker == 0xD9 || marker == 0xDA {
+                break;
+            }
+
+            let len = u16::from_be_bytes([bytes[idx + 2], bytes[idx + 3]]) as usize;
+            if len < 2 {
+                break;
+            }
+
+            if marker == 0xE1 && idx + 4 + len - 2 <= bytes.len() {
+                let app1_data = &bytes[idx + 4..idx + 2 + len];
+                if app1_data.starts_with(b"Exif\0\0") && app1_data.len() > 6 {
+                    let tiff_data = &app1_data[6..];
+                    if let Some(orient) = extract_orientation_from_tiff(tiff_data) {
+                        return Some(orient);
+                    }
+                }
+            }
+
+            idx += 2 + len;
+        }
+        return None;
+    }
+
+    // 2. TIFF 格式直接检测 (II or MM)
+    if bytes.starts_with(b"II\x2a\x00") || bytes.starts_with(b"MM\x00\x2a") {
+        return extract_orientation_from_tiff(bytes);
+    }
+
+    None
+}
+
+/// 从图像文件头快速只读提取 EXIF Orientation (读取前 128KB)
+pub fn extract_orientation_from_file<P: AsRef<Path>>(path: P) -> Option<u32> {
+    let mut file = File::open(path).ok()?;
+    let mut header = vec![0u8; 131072];
+    let bytes_read = file.read(&mut header).ok()?;
+    if bytes_read < 16 {
+        return None;
+    }
+    header.truncate(bytes_read);
+    extract_orientation(&header)
+}
+
+/// 根据 EXIF Orientation 规范将 DynamicImage 旋转纠正为正向展示
+pub fn apply_orientation(img: image::DynamicImage, orientation: u32) -> image::DynamicImage {
+    match orientation {
+        2 => img.fliph(),
+        3 => img.rotate180(),
+        4 => img.flipv(),
+        5 => img.rotate90().fliph(),
+        6 => img.rotate90(),
+        7 => img.rotate270().fliph(),
+        8 => img.rotate270(),
+        _ => img,
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ByteOrder {
     LittleEndian,
@@ -584,5 +686,71 @@ mod tests {
         );
         assert_eq!(jpeg_exif.aperture, Some(2.8));
         assert_eq!(jpeg_exif.iso, Some(100));
+    }
+
+    #[test]
+    fn test_extract_orientation_and_apply() {
+        // 构造带 Orientation 0x0112 = 6 (90° CW) 的合成 Little-endian TIFF
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II\x2a\x00");
+        tiff.extend_from_slice(&8u32.to_le_bytes()); // IFD0 at offset 8
+
+        // IFD0: 1 entry
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        // Tag 0x0112 (Orientation), Type 3 (SHORT), Count 1, Value 6
+        tiff.extend_from_slice(&0x0112u16.to_le_bytes());
+        tiff.extend_from_slice(&3u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&6u32.to_le_bytes()); // inline SHORT in value field
+        tiff.extend_from_slice(&0u32.to_le_bytes()); // next IFD pointer
+
+        assert_eq!(extract_orientation(&tiff), Some(6));
+
+        // 构造 Big-endian TIFF (Orientation = 8)
+        let mut tiff_be = Vec::new();
+        tiff_be.extend_from_slice(b"MM\x00\x2a");
+        tiff_be.extend_from_slice(&8u32.to_be_bytes());
+        tiff_be.extend_from_slice(&1u16.to_be_bytes());
+        tiff_be.extend_from_slice(&0x0112u16.to_be_bytes());
+        tiff_be.extend_from_slice(&3u16.to_be_bytes());
+        tiff_be.extend_from_slice(&1u32.to_be_bytes());
+        tiff_be.extend_from_slice(&8u16.to_be_bytes());
+        tiff_be.extend_from_slice(&0u16.to_be_bytes());
+        tiff_be.extend_from_slice(&0u32.to_be_bytes());
+
+        assert_eq!(extract_orientation(&tiff_be), Some(8));
+
+        // 构造带 APP1 的 JPEG
+        let mut jpeg = Vec::new();
+        jpeg.extend_from_slice(&[0xFF, 0xD8]); // SOI
+        jpeg.extend_from_slice(&[0xFF, 0xE1]); // APP1
+        let len = (tiff.len() + 6 + 2) as u16;
+        jpeg.extend_from_slice(&len.to_be_bytes());
+        jpeg.extend_from_slice(b"Exif\0\0");
+        jpeg.extend_from_slice(&tiff);
+        jpeg.extend_from_slice(&[0xFF, 0xDA]); // SOS
+
+        assert_eq!(extract_orientation(&jpeg), Some(6));
+
+        // 测试旋转应用
+        let img = image::DynamicImage::ImageRgb8(image::RgbImage::new(100, 60));
+        assert_eq!(img.width(), 100);
+        assert_eq!(img.height(), 60);
+
+        let rotated_6 = apply_orientation(img.clone(), 6);
+        assert_eq!(rotated_6.width(), 60);
+        assert_eq!(rotated_6.height(), 100);
+
+        let rotated_8 = apply_orientation(img.clone(), 8);
+        assert_eq!(rotated_8.width(), 60);
+        assert_eq!(rotated_8.height(), 100);
+
+        let rotated_3 = apply_orientation(img.clone(), 3);
+        assert_eq!(rotated_3.width(), 100);
+        assert_eq!(rotated_3.height(), 60);
+
+        let rotated_1 = apply_orientation(img.clone(), 1);
+        assert_eq!(rotated_1.width(), 100);
+        assert_eq!(rotated_1.height(), 60);
     }
 }
