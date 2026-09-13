@@ -1,0 +1,10 @@
+Copyright (c) 2026 Johnny Boy Studio. All rights reserved.
+
+This software and associated documentation files (the "Software") are proprietary
+and confidential to Johnny Boy Studio. Unauthorized copying, distribution, or
+modification of this software, via any medium, is strictly prohibited.
+
+Third-party software components and dynamic libraries distributed with this software
+are subject to their respective open-source licenses:
+- LibRaw (LGPL-2.1 / CDDL-1.0): see LICENSES/LGPL-2.1.txt and LICENSES/LIBRAW_LICENSE.txt
+  Instructions for dynamically replacing LibRaw are detailed in docs/LIBRAW_REPLACEMENT.md

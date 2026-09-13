@@ -2,7 +2,7 @@
 name = "quickpick-engine"
 version = "0.1.0"
 description = "QuickPick High-Performance RAW Triage Engine"
-authors = ["QuickPick Team"]
+authors = ["Johnny Boy Studio"]
 edition = "2021"
 
 [lib]

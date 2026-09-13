@@ -137,9 +137,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                 </ul>
               </div>
 
-              <div className="text-[11px] text-slate-500 flex items-center justify-between pt-2">
-                <span>LibRaw 官方主页: https://www.libraw.org</span>
-                <span className="font-mono">QuickPick Core v0.1.0</span>
+              <div className="text-[11px] text-slate-500 flex items-center justify-between pt-2 border-t border-dark-700/60">
+                <span>Copyright © 2026 Johnny Boy Studio. All rights reserved.</span>
+                <span className="font-mono text-slate-400">QuickPick Core v0.1.0</span>
               </div>
             </div>
           )}
@@ -212,7 +212,7 @@ engineering for debugging such modifications.
         {/* 底部按钮 */}
         <div className="px-6 py-3.5 border-t border-dark-700/80 bg-dark-900/50 flex items-center justify-between">
           <span className="text-[11px] text-slate-400">
-            遵循 LGPL 2.1 与 CDDL 1.0 开源准则
+            Johnny Boy Studio · 遵循 LGPL 2.1 与 CDDL 1.0 开源准则
           </span>
           <button
             onClick={onClose}
