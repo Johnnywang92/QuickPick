@@ -121,24 +121,24 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                 </p>
               </div>
 
-              {/* 开源许可合规声明 */}
+              {/* 开源协议与合规声明 */}
               <div className="p-4 rounded-xl bg-dark-800/50 border border-dark-700/80 space-y-2">
                 <h4 className="font-semibold text-slate-200 flex items-center space-x-1.5">
                   <BookOpen className="w-3.5 h-3.5 text-brand-400" />
-                  <span>GNU LGPL 2.1 / 3.0 合规声明</span>
+                  <span>开源协议与合规声明 (MIT & LGPL 2.1)</span>
                 </h4>
                 <p className="text-[11px] text-slate-300">
-                  依照 LGPL 2.1 第 6 节及 LGPL 3.0 第 4 节之规定，QuickPick：
+                  QuickPick 核心前端与应用业务代码采用宽松的 <strong>MIT 开源协议</strong>。依照 LGPL 2.1 第 6 节及 LGPL 3.0 第 4 节之规定，关于底层 RAW 图像解码组件：
                 </p>
                 <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-1 pl-1">
-                  <li>以独立的动态链接库形式加载 LibRaw，不与闭源业务逻辑发生静态混合编译；</li>
+                  <li>以独立的动态链接库形式加载 LibRaw，保持清晰的模块架构边界；</li>
                   <li>支持用户根据自身需求定制、重新编译或升级替换底层 <code className="text-amber-700 dark:text-amber-300 font-mono">libraw.dylib</code> / <code className="text-amber-700 dark:text-amber-300 font-mono">libraw.dll</code>；</li>
-                  <li>随安装包附带了完整的 LGPL 2.1 协议全文及详细的动态库替换操作指引文件。</li>
+                  <li>随安装包附带了完整的 MIT 协议、LGPL 2.1 协议全文及动态库替换操作指引文件。</li>
                 </ul>
               </div>
 
               <div className="text-[11px] text-slate-500 flex items-center justify-between pt-2 border-t border-dark-700/60">
-                <span>Copyright © 2026 Johnny Boy Studio. All rights reserved.</span>
+                <span>MIT License · Copyright © 2026 Johnny Boy Studio</span>
                 <span className="font-mono text-slate-400">QuickPick Core v0.1.0</span>
               </div>
             </div>
@@ -147,7 +147,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
           {activeTab === 'replacement' && (
             <div className="space-y-3 text-[11px]">
               <div className="p-3 rounded-lg bg-amber-50/70 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-950 dark:text-amber-200">
-                <strong>自由替换权利保障：</strong> 您可以在不重新构建或修改 QuickPick 任何闭源代码的前提下，将本应用内置的 LibRaw 动态库替换为您自行编译或官方更新的动态库版本。
+                <strong>自由替换权利保障：</strong> 您可以在不重新构建或修改 QuickPick 任何代码的前提下，将本应用内置的 LibRaw 动态库替换为您自行编译或官方更新的动态库版本。
               </div>
 
               <h4 className="text-xs font-semibold text-slate-100 pt-1">🍎 macOS 替换步骤</h4>
@@ -172,39 +172,42 @@ export const AboutModal: React.FC<AboutModalProps> = ({
           )}
 
           {activeTab === 'license' && (
-            <div className="bg-dark-900 border border-dark-700/80 rounded-xl p-3 font-mono text-[10px] text-slate-400 max-h-[350px] overflow-y-auto leading-normal">
-              <pre className="whitespace-pre-wrap">
+            <div className="bg-dark-900 border border-dark-700/80 rounded-xl p-3 font-mono text-[10px] text-slate-400 max-h-[350px] overflow-y-auto leading-normal space-y-4">
+              <div>
+                <div className="text-brand-400 font-semibold mb-1">【 QuickPick 核心协议 · MIT License 】</div>
+                <pre className="whitespace-pre-wrap">
+{`MIT License
+
+Copyright (c) 2026 Johnny Boy Studio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.`}
+                </pre>
+              </div>
+
+              <div className="pt-3 border-t border-dark-700">
+                <div className="text-emerald-400 font-semibold mb-1">【 第三方动态库协议 · GNU LGPL 2.1 】</div>
+                <pre className="whitespace-pre-wrap">
 {`                  GNU LESSER GENERAL PUBLIC LICENSE
                        Version 2.1, February 1999
 
  Copyright (C) 1991, 1999 Free Software Foundation, Inc.
  51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
- Everyone is permitted to copy and distribute verbatim copies
- of this license document, but changing it is not allowed.
 
-[This is the first released version of the Lesser GPL.  It also counts
- as the successor of the GNU Library Public License, version 2, hence
- the version number 2.1.]
-
-0. This License Agreement applies to any software library which
-contains a notice placed by the copyright holder or other authorized
-party saying it may be distributed under the terms of this Lesser General
-Public License (also called "this License").  Each licensee is addressed as
-"you".
-
-A "library" means a collection of software functions and/or data
-prepared so as to be conveniently linked with application programs
-(which use some of those functions and data) to form executables.
-
-6. As an exception to the Sections above, you may also combine or
-link a "work that uses the Library" with the Library to produce a
-work containing portions of the Library, and distribute that work
-under terms of your choice, provided that the terms permit
-modification of the work for the customer's own use and reverse
-engineering for debugging such modifications.
-
-(Complete text is distributed in LICENSES/LGPL-2.1.txt)`}
-              </pre>
+(完整协议文本已随应用附带在 LICENSES/LGPL-2.1.txt)`}
+                </pre>
+              </div>
             </div>
           )}
         </div>
@@ -212,7 +215,7 @@ engineering for debugging such modifications.
         {/* 底部按钮 */}
         <div className="px-6 py-3.5 border-t border-dark-700/80 bg-dark-900/50 flex items-center justify-between">
           <span className="text-[11px] text-slate-400">
-            Johnny Boy Studio · 遵循 LGPL 2.1 与 CDDL 1.0 开源准则
+            Johnny Boy Studio · 遵循 MIT 与 LGPL 2.1 开源协议
           </span>
           <button
             onClick={onClose}

@@ -3,6 +3,7 @@ name = "quickpick-engine"
 version = "0.1.0"
 description = "QuickPick High-Performance RAW Triage Engine"
 authors = ["Johnny Boy Studio"]
+license = "MIT"
 edition = "2021"
 
 [lib]

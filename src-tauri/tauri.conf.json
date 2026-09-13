@@ -30,9 +30,9 @@
     "active": true,
     "targets": "all",
     "category": "Photography",
-    "copyright": "Copyright © 2026 Johnny Boy Studio. All rights reserved.",
+    "copyright": "Copyright © 2026 Johnny Boy Studio. Released under the MIT License.",
     "shortDescription": "面向摄影师的高性能照片选片工作台",
-    "longDescription": "QuickPick 极选是一款专为专业摄影师打造的本地 RAW/JPG 高性能选片与质检工作台，原片全程只读安全无忧。",
+    "longDescription": "QuickPick 极选是一款专为专业摄影师打造的本地 RAW/JPG 高性能开源选片与质检工作台，原片全程只读安全无忧。",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

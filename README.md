@@ -141,4 +141,6 @@ QuickPick/
 
 ## 许可证
 
-前端及业务代码遵循 MIT License。RAW 解码依赖采用动态链接方式，并遵循其 LGPL v2.1 / CDDL 许可要求。
+本项目基于 [MIT License](LICENSE) 开源，著作权归属于 Johnny Boy Studio (Copyright (c) 2026)。
+
+第三方底层 RAW 图像解码组件（LibRaw）采用独立动态链接库形式加载，遵循 GNU LGPL v2.1 / CDDL 1.0 开源许可协议，详细替换与合规说明请参见 [docs/LIBRAW_REPLACEMENT.md](docs/LIBRAW_REPLACEMENT.md) 及 [LICENSES/](LICENSES/) 目录。

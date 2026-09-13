@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "author": "Johnny Boy Studio",
-  "license": "Proprietary",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
