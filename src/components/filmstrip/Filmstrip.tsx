@@ -281,13 +281,14 @@ export const Filmstrip: React.FC = () => {
           );
 
           const isHovered = hoverContentX !== null;
-          // 当前选中卡片基础层级与常态变大放大 1.08x，鼠标悬停时可进一步平滑放大
-          const effectiveScale = isCurrent ? Math.max(scale, 1.08) : scale;
+          // 当前选中卡片基础层级与常态优雅微放大 1.05x，鼠标悬停时可进一步平滑放大
+          const effectiveScale = isCurrent ? Math.max(scale, 1.05) : scale;
           const baseZIndex = isCurrent ? 25 : isCompare ? 12 : 2;
           const finalZIndex = baseZIndex + zIndexBoost;
 
+          // Lightroom 经典专业影棚光影：纯净深黑景深阴影，彻底摒弃塑料感霓虹蓝光
           const dynamicShadow = isCurrent
-            ? '0 0 18px rgba(56, 189, 248, 0.65), 0 0 4px rgba(56, 189, 248, 0.9), 0 10px 24px -2px rgba(0, 0, 0, 0.85)'
+            ? '0 10px 25px -3px rgba(0, 0, 0, 0.8), 0 4px 10px -2px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.15)'
             : factor > 0.05
             ? '0 12px 24px -4px rgba(0, 0, 0, 0.65), 0 4px 10px -2px rgba(0, 0, 0, 0.45)'
             : undefined;
@@ -299,7 +300,7 @@ export const Filmstrip: React.FC = () => {
               style={{
                 position: 'absolute',
                 left: `${leftPos}px`,
-                bottom: isCurrent ? '11px' : '8px',
+                bottom: isCurrent ? '10px' : '8px',
                 width: `${ITEM_WIDTH}px`,
                 height: '64px',
                 transformOrigin: 'bottom center',
@@ -313,20 +314,16 @@ export const Filmstrip: React.FC = () => {
                 borderLeftColor: chapterStart ? chapterStart.color : undefined,
                 borderLeftWidth: chapterStart ? '3px' : undefined,
               }}
-              className={`group cursor-pointer rounded-md border overflow-hidden transition-colors duration-150 bg-neutral-950 ${
+              className={`group cursor-pointer rounded-md overflow-hidden transition-all duration-150 bg-neutral-950 ${
                 isCurrent
-                  ? 'border-sky-400 dark:border-sky-300 ring-2 ring-sky-400/90 ring-offset-2 ring-offset-dark-900'
+                  ? 'ring-2 ring-white border border-white/80 opacity-100'
                   : isCompare
-                  ? 'border-blue-500 ring-2 ring-blue-500/50'
+                  ? 'ring-2 ring-amber-400 border border-amber-400 opacity-100'
                   : factor > 0.15
-                  ? 'border-slate-300 dark:border-slate-500'
-                  : 'border-dark-700/80 hover:border-slate-400'
+                  ? 'border border-slate-500 opacity-95'
+                  : 'border border-dark-700/70 opacity-75 hover:opacity-95 hover:border-slate-500'
               }`}
             >
-              {/* 当前激活照片顶部高亮发光胶囊指示条 */}
-              {isCurrent && (
-                <div className="absolute top-0 inset-x-0 h-1 bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.9)] z-20 pointer-events-none" />
-              )}
               {/* 背景缩略图高清展示：保持纯黑底色杜绝浅色透白，中间主体无遮罩 */}
               {thumbnailUrl ? (
                 <>
