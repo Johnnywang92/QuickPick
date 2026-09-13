@@ -281,13 +281,15 @@ export const Filmstrip: React.FC = () => {
           );
 
           const isHovered = hoverContentX !== null;
-          const baseZIndex = isCurrent ? 15 : isCompare ? 12 : 2;
+          // 当前选中卡片基础层级与常态变大放大 1.08x，鼠标悬停时可进一步平滑放大
+          const effectiveScale = isCurrent ? Math.max(scale, 1.08) : scale;
+          const baseZIndex = isCurrent ? 25 : isCompare ? 12 : 2;
           const finalZIndex = baseZIndex + zIndexBoost;
 
-          const dynamicShadow = factor > 0.05
-            ? isCurrent
-              ? '0 12px 28px -4px rgba(0, 0, 0, 0.75), 0 0 16px rgba(59, 130, 246, 0.45)'
-              : '0 12px 24px -4px rgba(0, 0, 0, 0.65), 0 4px 10px -2px rgba(0, 0, 0, 0.45)'
+          const dynamicShadow = isCurrent
+            ? '0 0 18px rgba(56, 189, 248, 0.65), 0 0 4px rgba(56, 189, 248, 0.9), 0 10px 24px -2px rgba(0, 0, 0, 0.85)'
+            : factor > 0.05
+            ? '0 12px 24px -4px rgba(0, 0, 0, 0.65), 0 4px 10px -2px rgba(0, 0, 0, 0.45)'
             : undefined;
 
           return (
@@ -297,23 +299,23 @@ export const Filmstrip: React.FC = () => {
               style={{
                 position: 'absolute',
                 left: `${leftPos}px`,
-                bottom: '8px',
+                bottom: isCurrent ? '11px' : '8px',
                 width: `${ITEM_WIDTH}px`,
                 height: '64px',
                 transformOrigin: 'bottom center',
-                transform: `scale(${scale.toFixed(3)})`,
+                transform: `scale(${effectiveScale.toFixed(3)})`,
                 zIndex: finalZIndex,
                 boxShadow: dynamicShadow,
                 transition: isHovered
-                  ? 'transform 75ms cubic-bezier(0.2, 0, 0.2, 1), box-shadow 150ms ease'
-                  : 'transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease',
+                  ? 'transform 75ms cubic-bezier(0.2, 0, 0.2, 1), box-shadow 150ms ease, bottom 100ms ease'
+                  : 'transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease, bottom 200ms cubic-bezier(0.34, 1.56, 0.64, 1)',
                 willChange: isHovered ? 'transform' : undefined,
                 borderLeftColor: chapterStart ? chapterStart.color : undefined,
                 borderLeftWidth: chapterStart ? '3px' : undefined,
               }}
               className={`group cursor-pointer rounded-md border overflow-hidden transition-colors duration-150 bg-neutral-950 ${
                 isCurrent
-                  ? 'border-brand-500 ring-2 ring-brand-500/50'
+                  ? 'border-sky-400 dark:border-sky-300 ring-2 ring-sky-400/90 ring-offset-2 ring-offset-dark-900'
                   : isCompare
                   ? 'border-blue-500 ring-2 ring-blue-500/50'
                   : factor > 0.15
@@ -321,6 +323,10 @@ export const Filmstrip: React.FC = () => {
                   : 'border-dark-700/80 hover:border-slate-400'
               }`}
             >
+              {/* 当前激活照片顶部高亮发光胶囊指示条 */}
+              {isCurrent && (
+                <div className="absolute top-0 inset-x-0 h-1 bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.9)] z-20 pointer-events-none" />
+              )}
               {/* 背景缩略图高清展示：保持纯黑底色杜绝浅色透白，中间主体无遮罩 */}
               {thumbnailUrl ? (
                 <>

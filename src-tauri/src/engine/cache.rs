@@ -145,12 +145,39 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
     }
 
     let (bytes, mime) = crate::engine::load_source_photo_preview(photo_path)?;
-    let destination = cache_dir.join(format!("{key}.{}", preview_cache_extension(&mime)));
+    // 对高分辨率大图 (如数十兆的机内 JPEG)，在写入本地缓存前自动等比规范化至 2K (max edge 2048px)。
+    // 这将使本地缓存控制在 ~200KB，消除向前端 IPC 传输数十兆 Base64 的严重卡顿。
+    let (bytes_to_cache, mime_to_cache) = if bytes.len() > 1_000_000 {
+        if let Ok(img) = image::load_from_memory(&bytes) {
+            let (w, h) = img.dimensions();
+            if w.max(h) > DEFAULT_PROXY_MAX_EDGE {
+                let scale = DEFAULT_PROXY_MAX_EDGE as f32 / (w.max(h) as f32);
+                let nw = ((w as f32 * scale).round() as u32).max(1);
+                let nh = ((h as f32 * scale).round() as u32).max(1);
+                let resized = img.resize(nw, nh, image::imageops::FilterType::Triangle);
+                let mut jpeg_buf = Vec::new();
+                let mut cursor = std::io::Cursor::new(&mut jpeg_buf);
+                if resized.write_to(&mut cursor, image::ImageFormat::Jpeg).is_ok() {
+                    (jpeg_buf, "image/jpeg".to_string())
+                } else {
+                    (bytes, mime)
+                }
+            } else {
+                (bytes, mime)
+            }
+        } else {
+            (bytes, mime)
+        }
+    } else {
+        (bytes, mime)
+    };
+
+    let destination = cache_dir.join(format!("{key}.{}", preview_cache_extension(&mime_to_cache)));
     let temporary = cache_dir.join(format!(".{key}.{}.tmp", uuid::Uuid::new_v4()));
     let mut file = fs::File::create(&temporary)
         .map_err(|error| format!("创建预览缓存临时文件失败: {error}"))?;
     use std::io::Write;
-    file.write_all(&bytes)
+    file.write_all(&bytes_to_cache)
         .and_then(|_| file.sync_all())
         .map_err(|error| format!("写入预览缓存失败: {error}"))?;
     if let Err(error) = fs::rename(&temporary, &destination) {
@@ -160,7 +187,7 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
         }
     }
     let _ = prune_preview_cache(&cache_dir);
-    Ok((bytes, mime))
+    Ok((bytes_to_cache, mime_to_cache))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

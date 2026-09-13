@@ -11,7 +11,7 @@ import { findBestPicksByBurstGroup } from '../utils/phashUtils';
 
 export type FaceReviewPreset = 'group' | 'candid' | 'portrait';
 
-const ANALYSIS_CONCURRENCY = 3;
+const ANALYSIS_CONCURRENCY = 4;
 let analysisGeneration = 0;
 
 function insightFromAnalysis(
@@ -54,29 +54,44 @@ function insightFromAnalysis(
   };
 }
 
-function applyAnalysisResult(photoId: string, result: PhotoAnalysisResult): void {
-  useInsightStore.setState((state) => ({
-    insights: {
-      ...state.insights,
-      [photoId]: insightFromAnalysis(photoId, result, state.insights[photoId]?.similarityGroupId),
-    },
-  }));
+function applyAnalysisBatch(
+  items: { photoId: string; result: PhotoAnalysisResult }[],
+): void {
+  if (items.length === 0) return;
+  const resultMap = new Map(items.map((i) => [i.photoId, i.result]));
+
+  useInsightStore.setState((state) => {
+    const nextInsights = { ...state.insights };
+    for (const { photoId, result } of items) {
+      nextInsights[photoId] = insightFromAnalysis(
+        photoId,
+        result,
+        state.insights[photoId]?.similarityGroupId,
+      );
+    }
+    return { insights: nextInsights };
+  });
+
   useAlbumStore.setState((state) => ({
-    photos: state.photos.map((photo) =>
-      photo.id === photoId
-        ? {
-            ...photo,
-            exif: result.exif || undefined,
-            capturedAt: result.exif?.date_time_original || undefined,
-            faces: result.faces,
-            previewWidth: result.preview_width || undefined,
-            previewHeight: result.preview_height || undefined,
-            phash: result.phash || undefined,
-            sharpness: result.sharpness ?? undefined,
-          }
-        : photo,
-    ),
+    photos: state.photos.map((photo) => {
+      const res = resultMap.get(photo.id);
+      if (!res) return photo;
+      return {
+        ...photo,
+        exif: res.exif || undefined,
+        capturedAt: res.exif?.date_time_original || undefined,
+        faces: res.faces,
+        previewWidth: res.preview_width || undefined,
+        previewHeight: res.preview_height || undefined,
+        phash: res.phash || undefined,
+        sharpness: res.sharpness ?? undefined,
+      };
+    }),
   }));
+}
+
+function applyAnalysisResult(photoId: string, result: PhotoAnalysisResult): void {
+  applyAnalysisBatch([{ photoId, result }]);
 }
 
 function refreshBurstGroups(): void {
@@ -247,6 +262,34 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     if (jobs.length === 0) return;
 
     let cursor = 0;
+    let pendingBatch: { photoId: string; result: PhotoAnalysisResult; isFailed: boolean }[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushBatch = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (pendingBatch.length === 0 || generation !== analysisGeneration) return;
+      const batch = pendingBatch;
+      pendingBatch = [];
+
+      applyAnalysisBatch(batch);
+      const failedCount = batch.filter((b) => b.isFailed).length;
+      set((state) => ({
+        analysisCompleted: state.analysisCompleted + batch.length,
+        analysisFailed: state.analysisFailed + failedCount,
+      }));
+    };
+
+    const scheduleFlush = () => {
+      if (pendingBatch.length >= 8) {
+        flushBatch();
+      } else if (!flushTimer) {
+        flushTimer = setTimeout(flushBatch, 120);
+      }
+    };
+
     const worker = async () => {
       while (generation === analysisGeneration) {
         const jobIndex = cursor;
@@ -256,24 +299,25 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
         try {
           const result = await analyzePhotoDetails(job.photo.path, job.index, job.photo.id);
           if (generation !== analysisGeneration) return;
-          applyAnalysisResult(job.photo.id, result);
-          set((state) => ({
-            analysisCompleted: state.analysisCompleted + 1,
-            analysisFailed:
-              state.analysisFailed + (result.analysis_status === 'failed' ? 1 : 0),
-          }));
+          pendingBatch.push({
+            photoId: job.photo.id,
+            result,
+            isFailed: result.analysis_status === 'failed',
+          });
+          scheduleFlush();
         } catch (error) {
           if (generation !== analysisGeneration) return;
           console.warn('Background analysis failed for photo:', error);
-          applyAnalysisResult(job.photo.id, {
-            analysis_status: 'failed',
-            defect_tags: [],
-            faces: [],
+          pendingBatch.push({
+            photoId: job.photo.id,
+            result: {
+              analysis_status: 'failed',
+              defect_tags: [],
+              faces: [],
+            },
+            isFailed: true,
           });
-          set((state) => ({
-            analysisCompleted: state.analysisCompleted + 1,
-            analysisFailed: state.analysisFailed + 1,
-          }));
+          scheduleFlush();
         }
       }
     };
@@ -282,7 +326,10 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
       { length: Math.min(ANALYSIS_CONCURRENCY, jobs.length) },
       () => worker(),
     );
-    void Promise.all(workers).then(() => finalizeBurstGroups(generation));
+    void Promise.all(workers).then(() => {
+      flushBatch();
+      finalizeBurstGroups(generation);
+    });
   },
 
   cancelBackgroundAnalysis: () => {

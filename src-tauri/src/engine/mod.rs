@@ -70,36 +70,54 @@ fn scan_directory_fast_impl(
     }
 
     for entry in entries {
-        let entry = entry
-            .map_err(|error| format!("扫描照片目录时读取条目失败，源磁盘可能已断开: {error}"))?;
-        if !p_dir.is_dir() {
-            return Err(format!(
-                "照片目录在扫描过程中断开或不可用: {}",
-                p_dir.display()
-            ));
-        }
-        let path = entry.path();
-        if path.is_file() && is_supported_photo(&path) {
-            let filename = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-            let is_raw = is_raw_file(&path);
+        let entry = match entry {
+            Ok(e) => e,
+            Err(error) => {
+                if !p_dir.is_dir() {
+                    return Err(format!(
+                        "照片目录在扫描过程中断开或不可用: {}",
+                        p_dir.display()
+                    ));
+                }
+                return Err(format!(
+                    "扫描照片目录时读取条目失败，源磁盘可能已断开: {error}"
+                ));
+            }
+        };
 
-            items.push(PhotoItem {
-                id: stable_photo_id(p_dir, &path),
-                path: path.to_string_lossy().to_string(),
-                filename,
-                file_size,
-                is_raw,
-                thumb_width: None,
-                thumb_height: None,
-                burst_group_id: None,
-                exif: None,
-            });
+        let path = entry.path();
+        // 扩展名过滤在内存中进行，非支持照片直接跳过，零网络 RPC 开销
+        if !is_supported_photo(&path) {
+            continue;
         }
+
+        let is_file = match entry.file_type() {
+            Ok(ft) => ft.is_file(),
+            Err(_) => path.is_file(),
+        };
+        if !is_file {
+            continue;
+        }
+
+        let filename = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let is_raw = is_raw_file(&path);
+
+        items.push(PhotoItem {
+            id: stable_photo_id(p_dir, &path),
+            path: path.to_string_lossy().to_string(),
+            filename,
+            file_size,
+            is_raw,
+            thumb_width: None,
+            thumb_height: None,
+            burst_group_id: None,
+            exif: None,
+        });
     }
 
     // 按文件名自然升序排序

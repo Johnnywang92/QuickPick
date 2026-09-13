@@ -26,9 +26,6 @@ import {
   Sparkles,
   Image as ImageIcon,
   Undo2,
-  CheckCircle2,
-  HelpCircle,
-  CircleSlash2,
   Eye,
   Info,
   Keyboard,
@@ -121,8 +118,6 @@ export default function App() {
     scanError,
     failedFolderPath,
     isScenesModalOpen,
-    setScenesModalOpen,
-    targetGoal,
     openFolder,
     retryOpenFolder,
     activeFilter,
@@ -297,68 +292,18 @@ export default function App() {
           )}
         </div>
 
-        {/* 中间：直观大盘 (已查看 / 已选 / 待考虑) */}
+        {/* 中间：相册总进度 */}
         {photos.length > 0 && (
           <div className="flex items-center space-x-1.5 md:space-x-2 text-xs shrink-0 whitespace-nowrap">
             <div
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
-              title={`已查看进度：${stats.viewedCount} / ${photos.length} 张照片`}
+              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
+              title={`相册总进度：已查看 ${stats.viewedCount} / 共 ${photos.length} 张照片`}
             >
               <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="hidden xl:inline text-slate-400">已查看</span>
+              <span className="text-slate-400">已浏览</span>
               <span className="font-bold text-slate-100">{stats.viewedCount}</span>
               <span className="text-slate-500">/</span>
               <span>{photos.length}</span>
-            </div>
-
-            <div
-              onClick={() => targetGoal && setScenesModalOpen(true)}
-              className={clsx(
-                'flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono select-none whitespace-nowrap shrink-0',
-                targetGoal && 'cursor-pointer hover:border-dark-600 transition-colors',
-              )}
-              title={targetGoal ? `选片目标：${targetGoal} 张 (点击管理目标与场景配额)` : `已选照片：${stats.selectedCount} 张`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span className="hidden xl:inline">已选</span>
-              <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                {stats.selectedCount}
-              </span>
-              {targetGoal && targetGoal > 0 && (
-                <>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-slate-400 text-[11px]" title={`选片总目标：${targetGoal} 张`}>
-                    <span className="hidden 2xl:inline">目标 </span>{targetGoal}
-                  </span>
-                  {stats.selectedCount >= targetGoal ? (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded font-sans font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-                      达标
-                    </span>
-                  ) : (
-                    <span className="hidden 2xl:inline text-[10px] text-slate-400 font-sans">
-                      (差{targetGoal - stats.selectedCount})
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
-              title={`待考虑照片：${stats.maybeCount} 张`}
-            >
-              <HelpCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span className="hidden xl:inline">待考虑</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400">{stats.maybeCount}</span>
-            </div>
-
-            <div
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
-              title={`已明确标记不选：${stats.skippedCount} 张`}
-            >
-              <CircleSlash2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="hidden xl:inline">已不选</span>
-              <span className="font-bold text-slate-500 dark:text-slate-400">{stats.skippedCount}</span>
             </div>
           </div>
         )}

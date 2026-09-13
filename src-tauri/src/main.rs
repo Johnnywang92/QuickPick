@@ -90,24 +90,29 @@ fn analyze_photo_details_blocking(
             sharpness: None,
         };
     };
-    let (faces, preview_width, preview_height, phash) = image::load_from_memory(&bytes)
-        .ok()
-        .map(|image| {
-            let dimensions = (Some(image.width()), Some(image.height()));
-            let hash = quickpick_lib::rules::phash::compute_phash(&image);
-            let phash_hex = quickpick_lib::rules::phash::hash_to_hex(hash);
-            let detected = quickpick_lib::rules::face::detect_faces_heuristic(&image);
-            let faces = quickpick_lib::rules::face::sort_and_truncate_faces(
-                detected,
-                image.width() as f32,
-                image.height() as f32,
-                6,
-            )
-            .0;
-            (faces, dimensions.0, dimensions.1, Some(phash_hex))
-        })
-        .unwrap_or_else(|| (Vec::new(), None, None, None));
-    let Ok(metrics) = quickpick_lib::rules::analyze_image_bytes(&bytes) else {
+    let image_opt = image::load_from_memory(&bytes).ok();
+    let (faces, preview_width, preview_height, phash) = if let Some(ref image) = image_opt {
+        let dimensions = (Some(image.width()), Some(image.height()));
+        let hash = quickpick_lib::rules::phash::compute_phash(image);
+        let phash_hex = quickpick_lib::rules::phash::hash_to_hex(hash);
+        let detected = quickpick_lib::rules::face::detect_faces_heuristic(image);
+        let faces = quickpick_lib::rules::face::sort_and_truncate_faces(
+            detected,
+            image.width() as f32,
+            image.height() as f32,
+            6,
+        )
+        .0;
+        (faces, dimensions.0, dimensions.1, Some(phash_hex))
+    } else {
+        (Vec::new(), None, None, None)
+    };
+    let metrics_res = if let Some(ref image) = image_opt {
+        quickpick_lib::rules::analyze_image(image)
+    } else {
+        quickpick_lib::rules::analyze_image_bytes(&bytes)
+    };
+    let Ok(metrics) = metrics_res else {
         return PhotoAnalysisResult {
             exif,
             analysis_status: "failed".to_string(),
@@ -177,18 +182,23 @@ async fn analyze_photo_details(
 }
 
 #[tauri::command]
-fn get_photo_preview(
+async fn get_photo_preview(
     app: tauri::AppHandle,
     path: String,
     photo_id: Option<String>,
 ) -> Result<String, String> {
-    let (data, mime) = quickpick_lib::engine::cache::load_cached_preview(
-        app_data_directory(&app)?,
-        photo_id.as_deref().unwrap_or(""),
-        &path,
-    )?;
-    let encoded = BASE64.encode(&data);
-    Ok(format!("data:{};base64,{}", mime, encoded))
+    let app_data_dir = app_data_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (data, mime) = quickpick_lib::engine::cache::load_cached_preview(
+            &app_data_dir,
+            photo_id.as_deref().unwrap_or(""),
+            &path,
+        )?;
+        let encoded = BASE64.encode(&data);
+        Ok(format!("data:{};base64,{}", mime, encoded))
+    })
+    .await
+    .map_err(|error| format!("后台照片预览任务异常结束: {error}"))?
 }
 
 fn app_data_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {

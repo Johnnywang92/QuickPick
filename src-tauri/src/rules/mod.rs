@@ -20,94 +20,99 @@ pub struct ImageMetrics {
 /// 快速从缩略图/图像字节中计算基本光学指标
 pub fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageMetrics, String> {
     if let Ok(img) = image::load_from_memory(bytes) {
-        let gray = img.to_luma8();
-        let (width, height) = gray.dimensions();
-        if width == 0 || height == 0 {
-            return Err("图像尺寸为零，无法分析".to_string());
-        }
-
-        let mut sum_lum: u64 = 0;
-        let mut highlight_count: u64 = 0;
-        let mut shadow_count: u64 = 0;
-
-        // 步长抽样计算，保证在数千张规模下极速完成
-        let step = ((width.max(height) / 300).max(1)) as usize;
-        let mut sampled_count: u64 = 0;
-
-        for y in (0..height).step_by(step) {
-            for x in (0..width).step_by(step) {
-                let p = gray.get_pixel(x, y)[0];
-                sum_lum += p as u64;
-                if p >= 250 {
-                    highlight_count += 1;
-                } else if p <= 5 {
-                    shadow_count += 1;
-                }
-                sampled_count += 1;
-            }
-        }
-
-        let mean_lum = if sampled_count > 0 {
-            sum_lum as f32 / sampled_count as f32
-        } else {
-            128.0
-        };
-
-        let hl_pct = if sampled_count > 0 {
-            highlight_count as f32 / sampled_count as f32
-        } else {
-            0.0
-        };
-
-        let sh_pct = if sampled_count > 0 {
-            shadow_count as f32 / sampled_count as f32
-        } else {
-            0.0
-        };
-
-        // 计算中心 50% 核心区域拉普拉斯算子方差 (合焦清晰度)
-        let cx_start = width / 4;
-        let cx_end = (width * 3) / 4;
-        let cy_start = height / 4;
-        let cy_end = (height * 3) / 4;
-
-        let mut lap_sum: f64 = 0.0;
-        let mut lap_sq_sum: f64 = 0.0;
-        let mut lap_count: u64 = 0;
-
-        for y in (cy_start + 1..cy_end - 1).step_by(step) {
-            for x in (cx_start + 1..cx_end - 1).step_by(step) {
-                let c = gray.get_pixel(x, y)[0] as f64;
-                let up = gray.get_pixel(x, y - 1)[0] as f64;
-                let down = gray.get_pixel(x, y + 1)[0] as f64;
-                let left = gray.get_pixel(x - 1, y)[0] as f64;
-                let right = gray.get_pixel(x + 1, y)[0] as f64;
-
-                let lap = (4.0 * c - up - down - left - right).abs();
-                lap_sum += lap;
-                lap_sq_sum += lap * lap;
-                lap_count += 1;
-            }
-        }
-
-        let sharpness = if lap_count > 0 {
-            let mean = lap_sum / (lap_count as f64);
-            let variance = (lap_sq_sum / (lap_count as f64)) - (mean * mean);
-            variance.max(0.0) as f32
-        } else {
-            100.0
-        };
-
-        Ok(ImageMetrics {
-            sharpness,
-            mean_luminance: mean_lum,
-            highlight_clipped_pct: hl_pct,
-            shadow_clipped_pct: sh_pct,
-            dynamic_range: 255.0,
-        })
+        analyze_image(&img)
     } else {
         Err("图像解码失败，无法生成可信诊断".to_string())
     }
+}
+
+/// 快速从已解码的图像对象中计算基本光学指标（避免重复内存解码）
+pub fn analyze_image(img: &image::DynamicImage) -> Result<ImageMetrics, String> {
+    let gray = img.to_luma8();
+    let (width, height) = gray.dimensions();
+    if width == 0 || height == 0 {
+        return Err("图像尺寸为零，无法分析".to_string());
+    }
+
+    let mut sum_lum: u64 = 0;
+    let mut highlight_count: u64 = 0;
+    let mut shadow_count: u64 = 0;
+
+    // 步长抽样计算，保证在数千张规模下极速完成
+    let step = ((width.max(height) / 300).max(1)) as usize;
+    let mut sampled_count: u64 = 0;
+
+    for y in (0..height).step_by(step) {
+        for x in (0..width).step_by(step) {
+            let p = gray.get_pixel(x, y)[0];
+            sum_lum += p as u64;
+            if p >= 250 {
+                highlight_count += 1;
+            } else if p <= 5 {
+                shadow_count += 1;
+            }
+            sampled_count += 1;
+        }
+    }
+
+    let mean_lum = if sampled_count > 0 {
+        sum_lum as f32 / sampled_count as f32
+    } else {
+        128.0
+    };
+
+    let hl_pct = if sampled_count > 0 {
+        highlight_count as f32 / sampled_count as f32
+    } else {
+        0.0
+    };
+
+    let sh_pct = if sampled_count > 0 {
+        shadow_count as f32 / sampled_count as f32
+    } else {
+        0.0
+    };
+
+    // 计算中心 50% 核心区域拉普拉斯算子方差 (合焦清晰度)
+    let cx_start = width / 4;
+    let cx_end = (width * 3) / 4;
+    let cy_start = height / 4;
+    let cy_end = (height * 3) / 4;
+
+    let mut lap_sum: f64 = 0.0;
+    let mut lap_sq_sum: f64 = 0.0;
+    let mut lap_count: u64 = 0;
+
+    for y in (cy_start + 1..cy_end - 1).step_by(step) {
+        for x in (cx_start + 1..cx_end - 1).step_by(step) {
+            let c = gray.get_pixel(x, y)[0] as f64;
+            let up = gray.get_pixel(x, y - 1)[0] as f64;
+            let down = gray.get_pixel(x, y + 1)[0] as f64;
+            let left = gray.get_pixel(x - 1, y)[0] as f64;
+            let right = gray.get_pixel(x + 1, y)[0] as f64;
+
+            let lap = (4.0 * c - up - down - left - right).abs();
+            lap_sum += lap;
+            lap_sq_sum += lap * lap;
+            lap_count += 1;
+        }
+    }
+
+    let sharpness = if lap_count > 0 {
+        let mean = lap_sum / (lap_count as f64);
+        let variance = (lap_sq_sum / (lap_count as f64)) - (mean * mean);
+        variance.max(0.0) as f32
+    } else {
+        100.0
+    };
+
+    Ok(ImageMetrics {
+        sharpness,
+        mean_luminance: mean_lum,
+        highlight_clipped_pct: hl_pct,
+        shadow_clipped_pct: sh_pct,
+        dynamic_range: 255.0,
+    })
 }
 
 fn parse_photo_timestamp(photo: &PhotoItem) -> Option<i64> {

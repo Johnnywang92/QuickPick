@@ -13,7 +13,6 @@ import {
   CircleSlash2,
   AlertCircle,
   Layers,
-  Sparkles,
   ChevronDown,
   Target,
   ListChecks,
@@ -48,10 +47,8 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
 
   const [showSceneDropdown, setShowSceneDropdown] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
-  const [showAiHelperDropdown, setShowAiHelperDropdown] = useState(false);
   const sceneDropdownRef = useRef<HTMLDivElement>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
-  const aiHelperDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -60,9 +57,6 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
       }
       if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
         setShowTagDropdown(false);
-      }
-      if (aiHelperDropdownRef.current && !aiHelperDropdownRef.current.contains(e.target as Node)) {
-        setShowAiHelperDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
@@ -199,9 +193,9 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
   const currentScene = scenes.find((s) => s.id === selectedSceneId);
 
   return (
-    <div className="h-11 bg-dark-850 border-b border-dark-700 px-4 flex items-center justify-between z-20 shrink-0 text-xs">
+    <div className="h-11 bg-dark-850 border-b border-dark-700 px-3 flex items-center justify-between z-20 shrink-0 text-xs gap-3">
       {/* 左侧：专业分段控制器 (Segmented Control) 风格 */}
-      <div className="flex items-center p-0.5 rounded-xl bg-dark-800 border border-dark-750 space-x-0.5 overflow-x-auto scrollbar-none">
+      <div className="flex items-center p-0.5 rounded-xl bg-dark-800 border border-dark-750 space-x-1 shrink-0">
         {filterTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeFilter === tab.id;
@@ -209,7 +203,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
             <button
               key={tab.id}
               onClick={() => setActiveFilter(tab.id)}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
                 isActive
                   ? 'bg-white dark:bg-dark-700 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200/80 dark:border-dark-600/80 font-semibold'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-dark-750/60 border border-transparent'
@@ -232,9 +226,9 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
       </div>
 
       {/* 右侧：拍摄场景切换与选片目标 */}
-      <div className="flex items-center space-x-3 shrink-0">
+      <div className="flex items-center space-x-2 shrink-0">
         <span
-          className="rounded-lg border border-dark-700 bg-dark-800 px-2.5 py-1 font-mono text-[11px] text-slate-400"
+          className="rounded-lg border border-dark-700 bg-dark-800 px-2 py-1 font-mono text-[11px] text-slate-400 shrink-0"
           title="当前照片在筛选结果中的位置"
           aria-label={`筛选结果当前位置 ${filteredPosition.current || 0}，共 ${filteredPosition.total} 张`}
         >
@@ -408,66 +402,6 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
                   );
                 })}
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* 辅助提示筛选下拉按钮 */}
-        <div className="relative" ref={aiHelperDropdownRef}>
-          <button
-            onClick={() => setShowAiHelperDropdown(!showAiHelperDropdown)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 border border-dark-700 text-slate-300 hover:text-slate-100 transition-colors cursor-pointer"
-            title="按本地辅助提示筛选照片"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-slate-400" />
-            <span>辅助提示</span>
-            <ChevronDown className="w-3 h-3 text-slate-500" />
-          </button>
-
-          {showAiHelperDropdown && (
-            <div className="absolute right-0 top-full mt-1.5 w-56 bg-dark-850 border border-dark-700 rounded-xl shadow-2xl py-1.5 z-40 text-xs">
-              <div className="px-3 py-1 text-[11px] text-slate-400 font-medium border-b border-dark-750">
-                辅助浏览（不改变已有选择）
-              </div>
-              <button
-                onClick={() => {
-                  setActiveFilter('needs_check');
-                  setShowAiHelperDropdown(false);
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-dark-750 text-slate-200 flex items-center space-x-2"
-              >
-                <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <div>
-                  <div className="font-medium">查找可能闭眼/模糊的照片</div>
-                  <div className="text-[10px] text-slate-500">快速排查抓拍失误</div>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  setActiveFilter('burst');
-                  setShowAiHelperDropdown(false);
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-dark-750 text-slate-200 flex items-center space-x-2"
-              >
-                <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <div>
-                  <div className="font-medium">浏览相似连拍组</div>
-                  <div className="text-[10px] text-slate-500">对比挑出最佳微表情</div>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  setActiveFilter('unreviewed');
-                  setShowAiHelperDropdown(false);
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-dark-750 text-slate-200 flex items-center space-x-2"
-              >
-                <EyeOff className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                <div>
-                  <div className="font-medium">查看尚未检查的照片</div>
-                  <div className="text-[10px] text-slate-500">查漏补缺，不遗漏任何场景</div>
-                </div>
-              </button>
             </div>
           )}
         </div>
