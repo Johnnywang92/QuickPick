@@ -123,4 +123,40 @@ describe('frameRenderer - EXIF formatting & detection', () => {
     expect(colorPixel.data[0]).toBe(colorPixel.data[1]);
     expect(colorPixel.data[1]).toBe(colorPixel.data[2]);
   });
+
+  it('short-circuits and leaves data untouched when adjustments are noop', () => {
+    const original = [12, 34, 56, 255];
+    const mockImageData = {
+      data: new Uint8ClampedArray(original),
+      width: 1,
+      height: 1,
+      colorSpace: 'srgb',
+    } as unknown as ImageData;
+
+    applyAdjustmentsToImageData(mockImageData, DEFAULT_ADJUSTMENTS);
+
+    expect(mockImageData.data[0]).toBe(original[0]);
+    expect(mockImageData.data[1]).toBe(original[1]);
+    expect(mockImageData.data[2]).toBe(original[2]);
+  });
+
+  it('correctly uses 1D LUT fast path for exposure and contrast adjustments', () => {
+    const mockImageData = {
+      data: new Uint8ClampedArray([100, 150, 200, 255]),
+      width: 1,
+      height: 1,
+      colorSpace: 'srgb',
+    } as unknown as ImageData;
+
+    applyAdjustmentsToImageData(mockImageData, {
+      ...DEFAULT_ADJUSTMENTS,
+      exposure: 0.5,
+      contrast: 10,
+    });
+
+    // 曝光 +0.5 EV 且加对比度，数值应有合理的正向提升
+    expect(mockImageData.data[0]).toBeGreaterThan(100);
+    expect(mockImageData.data[1]).toBeGreaterThan(150);
+    expect(mockImageData.data[2]).toBeGreaterThan(200);
+  });
 });

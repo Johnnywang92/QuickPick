@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAlbumStore } from '../../store/albumStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { useAdjustStore } from '../../store/adjustStore';
@@ -9,6 +9,7 @@ import {
   downloadCanvasAsImage,
 } from '../../utils/frameRenderer';
 import { calculateAutoTone } from '../../utils/autoTone';
+import { isAdjustmentsNoop } from '../../utils/adjustEngine';
 import { FrameTemplate, DEFAULT_ADJUSTMENTS } from '../../types/adjust';
 import {
   X,
@@ -25,6 +26,7 @@ import {
   Camera,
   Eye,
   Sparkles,
+  ArrowRightLeft,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { shareCustomImagesViaAirDrop } from '../../services/tauriBridge';
@@ -40,32 +42,47 @@ export const FrameAndAdjustModal: React.FC = () => {
     setPhotoAdjustments,
     resetPhotoAdjustments,
     batchApplyAdjustments,
+    copyCurrentAdjustments,
+    pasteAdjustments,
+    copiedAdjustments,
   } = useAdjustStore();
 
-  const allPhotoAdjustments = useAdjustStore((state) => state.photoAdjustments);
   const { photos, currentIndex } = useAlbumStore();
   const { currentPreviewUrl } = usePreviewStore();
   const { selections } = useSelectionStore();
 
   const currentPhoto = photos[currentIndex];
-  const photoAdjustments = useMemo(
-    () =>
-      currentPhoto?.id && allPhotoAdjustments[currentPhoto.id]
-        ? allPhotoAdjustments[currentPhoto.id]
-        : { ...DEFAULT_ADJUSTMENTS },
-    [allPhotoAdjustments, currentPhoto?.id],
-  );
+  const currentPhotoId = currentPhoto?.id;
 
+  const currentAdjustmentsFromStore = useAdjustStore(
+    (state) => (currentPhotoId ? state.photoAdjustments[currentPhotoId] : undefined),
+  );
+  const photoAdjustments = currentAdjustmentsFromStore || DEFAULT_ADJUSTMENTS;
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState(false);
   const [airdropSuccess, setAirdropSuccess] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isComparingBefore, setIsComparingBefore] = useState(false);
 
+  // 左右分屏对比模式
+  const [isSplitMode, setIsSplitMode] = useState(false);
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const splitBeforeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const currentRenderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedImageRef = useRef<HTMLImageElement | null>(null);
   const cachedImageRef = useRef<{ url: string; img: HTMLImageElement } | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 2400);
+  }, []);
 
   // 渲染相框与调色预览
   useEffect(() => {
@@ -110,6 +127,30 @@ export const FrameAndAdjustModal: React.FC = () => {
             ctx.drawImage(canvas, 0, 0);
           }
         }
+
+        // 若开启左右分屏对比，同时渲染 Before 原图层并同步到 splitBeforeCanvasRef
+        if (isSplitMode) {
+          const beforeCanvas = await renderFramedPhotoCanvas(
+            img,
+            img.naturalWidth || 1920,
+            img.naturalHeight || 1280,
+            currentPhoto,
+            { ...frameConfig, includeAdjustments: false },
+            { ...DEFAULT_ADJUSTMENTS, rotation: photoAdjustments.rotation },
+            1600,
+          );
+          if (isCancelled) return;
+          const beforeTarget = splitBeforeCanvasRef.current;
+          if (beforeTarget) {
+            beforeTarget.width = beforeCanvas.width;
+            beforeTarget.height = beforeCanvas.height;
+            const bCtx = beforeTarget.getContext('2d');
+            if (bCtx) {
+              bCtx.clearRect(0, 0, beforeTarget.width, beforeTarget.height);
+              bCtx.drawImage(beforeCanvas, 0, 0);
+            }
+          }
+        }
       } catch (err) {
         if (!isCancelled) {
           setPreviewError(err instanceof Error ? err.message : String(err));
@@ -152,7 +193,42 @@ export const FrameAndAdjustModal: React.FC = () => {
     frameConfig,
     photoAdjustments,
     isComparingBefore,
+    isSplitMode,
   ]);
+
+  // 分屏拖拽交互计算
+  const updateSplitFromPointer = useCallback((clientX: number) => {
+    const el = previewCanvasRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width));
+    setSplitRatio(ratio);
+  }, []);
+
+  const handleSplitPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setIsDraggingSplit(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    updateSplitFromPointer(e.clientX);
+  };
+
+  const handleSplitPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingSplit) return;
+    e.preventDefault();
+    updateSplitFromPointer(e.clientX);
+  };
+
+  const handleSplitPointerUp = (e: React.PointerEvent) => {
+    if (isDraggingSplit) {
+      setIsDraggingSplit(false);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+  };
 
   // 获取导出级高清相框画布（优先 2560px 高清画布，降级使用当前预览画布）
   const getHighResRenderedCanvas = useCallback(
@@ -190,10 +266,11 @@ export const FrameAndAdjustModal: React.FC = () => {
         preserveRotation: photoAdjustments.rotation,
       });
       setPhotoAdjustments(currentPhoto.id, autoAdjustments);
+      showToast('✨ 算法一键调光已生效！');
     } catch (err) {
       console.error('Failed to calculate auto tone:', err);
     }
-  }, [currentPhoto, photoAdjustments.rotation, setPhotoAdjustments]);
+  }, [currentPhoto, photoAdjustments.rotation, setPhotoAdjustments, showToast]);
 
   // 复制到剪贴板
   const handleCopyClipboard = useCallback(async () => {
@@ -201,11 +278,12 @@ export const FrameAndAdjustModal: React.FC = () => {
       const canvas = await getHighResRenderedCanvas(2560);
       await copyCanvasToClipboard(canvas);
       setCopyToast(true);
-      setTimeout(() => setCopyToast(false), 2600);
+      setTimeout(() => setCopyToast(false), 2400);
+      showToast('📋 已复制相框成图到剪贴板！可以直接粘贴发送');
     } catch (err) {
       alert(`复制到剪贴板失败: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [getHighResRenderedCanvas]);
+  }, [getHighResRenderedCanvas, showToast]);
 
   // 快捷键监听
   useEffect(() => {
@@ -216,7 +294,31 @@ export const FrameAndAdjustModal: React.FC = () => {
         return;
       }
 
-      // Cmd / Ctrl + C 触发复制
+      // Cmd / Ctrl + Shift + C 复制当前照片调色参数
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        if (currentPhoto) {
+          copyCurrentAdjustments(currentPhoto.id);
+          showToast('📋 已复制当前照片调色参数 (可切图后按 Cmd+Shift+V 粘贴)');
+        }
+        return;
+      }
+
+      // Cmd / Ctrl + Shift + V 粘贴调色参数到当前照片
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        if (currentPhoto) {
+          if (!copiedAdjustments) {
+            showToast('⚠️ 剪贴板中尚无已复制的调色参数');
+          } else {
+            pasteAdjustments(currentPhoto.id);
+            showToast('✨ 已成功粘贴应用调色参数！');
+          }
+        }
+        return;
+      }
+
+      // Cmd / Ctrl + C 触发复制高清相框图
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault();
         void handleCopyClipboard();
@@ -227,6 +329,13 @@ export const FrameAndAdjustModal: React.FC = () => {
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         handleAutoTone();
+        return;
+      }
+
+      // 快捷键 Y: 切换左右分屏卷帘对比
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        setIsSplitMode((prev) => !prev);
         return;
       }
 
@@ -265,7 +374,17 @@ export const FrameAndAdjustModal: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isModalOpen, handleCopyClipboard, handleAutoTone, updateFrameConfig]);
+  }, [
+    isModalOpen,
+    handleCopyClipboard,
+    handleAutoTone,
+    updateFrameConfig,
+    currentPhoto,
+    copyCurrentAdjustments,
+    pasteAdjustments,
+    copiedAdjustments,
+    showToast,
+  ]);
 
   if (!isModalOpen || !currentPhoto) return null;
 
@@ -421,13 +540,34 @@ export const FrameAndAdjustModal: React.FC = () => {
     },
   ];
 
+  const isOriginalActive = isAdjustmentsNoop(photoAdjustments);
+  const isWarmActive =
+    photoAdjustments.exposure === 0.3 &&
+    photoAdjustments.temperature === 15 &&
+    photoAdjustments.shadows === 20 &&
+    photoAdjustments.highlights === -15 &&
+    photoAdjustments.contrast === 5 &&
+    !photoAdjustments.isBlackAndWhite;
+  const isCoolActive =
+    photoAdjustments.exposure === 0.2 &&
+    photoAdjustments.temperature === -20 &&
+    photoAdjustments.tint === 5 &&
+    photoAdjustments.highlights === -25 &&
+    photoAdjustments.contrast === 10 &&
+    !photoAdjustments.isBlackAndWhite;
+  const isBwActive =
+    photoAdjustments.isBlackAndWhite &&
+    photoAdjustments.contrast === 25 &&
+    photoAdjustments.highlights === -20 &&
+    photoAdjustments.shadows === 15;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      {/* 复制成功毛玻璃灵动岛通知 */}
-      {copyToast && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-60 flex items-center space-x-2.5 rounded-full border border-emerald-500/40 bg-emerald-950/90 px-5 py-2.5 text-xs font-semibold text-emerald-200 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-200">
-          <Check className="h-4 w-4 text-emerald-400 stroke-[3]" />
-          <span>已成功复制高清带框图片到剪贴板！可直接在微信/社交软件按 Cmd+V 粘贴</span>
+      {/* 顶部通用灵动 Toast 通知 */}
+      {toastMessage && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-60 flex items-center space-x-2.5 rounded-full border border-brand-500/40 bg-dark-900/95 px-5 py-2.5 text-xs font-semibold text-white shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-200">
+          <Check className="h-4 w-4 text-brand-400 stroke-[3]" />
+          <span>{toastMessage}</span>
         </div>
       )}
 
@@ -498,7 +638,7 @@ export const FrameAndAdjustModal: React.FC = () => {
                 </div>
               )}
 
-              {/* 原图对比按键 */}
+              {/* 原图对比按键 (按住查看原片) */}
               <button
                 onMouseDown={() => setIsComparingBefore(true)}
                 onMouseUp={() => setIsComparingBefore(false)}
@@ -514,30 +654,87 @@ export const FrameAndAdjustModal: React.FC = () => {
                 )}
               >
                 <Eye className="h-3.5 w-3.5" />
-                <span>{isComparingBefore ? '当前显示：调色前原图' : '按住对比原图 (\)'}</span>
+                <span>{isComparingBefore ? '当前显示：调色前原图' : '按住对比原片 (\\)'}</span>
+              </button>
+
+              {/* 左右分屏对比开关 (Y 键开启卷帘对比) */}
+              <button
+                onClick={() => setIsSplitMode((prev) => !prev)}
+                title="开启/关闭 左右卷帘分屏对比 [快捷键 Y]"
+                className={clsx(
+                  'flex items-center space-x-1.5 rounded-full px-3 py-1 text-xs font-semibold backdrop-blur transition-all border cursor-pointer select-none shadow-lg',
+                  isSplitMode
+                    ? 'bg-indigo-600 text-white border-indigo-400 font-bold ring-2 ring-indigo-500/40 shadow-indigo-500/20'
+                    : 'bg-dark-800/90 text-slate-300 border-dark-700 hover:bg-dark-700',
+                )}
+              >
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+                <span>{isSplitMode ? '分屏卷帘中 (Y)' : '左右分屏对比 (Y)'}</span>
               </button>
             </div>
 
             {previewError ? (
               <div className="text-xs text-rose-400">{previewError}</div>
             ) : (
-              <div className="flex h-full w-full items-center justify-center p-2">
-                <canvas
-                  ref={previewCanvasRef}
-                  className="max-h-full max-w-full rounded-md shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] object-contain ring-1 ring-white/10"
-                />
+              <div
+                className="relative flex h-full w-full items-center justify-center p-2 select-none overflow-hidden"
+                onPointerMove={isDraggingSplit ? handleSplitPointerMove : undefined}
+                onPointerUp={isDraggingSplit ? handleSplitPointerUp : undefined}
+                onPointerCancel={isDraggingSplit ? handleSplitPointerUp : undefined}
+              >
+                <div className="relative max-h-full max-w-full flex items-center justify-center">
+                  {/* 调色后成图 (底层基底) */}
+                  <canvas
+                    ref={previewCanvasRef}
+                    className="max-h-full max-w-full rounded-md shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] object-contain ring-1 ring-white/10"
+                  />
+
+                  {/* 原片对比层 (顶层，基于 clip-path 裁切，仅在分屏模式下显示) */}
+                  {isSplitMode && (
+                    <canvas
+                      ref={splitBeforeCanvasRef}
+                      style={{
+                        clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)`,
+                      }}
+                      className="absolute inset-0 max-h-full max-w-full rounded-md object-contain pointer-events-none"
+                    />
+                  )}
+
+                  {/* 分屏拖拽分水岭与双向手柄 */}
+                  {isSplitMode && (
+                    <div
+                      className="absolute top-0 bottom-0 z-20 cursor-ew-resize flex items-center justify-center select-none"
+                      style={{ left: `${splitRatio * 100}%` }}
+                      onPointerDown={handleSplitPointerDown}
+                    >
+                      {/* 垂直高亮细线 */}
+                      <div className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_8px_rgba(0,0,0,0.85)] -translate-x-1/2 pointer-events-none" />
+
+                      {/* 交互手柄胶囊 */}
+                      <div className="relative -translate-x-1/2 flex items-center space-x-1 px-2.5 py-1 rounded-full bg-dark-900/90 text-[10px] font-bold text-white border border-white/40 shadow-2xl backdrop-blur select-none cursor-ew-resize hover:scale-105 active:scale-95 transition-transform ring-2 ring-black/40">
+                        <span className="text-amber-400">◀ 原片</span>
+                        <span className="text-slate-400">│</span>
+                        <span className="text-brand-300">调色 ▶</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {/* 底部快捷键提示 */}
-            <div className="absolute bottom-4 left-6 text-[11px] text-slate-500 font-mono flex items-center space-x-4">
+            <div className="absolute bottom-4 left-6 text-[11px] text-slate-500 font-mono flex items-center space-x-3">
               <span>快捷键：按 1~6 换模板</span>
               <span>•</span>
               <span>按 A 算法调光</span>
               <span>•</span>
-              <span>按 Cmd+C 复制图片</span>
+              <span>按 Y 分屏对比</span>
               <span>•</span>
-              <span>按 \ 对比原片</span>
+              <span>按 \ 瞬看原片</span>
+              <span>•</span>
+              <span>Cmd+C 拷图</span>
+              <span>•</span>
+              <span>Cmd+Shift+C/V 拷粘调色</span>
             </div>
           </div>
 
@@ -726,7 +923,12 @@ export const FrameAndAdjustModal: React.FC = () => {
                     <div className="grid grid-cols-4 gap-1.5 text-[11px]">
                       <button
                         onClick={() => resetPhotoAdjustments(currentPhoto.id)}
-                        className="py-1.5 px-1 rounded-lg bg-dark-800 hover:bg-dark-750 border border-dark-700 text-slate-300 hover:text-white transition-colors cursor-pointer text-center"
+                        className={clsx(
+                          'py-1.5 px-1 rounded-lg border transition-all cursor-pointer text-center',
+                          isOriginalActive
+                            ? 'bg-dark-700 border-brand-400 text-white font-bold ring-1 ring-brand-400/50 shadow-sm'
+                            : 'bg-dark-800 hover:bg-dark-750 border-dark-700 text-slate-300 hover:text-white',
+                        )}
                         title="清空所有微调，恢复原片直出"
                       >
                         原片直出
@@ -742,7 +944,12 @@ export const FrameAndAdjustModal: React.FC = () => {
                             isBlackAndWhite: false,
                           })
                         }
-                        className="py-1.5 px-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 transition-colors cursor-pointer text-center"
+                        className={clsx(
+                          'py-1.5 px-1 rounded-lg border transition-all cursor-pointer text-center',
+                          isWarmActive
+                            ? 'bg-amber-500/25 border-amber-400 text-amber-200 font-bold ring-1 ring-amber-400/50 shadow-sm'
+                            : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-300',
+                        )}
                         title="暖阳人像：微加曝光与暖调，提亮暗部细节"
                       >
                         暖阳人像
@@ -758,7 +965,12 @@ export const FrameAndAdjustModal: React.FC = () => {
                             isBlackAndWhite: false,
                           })
                         }
-                        className="py-1.5 px-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 transition-colors cursor-pointer text-center"
+                        className={clsx(
+                          'py-1.5 px-1 rounded-lg border transition-all cursor-pointer text-center',
+                          isCoolActive
+                            ? 'bg-sky-500/25 border-sky-400 text-sky-200 font-bold ring-1 ring-sky-400/50 shadow-sm'
+                            : 'bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/30 text-sky-300',
+                        )}
                         title="清透冷调：冷色温，压暗高光，清爽通透"
                       >
                         清透冷调
@@ -772,7 +984,12 @@ export const FrameAndAdjustModal: React.FC = () => {
                             shadows: 15,
                           })
                         }
-                        className="py-1.5 px-1 rounded-lg bg-slate-700/50 hover:bg-slate-700 border border-slate-600 text-slate-200 transition-colors cursor-pointer text-center"
+                        className={clsx(
+                          'py-1.5 px-1 rounded-lg border transition-all cursor-pointer text-center',
+                          isBwActive
+                            ? 'bg-slate-600/80 border-slate-300 text-white font-bold ring-1 ring-slate-300/50 shadow-sm'
+                            : 'bg-slate-700/50 hover:bg-slate-700 border border-slate-600 text-slate-200',
+                        )}
                         title="影调黑白：黑白预览，增强明暗对比与层次"
                       >
                         影调黑白
@@ -803,6 +1020,12 @@ export const FrameAndAdjustModal: React.FC = () => {
 
                   {/* 渐变指示滑杆 */}
                   <div className="space-y-4 text-xs text-slate-300">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5 pb-0.5">
+                      <span className="font-semibold text-slate-300">光影与色彩微调</span>
+                      <span className="text-[10px] text-brand-300/80 bg-brand-500/10 px-1.5 py-0.5 rounded border border-brand-500/20">
+                        双击名称快速归零
+                      </span>
+                    </div>
                     {/* 曝光补偿 */}
                     <div>
                       <div className="flex justify-between text-[11px] mb-1">

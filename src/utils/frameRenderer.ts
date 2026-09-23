@@ -1,5 +1,6 @@
 import { FrameConfig, PhotoAdjustments } from '../types/adjust';
 import { LocalPhoto } from '../types/photo';
+import { isAdjustmentsNoop } from './adjustEngine';
 
 /**
  * 相机品牌识别与规范化 (用于元数据合规文本呈现)
@@ -235,67 +236,120 @@ export function drawPhotographicBadge(
 }
 
 /**
- * 在 Canvas 像素缓冲上执行高保真快速调色
+ * 在 Canvas 像素缓冲上执行高保真快速调色 (带 1D LUT 查表加速与短路优化)
  */
 export function applyAdjustmentsToImageData(
   imageData: ImageData,
   adjustments: PhotoAdjustments,
 ): void {
+  if (isAdjustmentsNoop(adjustments)) return;
+
   const data = imageData.data;
   const len = data.length;
 
-  const exposureFactor = Math.pow(2, adjustments.exposure);
-  const contrastFactor = (259 * (adjustments.contrast + 255)) / (255 * (259 - adjustments.contrast));
-  const highlightGain = adjustments.highlights / 100;
-  const shadowGain = adjustments.shadows / 100;
+  const hasExposure = adjustments.exposure !== 0;
+  const hasContrast = adjustments.contrast !== 0;
+  const hasShadowsOrHighlights = adjustments.shadows !== 0 || adjustments.highlights !== 0;
+  const hasTempOrTint = adjustments.temperature !== 0 || adjustments.tint !== 0;
+  const hasSaturationOrBw = adjustments.isBlackAndWhite || adjustments.saturation !== 0;
+
+  const exposureFactor = hasExposure ? Math.pow(2, adjustments.exposure) : 1;
+  const contrastFactor = hasContrast
+    ? (259 * (adjustments.contrast + 255)) / (255 * (259 - adjustments.contrast))
+    : 1;
   const tempR = 1 + adjustments.temperature * 0.003;
   const tempB = 1 - adjustments.temperature * 0.003;
   const tintG = 1 - adjustments.tint * 0.003;
   const satFactor = adjustments.isBlackAndWhite ? 0 : 1 + adjustments.saturation / 100;
+  const shadowGain = adjustments.shadows / 100;
+  const highlightGain = adjustments.highlights / 100;
+  const shadowDeltaBase = shadowGain * 45;
+  const hlDeltaBase = highlightGain * 45;
 
+  // 极致性能快速通道：当无需逐像素计算光影权重与多通道饱和度交叉时，使用 1D 查找表 (LUT) 秒级映射
+  if (!hasShadowsOrHighlights && !hasSaturationOrBw) {
+    const lutR = new Uint8Array(256);
+    const lutG = new Uint8Array(256);
+    const lutB = new Uint8Array(256);
+
+    for (let i = 0; i < 256; i++) {
+      let r = i;
+      let g = i;
+      let b = i;
+
+      if (hasExposure) {
+        r *= exposureFactor;
+        g *= exposureFactor;
+        b *= exposureFactor;
+      }
+      if (hasContrast) {
+        r = contrastFactor * (r - 128) + 128;
+        g = contrastFactor * (g - 128) + 128;
+        b = contrastFactor * (b - 128) + 128;
+      }
+      if (hasTempOrTint) {
+        r *= tempR;
+        b *= tempB;
+        g *= tintG;
+      }
+
+      lutR[i] = r < 0 ? 0 : r > 255 ? 255 : (r + 0.5) | 0;
+      lutG[i] = g < 0 ? 0 : g > 255 ? 255 : (g + 0.5) | 0;
+      lutB[i] = b < 0 ? 0 : b > 255 ? 255 : (b + 0.5) | 0;
+    }
+
+    for (let i = 0; i < len; i += 4) {
+      data[i] = lutR[data[i]];
+      data[i + 1] = lutG[data[i + 1]];
+      data[i + 2] = lutB[data[i + 2]];
+    }
+    return;
+  }
+
+  // 通用通道（包含高光阴影局部权重及饱和度通道混合）
   for (let i = 0; i < len; i += 4) {
     let r = data[i];
     let g = data[i + 1];
     let b = data[i + 2];
 
-    if (adjustments.exposure !== 0) {
+    if (hasExposure) {
       r *= exposureFactor;
       g *= exposureFactor;
       b *= exposureFactor;
     }
 
-    if (shadowGain !== 0 || highlightGain !== 0) {
+    if (hasShadowsOrHighlights) {
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      const shadowWeight = Math.max(0, 1 - lum / 128);
-      const highlightWeight = Math.max(0, (lum - 128) / 127);
-      const delta = shadowGain * 45 * shadowWeight + highlightGain * 45 * highlightWeight;
+      const shadowWeight = Math.max(0, 1 - lum * 0.0078125);
+      const highlightWeight = Math.max(0, (lum - 128) * 0.007874);
+      const delta = shadowDeltaBase * shadowWeight + hlDeltaBase * highlightWeight;
       r += delta;
       g += delta;
       b += delta;
     }
 
-    if (adjustments.contrast !== 0) {
+    if (hasContrast) {
       r = contrastFactor * (r - 128) + 128;
       g = contrastFactor * (g - 128) + 128;
       b = contrastFactor * (b - 128) + 128;
     }
 
-    if (adjustments.temperature !== 0 || adjustments.tint !== 0) {
+    if (hasTempOrTint) {
       r *= tempR;
       b *= tempB;
       g *= tintG;
     }
 
-    const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    if (adjustments.isBlackAndWhite || satFactor !== 1) {
+    if (hasSaturationOrBw) {
+      const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       r = gray + (r - gray) * satFactor;
       g = gray + (g - gray) * satFactor;
-      b = gray + (g - gray) * satFactor;
+      b = gray + (b - gray) * satFactor;
     }
 
-    data[i] = r < 0 ? 0 : r > 255 ? 255 : r;
-    data[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
-    data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+    data[i] = r < 0 ? 0 : r > 255 ? 255 : (r + 0.5) | 0;
+    data[i + 1] = g < 0 ? 0 : g > 255 ? 255 : (g + 0.5) | 0;
+    data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : (b + 0.5) | 0;
   }
 }
 
@@ -341,7 +395,7 @@ export async function renderFramedPhotoCanvas(
   photoCtx.drawImage(sourceImage, -photoW / 2, -photoH / 2, photoW, photoH);
   photoCtx.restore();
 
-  if (config.includeAdjustments) {
+  if (config.includeAdjustments && !isAdjustmentsNoop(adjustments)) {
     const imgData = photoCtx.getImageData(0, 0, adjustedPhotoW, adjustedPhotoH);
     applyAdjustmentsToImageData(imgData, adjustments);
     photoCtx.putImageData(imgData, 0, 0);

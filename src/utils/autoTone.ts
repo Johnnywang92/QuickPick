@@ -29,7 +29,7 @@ export function extractLuminanceStatsFromPixels(
   pixelData: ArrayLike<number>,
   width: number,
   height: number,
-  samplingStep = 1,
+  samplingStep?: number,
 ): ImageLuminanceStats {
   const histogram = new Uint32Array(256);
   let totalPixels = 0;
@@ -44,7 +44,10 @@ export function extractLuminanceStatsFromPixels(
   let midCount = 0;
 
   const len = width * height * 4;
-  const stride = Math.max(1, samplingStep) * 4;
+  // 自适应步长：若未显式指定，大图动态提升步长将总采样数平稳控制在 4万 ~ 6.5万点，兼顾速度与统计精度
+  const totalRawPixels = width * height;
+  const autoStep = totalRawPixels > 70000 ? Math.floor(Math.sqrt(totalRawPixels / 50000)) : 1;
+  const stride = Math.max(1, samplingStep ?? autoStep) * 4;
 
   for (let i = 0; i < len; i += stride) {
     const r = pixelData[i];
@@ -159,6 +162,26 @@ export function extractLuminanceStatsFromPixels(
   };
 }
 
+// 模块级离屏采样 Canvas 单例，避免频繁创建 DOM 节点造成 GC 内存抖动
+let sharedSamplingCanvas: HTMLCanvasElement | null = null;
+let sharedSamplingCtx: CanvasRenderingContext2D | null = null;
+
+function getSharedSamplingContext(width: number, height: number): CanvasRenderingContext2D | null {
+  if (typeof document === 'undefined') return null;
+  if (!sharedSamplingCanvas) {
+    sharedSamplingCanvas = document.createElement('canvas');
+  }
+  if (sharedSamplingCanvas.width !== width || sharedSamplingCanvas.height !== height) {
+    sharedSamplingCanvas.width = width;
+    sharedSamplingCanvas.height = height;
+    sharedSamplingCtx = null;
+  }
+  if (!sharedSamplingCtx) {
+    sharedSamplingCtx = sharedSamplingCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  return sharedSamplingCtx;
+}
+
 /**
  * 从 Canvas 或 Image 中提取像素数据并进行光影分析
  */
@@ -172,14 +195,12 @@ export function extractStatsFromSource(
     return extractLuminanceStatsFromPixels(source.data, source.width, source.height, 1);
   }
 
-  // 2. 浏览器 DOM 环境下使用离屏采样 Canvas
+  // 2. 浏览器 DOM 环境下复用单例离屏采样 Canvas
   if (typeof document !== 'undefined') {
     try {
-      const sampleCanvas = document.createElement('canvas');
-      sampleCanvas.width = sampleWidth;
-      sampleCanvas.height = sampleHeight;
-      const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+      const ctx = getSharedSamplingContext(sampleWidth, sampleHeight);
       if (ctx) {
+        ctx.clearRect(0, 0, sampleWidth, sampleHeight);
         ctx.drawImage(source as CanvasImageSource, 0, 0, sampleWidth, sampleHeight);
         const imgData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
         return extractLuminanceStatsFromPixels(imgData.data, sampleWidth, sampleHeight, 1);
@@ -219,9 +240,20 @@ export function calculateAutoTone(
 ): PhotoAdjustments {
   const stats = extractStatsFromSource(source);
 
-  // 1. 曝光补偿 (Exposure Compensation)
-  // 摄影中性 18% 灰对应感知中位目标约为 118
-  const targetMedian = 118;
+  // 1. 摄影意图与明暗场景智能分类 (低调 Low-Key / 高调 High-Key 保护)
+  const isLowKey =
+    stats.median < 65 && stats.p75 >= 80 && (stats.shadowClipPct >= 0.06 || stats.p25 <= 22);
+  const isHighKey = stats.median > 145 && stats.p25 >= 115 && stats.highlightClipPct < 0.06;
+
+  // 摄影中性 18% 灰对应感知中位基准目标为 118
+  // 对低调场景避免暴力提亮导致噪点涌现，对高调场景避免强行压成暗灰色
+  let targetMedian = 118;
+  if (isLowKey) {
+    targetMedian = Math.min(80, Math.max(stats.median, stats.median * 1.25));
+  } else if (isHighKey) {
+    targetMedian = Math.max(145, Math.min(stats.median, 190));
+  }
+
   const effectiveMedian = Math.max(20, Math.min(235, stats.median));
   const rawEvDiff = Math.log2(targetMedian / effectiveMedian);
 
@@ -230,10 +262,12 @@ export function calculateAutoTone(
   if (rawEvDiff > 0) {
     // 欠曝提亮：若高光比例高，衰减提亮幅度
     const highlightDamping = Math.max(0.2, 1.0 - stats.highlightClipPct * 12);
-    exposure = rawEvDiff * highlightDamping * 0.8;
+    const sceneDamping = isLowKey ? 0.45 : 0.8;
+    exposure = rawEvDiff * highlightDamping * sceneDamping;
   } else {
     // 过曝压暗：稍平滑压暗
-    exposure = rawEvDiff * 0.85;
+    const sceneDamping = isHighKey ? 0.4 : 0.85;
+    exposure = rawEvDiff * sceneDamping;
   }
   // 安全范围限制在 [-1.5, +1.5] EV 之间，四舍五入保留 1 位小数
   exposure = Math.round(Math.max(-1.5, Math.min(1.5, exposure)) * 10) / 10;
@@ -246,8 +280,8 @@ export function calculateAutoTone(
     const clipPenalty = stats.highlightClipPct * 120;
     const hlPull = -(excess * 1.5 + clipPenalty);
     highlights = Math.round(Math.max(-55, Math.min(-10, hlPull)));
-  } else if (stats.p98 < 190 && exposure >= 0) {
-    // 高光极度欠缺且不发灰时，微放高光展现通透感
+  } else if (stats.p98 < 190 && exposure >= 0 && !isLowKey) {
+    // 高光极度欠缺且不发灰时，微放高光展现通透感（低调暗调作品不提升高光）
     highlights = Math.round(Math.min(15, (200 - stats.p98) * 0.3));
   }
 
@@ -258,7 +292,9 @@ export function calculateAutoTone(
     const deficit = Math.max(0, 35 - stats.p2);
     const shadowBonus = stats.shadowClipPct * 100;
     const shLift = deficit * 1.3 + shadowBonus;
-    shadows = Math.round(Math.min(50, Math.max(12, shLift)));
+    // 低调场景下适度提亮暗部主体轮廓细节 (上限收敛至 28，避免死黑背景发灰)
+    const maxShadowLift = isLowKey ? 28 : 50;
+    shadows = Math.round(Math.min(maxShadowLift, Math.max(10, shLift)));
   } else if (stats.p2 > 65) {
     // 暗部发灰无沉淀感时，微压阴影增加沉着度
     shadows = Math.round(Math.max(-20, (50 - stats.p2) * 0.4));

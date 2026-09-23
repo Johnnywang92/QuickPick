@@ -119,4 +119,44 @@ describe('autoTone - Luminance extraction & Auto lighting calculation', () => {
     // 应当增加色温（调暖色）以纠正冷偏色
     expect(result.temperature).toBeGreaterThanOrEqual(10);
   });
+
+  it('protects Low-Key scenes (dark backdrop / night portrait) from aggressive over-brightening', () => {
+    // 65% 的纯黑背景 (5, 5, 5)，35% 的明亮人像主体 (135, 135, 135)
+    const mock = createMockPixels(60, 60, (x) => {
+      if (x < 39) return [5, 5, 5, 255];
+      return [135, 135, 135, 255];
+    });
+
+    const stats = extractLuminanceStatsFromPixels(mock.data, 60, 60);
+    expect(stats.median).toBeLessThan(40);
+    expect(stats.p75).toBeGreaterThanOrEqual(100);
+
+    const result = calculateAutoTone(mock);
+    // 普通欠曝会暴力提曝 +1.2 ~ +1.5 EV 导致噪点泛滥；低调保护机制应将提曝收敛在安全区间 (<= 0.5 EV)
+    expect(result.exposure).toBeLessThanOrEqual(0.5);
+    // 阴影温和提亮而不洗白纯黑背景
+    expect(result.shadows).toBeLessThanOrEqual(28);
+  });
+
+  it('protects High-Key scenes (snow/white studio) from being aggressively dimmed into gray', () => {
+    // 纯白高调场景（中位数在 175 左右，未过曝）
+    const mock = createMockPixels(50, 50, () => [175, 175, 175, 255]);
+
+    const stats = extractLuminanceStatsFromPixels(mock.data, 50, 50);
+    expect(stats.median).toBeGreaterThan(150);
+    expect(stats.highlightClipPct).toBe(0);
+
+    const result = calculateAutoTone(mock);
+    // 朴素对齐 118 灰度会暴力压暗 -0.6 EV；高调保护机制应限制压暗幅度 (>= -0.3 EV)
+    expect(result.exposure).toBeGreaterThanOrEqual(-0.3);
+  });
+
+  it('automatically applies adaptive sampling step for large pixel data sources', () => {
+    // 300 x 300 = 90,000 像素，自动使用采样步长以保证毫秒级计算
+    const mock = createMockPixels(300, 300, () => [120, 120, 120, 255]);
+
+    const stats = extractLuminanceStatsFromPixels(mock.data, 300, 300);
+    expect(stats.totalPixels).toBeGreaterThan(0);
+    expect(stats.median).toBe(120);
+  });
 });
