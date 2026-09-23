@@ -22,7 +22,7 @@ QuickPick 是面向普通用户的本地选片工具，帮助用户从摄影师�
 前往 [GitHub Releases](https://github.com/Johnnywang92/QuickPick/releases) 下载最新发行版：
 
 - **macOS (Apple Silicon M1/M2/M3/M4 系列)**：
-  1. 下载 `QuickPick_0.1.0_aarch64.dmg` 安装镜像；
+  1. 下载 `QuickPick_0.2.0_aarch64.dmg` 安装镜像；
   2. 双击打开，将 **QuickPick** 图标拖拽至 **Applications** 应用程序文件夹。
 - **Windows / Intel Mac**：支持筹备中，可参照后文开发环境指南自行编译。
 

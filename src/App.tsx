@@ -39,9 +39,15 @@ import {
   Filter,
 } from 'lucide-react';
 import { useThemeStore } from './store/themeStore';
+import { useAdjustStore } from './store/adjustStore';
 
 const PixiCanvas = lazy(() =>
   import('./components/viewport/PixiCanvas').then((module) => ({ default: module.PixiCanvas })),
+);
+const FrameAndAdjustModal = lazy(() =>
+  import('./components/adjust/FrameAndAdjustModal').then((module) => ({
+    default: module.FrameAndAdjustModal,
+  })),
 );
 const SplitCompareView = lazy(() =>
   import('./components/viewport/SplitCompareView').then((module) => ({
@@ -147,6 +153,7 @@ export default function App() {
   const { isCompareMode, isPkMode } = useCompareStore();
   const { isExportModalOpen, setExportModalOpen } = useExportStore();
   const { isSettingsOpen, setSettingsOpen, effectiveTheme, setThemeMode } = useThemeStore();
+  const isAdjustModalOpen = useAdjustStore((state) => state.isModalOpen);
   const {
     isFaceLoupeOpen,
     isAnalyzing,
@@ -694,6 +701,13 @@ export default function App() {
         <footer className="h-24 border-t border-dark-700 bg-dark-800/95 flex items-center shrink-0 z-20">
           <Filmstrip />
         </footer>
+      )}
+
+      {/* 相机参数相框与选片快速调色工作台 */}
+      {isAdjustModalOpen && (
+        <Suspense fallback={null}>
+          <FrameAndAdjustModal />
+        </Suspense>
       )}
 
       {/* 选片结果导出弹窗 */}

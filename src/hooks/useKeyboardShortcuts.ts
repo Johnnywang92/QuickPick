@@ -5,6 +5,7 @@ import { useCompareStore } from '../store/compareStore';
 import { useInsightStore } from '../store/insightStore';
 import { useTagStore } from '../store/tagStore';
 import { useLutStore } from '../store/lutStore';
+import { useAdjustStore } from '../store/adjustStore';
 
 interface KeyboardShortcutsOptions {
   onToggleRetouch?: () => void;
@@ -91,6 +92,15 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           if (!isCompareMode) {
             e.preventDefault();
             optionsRef.current?.onToggleRetouch?.();
+          }
+          break;
+
+        // 相机参数相框与选片快速调色 [E]
+        case 'e':
+        case 'E':
+          if (!isCompareMode) {
+            e.preventDefault();
+            useAdjustStore.getState().toggleModalOpen();
           }
           break;
 

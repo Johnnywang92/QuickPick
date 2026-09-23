@@ -12,11 +12,16 @@ import {
   saveManifestFile,
   exportShareableJpegs,
   sharePhotosViaAirDrop,
+  shareCustomImagesViaAirDrop,
+  CustomImageSharePayload,
+  getPhotoPreview,
   RenderedExportResult,
 } from '../services/tauriBridge';
 import { useAlbumStore } from './albumStore';
 import { useSelectionStore } from './selectionStore';
 import { useLutStore } from './lutStore';
+import { useAdjustStore } from './adjustStore';
+import { renderFramedPhotoCanvas } from '../utils/frameRenderer';
 import { generateBuiltinLutData } from '../utils/lutPresets';
 import { generateRetouchHtmlReport } from '../utils/reportGenerator';
 import { parseAnnotation } from '../utils/annotationUtils';
@@ -117,6 +122,7 @@ interface ExportStore {
   renderedExportResult: RenderedExportResult | null;
   exportTagFilter: string | null;
   bakeLutEffect: boolean;
+  bakeFrameEffect: boolean;
 
   // Actions
   setExportModalOpen: (open: boolean) => void;
@@ -128,6 +134,7 @@ interface ExportStore {
   setManifestFormat: (fmt: ManifestFormat) => void;
   setExportTagFilter: (tag: string | null) => void;
   setBakeLutEffect: (bake: boolean) => void;
+  setBakeFrameEffect: (bake: boolean) => void;
   browseTargetDir: () => Promise<void>;
   getSelectedPhotos: () => LocalPhoto[];
 
@@ -151,6 +158,7 @@ export const useExportStore = create<ExportStore>((set, get) => ({
   openAfterExport: true,
   manifestFormat: 'txt',
   bakeLutEffect: true,
+  bakeFrameEffect: false,
 
   isExporting: false,
   isCancelling: false,
@@ -223,6 +231,10 @@ export const useExportStore = create<ExportStore>((set, get) => ({
 
   setBakeLutEffect: (bake: boolean) => {
     set({ bakeLutEffect: bake });
+  },
+
+  setBakeFrameEffect: (bake: boolean) => {
+    set({ bakeFrameEffect: bake });
   },
 
   browseTargetDir: async () => {
@@ -522,13 +534,50 @@ export const useExportStore = create<ExportStore>((set, get) => ({
 
   shareToPhone: async () => {
     const selectedPhotos = get().getSelectedPhotos();
-    const { bakeLutEffect } = get();
+    const { bakeLutEffect, bakeFrameEffect } = get();
     if (selectedPhotos.length === 0) {
       set({ errorMessage: '当前没有标记为“已选”的照片' });
       return;
     }
     set({ isExporting: true, errorMessage: null, renderedExportResult: null });
     try {
+      if (bakeFrameEffect) {
+        const adjustStore = useAdjustStore.getState();
+        const frameConfig = adjustStore.frameConfig;
+        const customItems: CustomImageSharePayload[] = [];
+
+        for (const photo of selectedPhotos) {
+          const previewUrl = await getPhotoPreview(photo.path, photo.id);
+          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const image = new Image();
+            image.crossOrigin = 'anonymous';
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error(`加载照片预览失败: ${photo.filename}`));
+            image.src = previewUrl;
+          });
+
+          const photoAdjustments = adjustStore.getPhotoAdjustments(photo.id);
+          const canvas = await renderFramedPhotoCanvas(
+            img,
+            img.naturalWidth || 1920,
+            img.naturalHeight || 1280,
+            photo,
+            frameConfig,
+            photoAdjustments,
+            2560,
+          );
+
+          const baseName = photo.filename.replace(/\.[^/.]+$/, '');
+          const filename = `${baseName}_framed.jpg`;
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
+          customItems.push({ filename, data_url_or_base64: dataUrl });
+        }
+
+        const result = await shareCustomImagesViaAirDrop(customItems);
+        set({ isExporting: false, renderedExportResult: result });
+        return;
+      }
+
       const photoLuts = useLutStore.getState().photoLuts;
       const exportItems = selectedPhotos.map((photo) => {
         const config = bakeLutEffect ? photoLuts[photo.id] : undefined;

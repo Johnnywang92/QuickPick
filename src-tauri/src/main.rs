@@ -13,7 +13,7 @@ use quickpick_lib::project::{
     PersistedSelection, PersistenceOutcome, ProjectPhotoInput, ProjectState, ProjectViewStateInput,
     RecentProject, StartupHealth,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -450,6 +450,82 @@ async fn share_photos_via_air_drop(
     Ok(result)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CustomImageSharePayload {
+    pub filename: String,
+    pub data_url_or_base64: String,
+}
+
+#[tauri::command]
+async fn share_custom_images_via_air_drop(
+    app: tauri::AppHandle,
+    items: Vec<CustomImageSharePayload>,
+) -> Result<RenderedExportResult, String> {
+    if items.is_empty() {
+        return Err("分享列表为空".to_string());
+    }
+    let app_data_dir = app_data_directory(&app)?;
+    let share_dir = app_data_dir
+        .join("share")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&share_dir)
+        .map_err(|error| format!("创建 AirDrop 临时目录失败: {error}"))?;
+
+    let mut files = Vec::new();
+    let mut errors = Vec::new();
+    for item in items {
+        let base64_str = if let Some(idx) = item.data_url_or_base64.find(',') {
+            &item.data_url_or_base64[idx + 1..]
+        } else {
+            &item.data_url_or_base64
+        };
+        match BASE64.decode(base64_str.trim()) {
+            Ok(bytes) => {
+                let safe_name = if item.filename.to_lowercase().ends_with(".jpg")
+                    || item.filename.to_lowercase().ends_with(".jpeg")
+                {
+                    item.filename
+                } else {
+                    format!("{}.jpg", item.filename)
+                };
+                let file_path = share_dir.join(safe_name);
+                if let Err(err) = std::fs::write(&file_path, bytes) {
+                    errors.push(format!("写入临时图片文件失败: {err}"));
+                } else {
+                    files.push(file_path.to_string_lossy().to_string());
+                }
+            }
+            Err(err) => {
+                errors.push(format!("解码图片数据失败: {err}"));
+            }
+        }
+    }
+
+    if files.is_empty() {
+        return Err(format!("没有成功生成可供 AirDrop 的 JPEG: {}", errors.join("; ")));
+    }
+
+    let files_to_share = files.clone();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let _ = sender.send(open_airdrop(&files_to_share));
+    })
+    .map_err(|error| format!("无法打开 macOS AirDrop: {error}"))?;
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .map_err(|_| "等待 macOS AirDrop 服务响应超时".to_string())??;
+
+    Ok(RenderedExportResult {
+        total: files.len(),
+        success: files.len(),
+        skipped: 0,
+        failed: errors.len(),
+        target_directory: share_dir.to_string_lossy().to_string(),
+        files,
+        errors,
+    })
+}
+
 #[tauri::command]
 fn detect_photo_faces(path: String) -> Result<Vec<quickpick_lib::models::FaceInfo>, String> {
     if let Ok((bytes, _)) = load_photo_preview(&path) {
@@ -499,7 +575,8 @@ fn main() {
             save_manifest_file,
             reveal_directory,
             export_shareable_jpegs,
-            share_photos_via_air_drop
+            share_photos_via_air_drop,
+            share_custom_images_via_air_drop
         ])
         .build(tauri::generate_context!())
         .expect("error while building QuickPick application");

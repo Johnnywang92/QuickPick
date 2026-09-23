@@ -29,7 +29,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
               <div className="flex items-center space-x-2">
                 <h2 className="text-base font-bold text-slate-100">QuickPick 极选</h2>
                 <span className="text-[10px] bg-brand-600/30 text-brand-300 border border-brand-500/30 px-1.5 py-0.2 rounded font-mono font-medium">
-                  v0.1.0
+                  v0.2.0
                 </span>
               </div>
               <p className="text-xs text-slate-400">面向普通用户的本地选片工具，原片全程只读安全无忧</p>
@@ -139,7 +139,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 
               <div className="text-[11px] text-slate-500 flex items-center justify-between pt-2 border-t border-dark-700/60">
                 <span>MIT License · Copyright © 2026 Johnny Boy Studio</span>
-                <span className="font-mono text-slate-400">QuickPick Core v0.1.0</span>
+                <span className="font-mono text-slate-400">QuickPick Core v0.2.0</span>
               </div>
             </div>
           )}

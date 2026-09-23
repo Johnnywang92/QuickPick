@@ -598,6 +598,28 @@ export async function sharePhotosViaAirDrop(
   });
 }
 
+export interface CustomImageSharePayload {
+  filename: string;
+  data_url_or_base64: string;
+}
+
+export async function shareCustomImagesViaAirDrop(
+  items: CustomImageSharePayload[],
+): Promise<RenderedExportResult> {
+  if (!isTauri()) {
+    return {
+      total: items.length,
+      success: items.length,
+      skipped: 0,
+      failed: 0,
+      target_directory: '/tmp/QuickPick_AirDrop',
+      files: items.map((item) => `/tmp/QuickPick_AirDrop/${item.filename}`),
+      errors: [],
+    };
+  }
+  return await invoke<RenderedExportResult>('share_custom_images_via_air_drop', { items });
+}
+
 export async function exportPhotos(options: ExportOptions, jobId: string): Promise<ExportResult> {
   if (!isTauri()) {
     await new Promise((resolve) => setTimeout(resolve, 600));

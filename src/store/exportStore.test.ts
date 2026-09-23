@@ -13,6 +13,8 @@ vi.mock('../services/tauriBridge', () => ({
   saveManifestFile: vi.fn(),
   exportShareableJpegs: vi.fn(),
   sharePhotosViaAirDrop: vi.fn(),
+  shareCustomImagesViaAirDrop: vi.fn(),
+  getPhotoPreview: vi.fn(),
 }));
 
 describe('exportStore manifest domain', () => {

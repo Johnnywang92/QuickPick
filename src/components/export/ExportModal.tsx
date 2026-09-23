@@ -3,6 +3,7 @@ import { useExportStore, ExportPurpose, ManifestFormat } from '../../store/expor
 import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { useLutStore } from '../../store/lutStore';
+import { useAdjustStore } from '../../store/adjustStore';
 import { revealDirectory } from '../../services/tauriBridge';
 import {
   AlertCircle,
@@ -92,6 +93,8 @@ export const ExportModal: React.FC = () => {
     setExportTagFilter,
     bakeLutEffect,
     setBakeLutEffect,
+    bakeFrameEffect,
+    setBakeFrameEffect,
   } = useExportStore();
 
   const [copied, setCopied] = useState(false);
@@ -101,6 +104,7 @@ export const ExportModal: React.FC = () => {
   const { getStats, selections } = useSelectionStore();
   const { availableTags } = useTagStore();
   const photoLuts = useLutStore((s) => s.photoLuts);
+  const { frameConfig } = useAdjustStore();
 
   if (!isExportModalOpen) return null;
 
@@ -773,6 +777,35 @@ export const ExportModal: React.FC = () => {
                       className="sr-only peer"
                     />
                     <div className="w-9 h-5 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+
+                {/* 相框与相机 EXIF 参数水印烧录选项 */}
+                <div className="flex items-center justify-between rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-left">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base">🖼️</span>
+                    <div>
+                      <div className="font-semibold text-slate-100 flex items-center gap-1.5">
+                        <span>投送时附带相机 EXIF 参数相框</span>
+                        <span className="rounded bg-amber-500/25 px-1.5 py-0.5 text-[10px] font-mono text-amber-300 border border-amber-500/40">
+                          {frameConfig.template}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {bakeFrameEffect
+                          ? '已开启：将按照当前相框设置生成带相机参数与艺术边框的高清图后投送'
+                          : '未开启：仅投送照片画面本身，不附加艺术边框'}
+                      </p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                    <input
+                      type="checkbox"
+                      checked={bakeFrameEffect}
+                      onChange={(e) => setBakeFrameEffect(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
                   </label>
                 </div>
                 {errorMessage && (

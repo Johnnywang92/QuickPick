@@ -1,0 +1,646 @@
+import { FrameConfig, PhotoAdjustments } from '../types/adjust';
+import { LocalPhoto } from '../types/photo';
+
+/**
+ * 相机品牌识别与规范化 (用于元数据合规文本呈现)
+ */
+export function detectCameraBrand(
+  cameraMake?: string,
+  cameraModel?: string,
+): { brand: string; cleanModel: string } {
+  const make = (cameraMake || '').toLowerCase();
+  const model = (cameraModel || '').trim();
+
+  if (make.includes('sony') || model.toLowerCase().startsWith('ilce') || model.toLowerCase().startsWith('a7')) {
+    const clean = model.replace(/^ILCE-/i, 'α').replace(/^SONY/i, '').trim();
+    return { brand: 'SONY', cleanModel: clean || model || 'Alpha' };
+  }
+  if (make.includes('canon') || model.toLowerCase().startsWith('eos')) {
+    const clean = model.replace(/^Canon\s+/i, '').trim();
+    return { brand: 'Canon', cleanModel: clean || model || 'EOS' };
+  }
+  if (make.includes('nikon') || model.toLowerCase().startsWith('nikon')) {
+    const clean = model.replace(/^NIKON\s+/i, '').trim();
+    return { brand: 'NIKON', cleanModel: clean || model || 'Z' };
+  }
+  if (make.includes('fujifilm') || make.includes('fuji') || model.toLowerCase().startsWith('x-')) {
+    const clean = model.replace(/^FUJIFILM\s+/i, '').trim();
+    return { brand: 'FUJIFILM', cleanModel: clean || model || 'X-System' };
+  }
+  if (make.includes('leica')) {
+    const clean = model.replace(/^LEICA\s+/i, '').trim();
+    return { brand: 'Leica', cleanModel: clean || model || 'M-System' };
+  }
+  if (make.includes('hasselblad')) {
+    const clean = model.replace(/^HASSELBLAD\s+/i, '').trim();
+    return { brand: 'Hasselblad', cleanModel: clean || model || 'Medium Format' };
+  }
+  if (make.includes('apple') || model.toLowerCase().includes('iphone')) {
+    return { brand: 'Apple', cleanModel: model || 'iPhone' };
+  }
+
+  const combined = [cameraMake, cameraModel].filter(Boolean).join(' ');
+  return { brand: cameraMake?.toUpperCase() || 'CAMERA', cleanModel: combined || 'Camera' };
+}
+
+/**
+ * 格式化参数文本
+ */
+export function formatExifStrings(photo: LocalPhoto, config: FrameConfig): {
+  cameraTitle: string;
+  lensTitle: string;
+  paramsString: string;
+  dateString: string;
+  photographerText: string;
+} {
+  const exif = photo.exif;
+  const { brand, cleanModel } = detectCameraBrand(exif?.camera_make, exif?.camera_model);
+
+  const cameraTitle = config.customCameraModel?.trim()
+    ? config.customCameraModel.trim()
+    : `${brand} ${cleanModel}`.trim();
+
+  const lensTitle = config.customLens?.trim()
+    ? config.customLens.trim()
+    : exif?.lens_model || exif?.lens_make || '';
+
+  const params: string[] = [];
+  if (exif?.focal_length) {
+    params.push(`${Math.round(exif.focal_length)}mm`);
+  } else if (exif?.focal_length_35mm) {
+    params.push(`${exif.focal_length_35mm}mm`);
+  }
+
+  if (exif?.aperture) {
+    const apStr = exif.aperture.toFixed(1).replace(/\.0$/, '');
+    params.push(`f/${apStr}`);
+  }
+
+  if (exif?.shutter_speed) {
+    params.push(exif.shutter_speed);
+  } else if (exif?.shutter_speed_value) {
+    if (exif.shutter_speed_value < 1) {
+      params.push(`1/${Math.round(1 / exif.shutter_speed_value)}s`);
+    } else {
+      params.push(`${exif.shutter_speed_value}s`);
+    }
+  }
+
+  if (exif?.iso) {
+    params.push(`ISO ${exif.iso}`);
+  }
+
+  // 精致的浅色细竖线分隔符
+  const paramsString = params.join('   │   ');
+
+  let dateString = '';
+  const rawDate = exif?.date_time_original || photo.capturedAt;
+  if (rawDate) {
+    const dateMatch = rawDate.match(/^(\d{4})[-:.](\d{2})[-:.](\d{2})[\sT](\d{2}):(\d{2})/);
+    if (dateMatch) {
+      dateString = `${dateMatch[1]}.${dateMatch[2]}.${dateMatch[3]} ${dateMatch[4]}:${dateMatch[5]}`;
+    } else {
+      dateString = rawDate.slice(0, 16).replace(/-/g, '.');
+    }
+  }
+
+  const photographerText = config.customPhotographer.trim();
+
+  return {
+    cameraTitle,
+    lensTitle,
+    paramsString,
+    dateString,
+    photographerText,
+  };
+}
+
+/**
+ * 绘制高质感、纯几何原创、100% 具备知识产权保护的摄影艺术徽标
+ * 避免打包或复制商业注册商标，确保法律合规与纯净
+ */
+export function drawPhotographicBadge(
+  ctx: CanvasRenderingContext2D,
+  badgeType: 'aperture' | 'rangefinder' | 'amber_lens' | 'cinema' | 'camera',
+  x: number,
+  y: number,
+  size: number,
+  isDark: boolean,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  if (badgeType === 'aperture') {
+    // 经典红色/深色光圈叶片徽标 (Aperture Blades)
+    const r = size / 2;
+    ctx.beginPath();
+    ctx.arc(r, r, r, 0, Math.PI * 2);
+    ctx.fillStyle = isDark ? '#E11D48' : '#BE123C'; // 优雅绯红
+    ctx.fill();
+
+    // 内部几何多边形光圈叶片
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = Math.max(1.2, size * 0.06);
+    ctx.beginPath();
+    const blades = 6;
+    for (let i = 0; i < blades; i++) {
+      const angle = (i * 2 * Math.PI) / blades;
+      const x1 = r + Math.cos(angle) * (r * 0.75);
+      const y1 = r + Math.sin(angle) * (r * 0.75);
+      const x2 = r + Math.cos(angle + 1.2) * (r * 0.35);
+      const y2 = r + Math.sin(angle + 1.2) * (r * 0.35);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
+
+    // 瞳孔中心极小亮点
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(r, r, r * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (badgeType === 'amber_lens') {
+    // 标志性琥珀对焦圆环标 (Amber Precision Focus Ring)
+    const r = size / 2;
+    ctx.beginPath();
+    ctx.arc(r, r, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#D97706'; // 哑光琥珀金
+    ctx.fill();
+
+    ctx.strokeStyle = '#FEF3C7';
+    ctx.lineWidth = Math.max(1, size * 0.05);
+    ctx.beginPath();
+    ctx.arc(r, r, r * 0.65, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 四象限精密十字对焦刻度
+    ctx.beginPath();
+    ctx.moveTo(r, r * 0.2);
+    ctx.lineTo(r, r * 0.45);
+    ctx.moveTo(r, r * 1.55);
+    ctx.lineTo(r, r * 1.8);
+    ctx.moveTo(r * 0.2, r);
+    ctx.lineTo(r * 0.45, r);
+    ctx.moveTo(r * 1.55, r);
+    ctx.lineTo(r * 1.8, r);
+    ctx.stroke();
+  } else if (badgeType === 'cinema') {
+    // 电影 35mm 胶片孔与镜头标 (Cinematic 35mm Perforation)
+    ctx.fillStyle = '#F59E0B'; // 经典电影橙金
+    ctx.beginPath();
+    ctx.roundRect(0, size * 0.15, size * 1.1, size * 0.7, size * 0.12);
+    ctx.fill();
+
+    // 胶片齿孔
+    ctx.fillStyle = '#0F172A';
+    const holeW = size * 0.18;
+    const holeH = size * 0.22;
+    ctx.fillRect(size * 0.18, size * 0.38, holeW, holeH);
+    ctx.fillRect(size * 0.72, size * 0.38, holeW, holeH);
+  } else if (badgeType === 'rangefinder') {
+    // 极简旁轴取景器图标
+    ctx.strokeStyle = isDark ? '#E2E8F0' : '#1E293B';
+    ctx.lineWidth = Math.max(1.5, size * 0.08);
+    ctx.beginPath();
+    ctx.roundRect(0, size * 0.2, size * 1.15, size * 0.65, size * 0.12);
+    ctx.stroke();
+
+    // 镜头圈
+    ctx.beginPath();
+    ctx.arc(size * 0.58, size * 0.52, size * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 取景窗小方块
+    ctx.fillStyle = isDark ? '#E2E8F0' : '#1E293B';
+    ctx.fillRect(size * 0.18, size * 0.3, size * 0.18, size * 0.14);
+  } else {
+    // 通用极简微单机身几何
+    ctx.fillStyle = isDark ? '#334155' : '#E2E8F0';
+    ctx.strokeStyle = isDark ? '#94A3B8' : '#475569';
+    ctx.lineWidth = Math.max(1.2, size * 0.06);
+
+    ctx.beginPath();
+    ctx.roundRect(0, size * 0.25, size, size * 0.65, size * 0.15);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(size * 0.5, size * 0.58, size * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = isDark ? '#0F172A' : '#FFFFFF';
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * 在 Canvas 像素缓冲上执行高保真快速调色
+ */
+export function applyAdjustmentsToImageData(
+  imageData: ImageData,
+  adjustments: PhotoAdjustments,
+): void {
+  const data = imageData.data;
+  const len = data.length;
+
+  const exposureFactor = Math.pow(2, adjustments.exposure);
+  const contrastFactor = (259 * (adjustments.contrast + 255)) / (255 * (259 - adjustments.contrast));
+  const highlightGain = adjustments.highlights / 100;
+  const shadowGain = adjustments.shadows / 100;
+  const tempR = 1 + adjustments.temperature * 0.003;
+  const tempB = 1 - adjustments.temperature * 0.003;
+  const tintG = 1 - adjustments.tint * 0.003;
+  const satFactor = adjustments.isBlackAndWhite ? 0 : 1 + adjustments.saturation / 100;
+
+  for (let i = 0; i < len; i += 4) {
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+
+    if (adjustments.exposure !== 0) {
+      r *= exposureFactor;
+      g *= exposureFactor;
+      b *= exposureFactor;
+    }
+
+    if (shadowGain !== 0 || highlightGain !== 0) {
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const shadowWeight = Math.max(0, 1 - lum / 128);
+      const highlightWeight = Math.max(0, (lum - 128) / 127);
+      const delta = shadowGain * 45 * shadowWeight + highlightGain * 45 * highlightWeight;
+      r += delta;
+      g += delta;
+      b += delta;
+    }
+
+    if (adjustments.contrast !== 0) {
+      r = contrastFactor * (r - 128) + 128;
+      g = contrastFactor * (g - 128) + 128;
+      b = contrastFactor * (b - 128) + 128;
+    }
+
+    if (adjustments.temperature !== 0 || adjustments.tint !== 0) {
+      r *= tempR;
+      b *= tempB;
+      g *= tintG;
+    }
+
+    const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (adjustments.isBlackAndWhite || satFactor !== 1) {
+      r = gray + (r - gray) * satFactor;
+      g = gray + (g - gray) * satFactor;
+      b = gray + (g - gray) * satFactor;
+    }
+
+    data[i] = r < 0 ? 0 : r > 255 ? 255 : r;
+    data[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+    data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+  }
+}
+
+/**
+ * 完整离屏相框渲染与排版引擎 (支持 6 种经典版式)
+ */
+export async function renderFramedPhotoCanvas(
+  sourceImage: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  photo: LocalPhoto,
+  config: FrameConfig,
+  adjustments: PhotoAdjustments,
+  maxEdge = 2560,
+): Promise<HTMLCanvasElement> {
+  // 1. 规范化缩放
+  let photoW = sourceWidth;
+  let photoH = sourceHeight;
+  const maxSrcEdge = Math.max(photoW, photoH);
+  if (maxSrcEdge > maxEdge) {
+    const scale = maxEdge / maxSrcEdge;
+    photoW = Math.round(photoW * scale);
+    photoH = Math.round(photoH * scale);
+  }
+
+  // 2. 旋转与调色处理
+  const rot = adjustments.rotation % 360;
+  const isRotated90 = rot === 90 || rot === 270;
+  const adjustedPhotoW = isRotated90 ? photoH : photoW;
+  const adjustedPhotoH = isRotated90 ? photoW : photoH;
+
+  const photoCanvas = document.createElement('canvas');
+  photoCanvas.width = adjustedPhotoW;
+  photoCanvas.height = adjustedPhotoH;
+  const photoCtx = photoCanvas.getContext('2d', { willReadFrequently: true });
+  if (!photoCtx) {
+    throw new Error('无法初始化照片 2D 绘图环境');
+  }
+
+  photoCtx.save();
+  photoCtx.translate(adjustedPhotoW / 2, adjustedPhotoH / 2);
+  photoCtx.rotate((rot * Math.PI) / 180);
+  photoCtx.drawImage(sourceImage, -photoW / 2, -photoH / 2, photoW, photoH);
+  photoCtx.restore();
+
+  if (config.includeAdjustments) {
+    const imgData = photoCtx.getImageData(0, 0, adjustedPhotoW, adjustedPhotoH);
+    applyAdjustmentsToImageData(imgData, adjustments);
+    photoCtx.putImageData(imgData, 0, 0);
+  }
+
+  // 3. 模板版式与画布几何计算
+  const template = config.template;
+  const borderScale = Math.max(0.06, Math.min(config.borderScale || 0.1, 0.18));
+  const longEdge = Math.max(adjustedPhotoW, adjustedPhotoH);
+
+  let canvasW = adjustedPhotoW;
+  let canvasH = adjustedPhotoH;
+  let photoX = 0;
+  let photoY = 0;
+  let bottomBarH = 0;
+  let topBarH = 0;
+  let isDark = false;
+  let bgColor = '#FFFFFF';
+
+  // 规范化别名
+  const isClassicWhite = template === 'classic_white' || template === 'leica_white';
+  const isPolaroid = template === 'retro_polaroid' || template === 'polaroid';
+
+  if (isClassicWhite) {
+    bottomBarH = Math.round(longEdge * borderScale);
+    canvasH = adjustedPhotoH + bottomBarH;
+    isDark = false;
+    bgColor = '#FFFFFF';
+  } else if (template === 'obsidian_black') {
+    bottomBarH = Math.round(longEdge * borderScale);
+    canvasH = adjustedPhotoH + bottomBarH;
+    isDark = true;
+    bgColor = '#0F1013';
+  } else if (template === 'amber_minimal') {
+    bottomBarH = Math.round(longEdge * borderScale);
+    canvasH = adjustedPhotoH + bottomBarH;
+    isDark = false;
+    bgColor = '#FBFBFA';
+  } else if (template === 'cinematic_scope') {
+    // 2.39:1 电影宽荧幕上下遮幅
+    topBarH = Math.round(longEdge * 0.08);
+    bottomBarH = Math.round(longEdge * 0.1);
+    canvasH = adjustedPhotoH + topBarH + bottomBarH;
+    photoY = topBarH;
+    isDark = true;
+    bgColor = '#08080A';
+  } else if (isPolaroid) {
+    const sideMargin = Math.round(longEdge * 0.045);
+    bottomBarH = Math.round(longEdge * (borderScale + 0.05));
+    canvasW = adjustedPhotoW + sideMargin * 2;
+    canvasH = adjustedPhotoH + sideMargin + bottomBarH;
+    photoX = sideMargin;
+    photoY = sideMargin;
+    isDark = false;
+    bgColor = '#F9F9F6';
+  } else if (template === 'overlay_badge') {
+    canvasW = adjustedPhotoW;
+    canvasH = adjustedPhotoH;
+    isDark = true;
+  }
+
+  // 4. 构造主输出画布
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = canvasW;
+  finalCanvas.height = canvasH;
+  const ctx = finalCanvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('无法初始化主排版画布');
+  }
+
+  // 绘制底色
+  if (template !== 'overlay_badge') {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+  }
+
+  // 拍立得相纸轻微纸张微投影模拟
+  if (isPolaroid) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+    ctx.fillRect(photoX - 1, photoY - 1, adjustedPhotoW + 2, adjustedPhotoH + 2);
+    ctx.restore();
+  }
+
+  // 绘制照片主体
+  ctx.drawImage(photoCanvas, photoX, photoY, adjustedPhotoW, adjustedPhotoH);
+
+  // 5. 格式化排版文本
+  const { cameraTitle, lensTitle, paramsString, dateString, photographerText } =
+    formatExifStrings(photo, config);
+
+  // 6. 各版式细节排版与徽标绘制
+  if (isClassicWhite || template === 'obsidian_black' || template === 'amber_minimal') {
+    const barTop = adjustedPhotoH;
+    const paddingX = Math.round(canvasW * 0.04);
+    const centerY = barTop + bottomBarH * 0.5;
+
+    // 优雅分隔微弱细线
+    if (!isDark) {
+      ctx.strokeStyle = template === 'amber_minimal' ? '#E5E7EB' : '#F1F5F9';
+      ctx.lineWidth = Math.max(1, Math.round(bottomBarH * 0.008));
+      ctx.beginPath();
+      ctx.moveTo(0, barTop);
+      ctx.lineTo(canvasW, barTop);
+      ctx.stroke();
+    }
+
+    const badgeSize = Math.round(bottomBarH * 0.38);
+    const badgeX = paddingX;
+    const badgeY = centerY - badgeSize * 0.5;
+
+    const badgeType =
+      template === 'amber_minimal'
+        ? 'amber_lens'
+        : isClassicWhite
+        ? 'aperture'
+        : 'rangefinder';
+
+    drawPhotographicBadge(ctx, badgeType, badgeX, badgeY, badgeSize, isDark);
+
+    const textStartX = badgeX + badgeSize + Math.round(bottomBarH * 0.16);
+    const mainFontSize = Math.max(13, Math.round(bottomBarH * 0.23));
+    const subFontSize = Math.max(10, Math.round(bottomBarH * 0.16));
+
+    ctx.textAlign = 'left';
+
+    // 机身标题
+    if (config.showCameraModel && cameraTitle) {
+      ctx.fillStyle = isDark ? '#F8FAFC' : '#0F172A';
+      ctx.font = `600 ${mainFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif`;
+      ctx.fillText(cameraTitle, textStartX, centerY - bottomBarH * 0.06);
+    }
+
+    // 副标题（镜头与作者署名）
+    const subParts = [];
+    if (config.showLens && lensTitle) subParts.push(lensTitle);
+    if (photographerText) subParts.push(photographerText);
+    const subLine = subParts.join('   ·   ');
+
+    if (subLine) {
+      ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
+      ctx.font = `normal ${subFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`;
+      ctx.fillText(subLine, textStartX, centerY + bottomBarH * 0.24);
+    }
+
+    // 右侧曝光参数与拍摄时间
+    const rightX = canvasW - paddingX;
+    ctx.textAlign = 'right';
+
+    if (config.showParams && paramsString) {
+      ctx.fillStyle = isDark ? '#F1F5F9' : '#1E293B';
+      ctx.font = `500 ${Math.max(12, Math.round(bottomBarH * 0.2))}px "SF Mono", Menlo, Monaco, Consolas, monospace`;
+      ctx.fillText(paramsString, rightX, centerY - bottomBarH * 0.06);
+    }
+
+    if (config.showDate && dateString) {
+      ctx.fillStyle = isDark ? '#64748B' : '#94A3B8';
+      ctx.font = `normal ${subFontSize}px "SF Mono", Menlo, monospace`;
+      ctx.fillText(dateString, rightX, centerY + bottomBarH * 0.24);
+    }
+  } else if (template === 'cinematic_scope') {
+    // 电影胶片宽荧幕排版 (Cinematic Scope 2.39:1)
+    const paddingX = Math.round(canvasW * 0.04);
+    const centerY = photoY + adjustedPhotoH + bottomBarH * 0.5;
+
+    // 左侧：电影底片编号与画幅提示
+    const badgeSize = Math.round(bottomBarH * 0.35);
+    drawPhotographicBadge(ctx, 'cinema', paddingX, centerY - badgeSize * 0.5, badgeSize, true);
+
+    const textStartX = paddingX + badgeSize * 1.35;
+    ctx.textAlign = 'left';
+
+    ctx.fillStyle = '#F59E0B'; // 经典暖金
+    ctx.font = `bold ${Math.max(11, Math.round(bottomBarH * 0.2))}px "SF Mono", monospace`;
+    ctx.fillText('CINEMASCOPE 2.39:1', textStartX, centerY - bottomBarH * 0.08);
+
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = `normal ${Math.max(10, Math.round(bottomBarH * 0.16))}px -apple-system, sans-serif`;
+    const cineSub = [cameraTitle, lensTitle, photographerText].filter(Boolean).join('  ·  ');
+    ctx.fillText(cineSub || 'ANALOG 35MM MOTION PICTURE', textStartX, centerY + bottomBarH * 0.22);
+
+    // 右侧：拍摄参数与胶片调色标识
+    const rightX = canvasW - paddingX;
+    ctx.textAlign = 'right';
+
+    if (config.showParams && paramsString) {
+      ctx.fillStyle = '#F8FAFC';
+      ctx.font = `500 ${Math.max(11, Math.round(bottomBarH * 0.2))}px "SF Mono", monospace`;
+      ctx.fillText(paramsString, rightX, centerY - bottomBarH * 0.08);
+    }
+
+    if (config.showDate && dateString) {
+      ctx.fillStyle = '#64748B';
+      ctx.font = `normal ${Math.max(10, Math.round(bottomBarH * 0.15))}px "SF Mono", monospace`;
+      ctx.fillText(dateString, rightX, centerY + bottomBarH * 0.22);
+    }
+  } else if (isPolaroid) {
+    const barTop = photoY + adjustedPhotoH;
+    const centerY = barTop + bottomBarH * 0.45;
+    const paddingX = photoX + Math.round(adjustedPhotoW * 0.02);
+
+    ctx.textAlign = 'left';
+    const mainFontSize = Math.max(14, Math.round(bottomBarH * 0.24));
+    const subFontSize = Math.max(11, Math.round(bottomBarH * 0.16));
+
+    // 拍立得复古暖黑衬线字体
+    ctx.fillStyle = '#1E293B';
+    ctx.font = `600 ${mainFontSize}px Georgia, "Times New Roman", serif`;
+    const title = photographerText || cameraTitle;
+    ctx.fillText(title, paddingX, centerY - bottomBarH * 0.05);
+
+    const subDetails = [lensTitle, paramsString, dateString].filter(Boolean).join('   ·   ');
+    if (subDetails) {
+      ctx.fillStyle = '#64748B';
+      ctx.font = `normal ${subFontSize}px "SF Mono", monospace, sans-serif`;
+      ctx.fillText(subDetails, paddingX, centerY + bottomBarH * 0.22);
+    }
+  } else if (template === 'overlay_badge') {
+    const badgePadX = Math.round(canvasW * 0.035);
+    const badgePadY = Math.round(canvasH * 0.035);
+    const pillH = Math.max(38, Math.round(longEdge * 0.038));
+    const pillPad = Math.round(pillH * 0.4);
+
+    const displayParams = [cameraTitle, paramsString, dateString].filter(Boolean).join('   │   ');
+    ctx.font = `500 ${Math.max(11, Math.round(pillH * 0.38))}px -apple-system, BlinkMacSystemFont, sans-serif`;
+    const textWidth = ctx.measureText(displayParams).width;
+    const pillW = textWidth + pillPad * 2;
+
+    const pillX = badgePadX;
+    const pillY = canvasH - badgePadY - pillH;
+
+    // 磨砂玻璃质感胶囊
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, pillH * 0.5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(displayParams, pillX + pillPad, pillY + pillH * 0.5);
+  }
+
+  return finalCanvas;
+}
+
+/**
+ * 转换 Canvas 为指定格式 Blob
+ */
+export function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type = 'image/jpeg',
+  quality = 0.94,
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Canvas 转 Blob 失败'));
+        }
+      },
+      type,
+      quality,
+    );
+  });
+}
+
+/**
+ * 复制图片到剪贴板
+ */
+export async function copyCanvasToClipboard(canvas: HTMLCanvasElement): Promise<boolean> {
+  const blob = await canvasToBlob(canvas, 'image/png', 1.0);
+  if (!navigator.clipboard || !navigator.clipboard.write) {
+    throw new Error('当前系统环境不支持直接写入剪贴板图片');
+  }
+  const item = new ClipboardItem({ 'image/png': blob });
+  await navigator.clipboard.write([item]);
+  return true;
+}
+
+/**
+ * 触发本地图片文件下载
+ */
+export function downloadCanvasAsImage(
+  canvas: HTMLCanvasElement,
+  filename: string,
+  type = 'image/jpeg',
+  quality = 0.94,
+): void {
+  const dataUrl = canvas.toDataURL(type, quality);
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}

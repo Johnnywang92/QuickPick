@@ -490,7 +490,7 @@ pub fn build_folder_cache<C: AsRef<Path>, P: AsRef<Path>>(
     let catalog = CatalogIndex {
         version: "1.0".to_string(),
         generated_at: now,
-        generator: "QuickPick NAS Engine v0.1.0".to_string(),
+        generator: "QuickPick NAS Engine v0.2.0".to_string(),
         photo_count: catalog_items.len(),
         items: catalog_items,
     };

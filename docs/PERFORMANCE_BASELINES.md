@@ -1,7 +1,7 @@
 # QuickPick 性能基准规范与质量红线 (Performance & Quality Baselines)
 
-> 最后修订: 2026-09-08  
-> 适用版本: QuickPick MVP (v0.1.0+)
+> 最后修订: 2026-09-22  
+> 适用版本: QuickPick MVP (v0.2.0+)
 
 ---
 

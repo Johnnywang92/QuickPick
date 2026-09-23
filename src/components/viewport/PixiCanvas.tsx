@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js';
-import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, Frame, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
 import { useAlbumStore } from '../../store/albumStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useLutStore } from '../../store/lutStore';
+import { useAdjustStore } from '../../store/adjustStore';
 import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
+import { ColorAdjustFilter, isAdjustmentsNoop } from '../../utils/adjustEngine';
 import { LutControlBar } from './LutControlBar';
 import { VisualPin } from '../../types/photo';
 import clsx from 'clsx';
@@ -52,8 +54,14 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const isLutBypassComparing = useLutStore((state) => state.isBypassComparing);
   const getCustomLutData = useLutStore((state) => state.getCustomLutData);
   const lutFilterRef = useRef<LutFilter | null>(null);
+  const colorAdjustFilterRef = useRef<ColorAdjustFilter | null>(null);
+
+  const getPhotoAdjustments = useAdjustStore((state) => state.getPhotoAdjustments);
+  const toggleAdjustModalOpen = useAdjustStore((state) => state.toggleModalOpen);
+  const photoAdjustmentsMap = useAdjustStore((state) => state.photoAdjustments);
 
   const currentPhoto = photos[currentIndex];
+  const currentAdjustments = currentPhoto ? photoAdjustmentsMap[currentPhoto.id] || getPhotoAdjustments(currentPhoto.id) : null;
   const currentPhotoLut = currentPhoto ? photoLuts[currentPhoto.id] : null;
   const effectiveLutId = currentPhoto ? currentPhotoLut?.lutId ?? null : activeLutId;
   const effectiveLutIntensity = currentPhoto ? (currentPhotoLut ? currentPhotoLut.intensity : lutIntensity) : lutIntensity;
@@ -295,7 +303,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     };
   }, [fitImageToViewport, imageUrl, pixiStatus, loadAttempt]);
 
-  // 应用 3D LUT 胶片调色实时预览 Filter
+  // 应用 3D LUT 胶片调色与快速选片调色实时 Filter
   useEffect(() => {
     const sprite = spriteRef.current;
     if (!sprite) return;
@@ -308,28 +316,53 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         ? effectiveLutIntensity
         : 0.85;
 
-    if (!activeDisplayLutId || effectiveIntensity <= 0.001) {
-      sprite.filters = [];
-      return;
-    }
+    const nextFilters: any[] = [];
 
-    try {
-      const customData = activeDisplayLutId.startsWith('custom_') ? getCustomLutData(activeDisplayLutId) : undefined;
-      const { texture, size } = getOrCreateLutTexture(activeDisplayLutId, customData || undefined);
+    // 1. 3D LUT 滤镜
+    if (activeDisplayLutId && effectiveIntensity > 0.001) {
+      try {
+        const customData = activeDisplayLutId.startsWith('custom_') ? getCustomLutData(activeDisplayLutId) : undefined;
+        const { texture, size } = getOrCreateLutTexture(activeDisplayLutId, customData || undefined);
 
-      if (!lutFilterRef.current) {
-        lutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
-      } else {
-        lutFilterRef.current.updateLut(texture, size);
-        lutFilterRef.current.intensity = effectiveIntensity;
+        if (!lutFilterRef.current) {
+          lutFilterRef.current = new LutFilter(texture, size, effectiveIntensity);
+        } else {
+          lutFilterRef.current.updateLut(texture, size);
+          lutFilterRef.current.intensity = effectiveIntensity;
+        }
+
+        nextFilters.push(lutFilterRef.current);
+      } catch (err) {
+        console.error('应用 3D LUT 滤镜失败:', err);
       }
-
-      sprite.filters = [lutFilterRef.current];
-    } catch (err) {
-      console.error('应用 3D LUT 滤镜失败:', err);
-      sprite.filters = [];
     }
-  }, [activeDisplayLutId, effectiveLutIntensity, isLutEnabled, isLutBypassComparing, hoverLutId, getCustomLutData, imageStatus, textureVersion]);
+
+    // 2. 选片级快速色彩与光影微调 (Exposure / Contrast / Temp / Highlights / Shadows / B&W)
+    if (!isAdjustmentsNoop(currentAdjustments)) {
+      try {
+        if (!colorAdjustFilterRef.current) {
+          colorAdjustFilterRef.current = new ColorAdjustFilter(currentAdjustments || undefined);
+        } else if (currentAdjustments) {
+          colorAdjustFilterRef.current.updateAdjustments(currentAdjustments);
+        }
+        nextFilters.push(colorAdjustFilterRef.current);
+      } catch (err) {
+        console.error('应用快速调色滤镜失败:', err);
+      }
+    }
+
+    sprite.filters = nextFilters;
+  }, [
+    activeDisplayLutId,
+    effectiveLutIntensity,
+    isLutEnabled,
+    isLutBypassComparing,
+    hoverLutId,
+    getCustomLutData,
+    imageStatus,
+    textureVersion,
+    currentAdjustments,
+  ]);
 
   // 渲染图上 Pin 针标记层
   useEffect(() => {
@@ -679,8 +712,21 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
 
-      {/* 悬浮控制栏（3D LUT 胶片调色 + 缩放控制） */}
+      {/* 悬浮控制栏（相框与调色 + 3D LUT 胶片调色 + 缩放控制） */}
       <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
+        {/* 相机参数相框与调色 [E] */}
+        <button
+          onClick={toggleAdjustModalOpen}
+          title="相机参数相框与选片快速调色 [快捷键 E]"
+          className="flex items-center space-x-1.5 bg-dark-800/85 hover:bg-dark-700 text-slate-200 border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-xs font-medium transition-all cursor-pointer select-none"
+        >
+          <Frame className="w-3.5 h-3.5 text-brand-400" />
+          <span className="font-sans">相框与调色 (E)</span>
+          {currentAdjustments && !isAdjustmentsNoop(currentAdjustments) && (
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
+          )}
+        </button>
+
         <LutControlBar />
 
         {/* 悬浮缩放控制栏 */}

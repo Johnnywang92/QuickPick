@@ -6,7 +6,7 @@ use std::time::Duration;
 #[tokio::main]
 async fn main() {
     println!("================================================================");
-    println!("  QuickPick Studio NAS Daemon (v0.1.0)");
+    println!("  QuickPick Studio NAS Daemon (v0.2.0)");
     println!("  Headless Background 2K Proxy & Catalog Engine for Synology/QNAP");
     println!("================================================================");
 
