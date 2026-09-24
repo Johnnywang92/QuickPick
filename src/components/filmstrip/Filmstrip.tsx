@@ -178,6 +178,49 @@ export const Filmstrip: React.FC = () => {
     }
   }, [currentIndex, filteredPhotos, totalItems]);
 
+  // 虚拟轨道总宽度 (撑开横向滚动条)
+  const totalWidth = CONTAINER_PADDING_X * 2 + totalItems * ITEM_TOTAL - ITEM_GAP;
+
+  // 动态计算可视窗口索引范围 (只渲染 15~20 个实际 DOM 节点)
+  const startIdx = Math.max(
+    0,
+    Math.floor((scrollLeft - CONTAINER_PADDING_X) / ITEM_TOTAL) - OVERSCAN,
+  );
+  const visibleCount = Math.ceil(containerWidth / ITEM_TOTAL);
+  const endIdx = Math.min(
+    totalItems - 1,
+    Math.floor((scrollLeft - CONTAINER_PADDING_X) / ITEM_TOTAL) + visibleCount + OVERSCAN,
+  );
+
+  const visiblePhotos: { photo: (typeof photos)[0]; originalIndex: number; filteredIndex: number }[] = [];
+  if (totalItems > 0) {
+    for (let i = startIdx; i <= endIdx; i++) {
+      if (filteredPhotos[i]) {
+        visiblePhotos.push({
+          photo: filteredPhotos[i].photo,
+          originalIndex: filteredPhotos[i].originalIndex,
+          filteredIndex: i,
+        });
+      }
+    }
+  }
+
+  // 视口动态加载：预加载可视范围内缩略图
+  useEffect(() => {
+    if (totalItems === 0) return;
+    const screenCenterIdx = Math.floor(
+      (scrollLeft - CONTAINER_PADDING_X + containerWidth / 2) / ITEM_TOTAL,
+    );
+    const sorted = [...visiblePhotos]
+      .sort(
+        (a, b) =>
+          Math.abs(a.filteredIndex - screenCenterIdx) - Math.abs(b.filteredIndex - screenCenterIdx),
+      )
+      .map((item) => item.photo);
+
+    prefetchPhotos(sorted);
+  }, [startIdx, endIdx, totalItems, prefetchPhotos]);
+
   if (photos.length === 0) return null;
 
   if (totalItems === 0) {
@@ -199,46 +242,6 @@ export const Filmstrip: React.FC = () => {
     );
   }
 
-  // 虚拟轨道总宽度 (撑开横向滚动条)
-  const totalWidth = CONTAINER_PADDING_X * 2 + totalItems * ITEM_TOTAL - ITEM_GAP;
-
-  // 动态计算可视窗口索引范围 (只渲染 15~20 个实际 DOM 节点)
-  const startIdx = Math.max(
-    0,
-    Math.floor((scrollLeft - CONTAINER_PADDING_X) / ITEM_TOTAL) - OVERSCAN,
-  );
-  const visibleCount = Math.ceil(containerWidth / ITEM_TOTAL);
-  const endIdx = Math.min(
-    totalItems - 1,
-    Math.floor((scrollLeft - CONTAINER_PADDING_X) / ITEM_TOTAL) + visibleCount + OVERSCAN,
-  );
-
-  const visiblePhotos: { photo: (typeof photos)[0]; originalIndex: number; filteredIndex: number }[] = [];
-  for (let i = startIdx; i <= endIdx; i++) {
-    if (filteredPhotos[i]) {
-      visiblePhotos.push({
-        photo: filteredPhotos[i].photo,
-        originalIndex: filteredPhotos[i].originalIndex,
-        filteredIndex: i,
-      });
-    }
-  }
-
-  // 视口动态加载：预加载可视范围内缩略图
-  useEffect(() => {
-    if (totalItems === 0) return;
-    const screenCenterIdx = Math.floor(
-      (scrollLeft - CONTAINER_PADDING_X + containerWidth / 2) / ITEM_TOTAL,
-    );
-    const sorted = [...visiblePhotos]
-      .sort(
-        (a, b) =>
-          Math.abs(a.filteredIndex - screenCenterIdx) - Math.abs(b.filteredIndex - screenCenterIdx),
-      )
-      .map((item) => item.photo);
-
-    prefetchPhotos(sorted);
-  }, [startIdx, endIdx, totalItems, prefetchPhotos]);
 
   return (
     <div
