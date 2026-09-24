@@ -1,3 +1,5 @@
+export type WorkbenchTab = 'adjust' | 'lut' | 'frame' | 'watermark';
+
 export type FrameTemplate =
   | 'classic_white'
   | 'leica_white'

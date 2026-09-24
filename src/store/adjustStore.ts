@@ -6,15 +6,17 @@ import {
   FrameConfig,
   PhotoAdjustments,
   WatermarkConfig,
+  WorkbenchTab,
 } from '../types/adjust';
 
 interface AdjustStoreState {
   // 弹窗工作台状态
   isModalOpen: boolean;
-  activeTab: 'frame' | 'adjust' | 'watermark';
+  activeTab: WorkbenchTab;
   setIsModalOpen: (open: boolean) => void;
   toggleModalOpen: () => void;
-  setActiveTab: (tab: 'frame' | 'adjust' | 'watermark') => void;
+  openModal: (tab?: WorkbenchTab) => void;
+  setActiveTab: (tab: WorkbenchTab) => void;
 
   // 相框全局偏好配置
   frameConfig: FrameConfig;
@@ -42,9 +44,10 @@ interface AdjustStoreState {
 
 export const useAdjustStore = create<AdjustStoreState>((set, get) => ({
   isModalOpen: false,
-  activeTab: 'frame',
+  activeTab: 'adjust',
   setIsModalOpen: (open) => set({ isModalOpen: open }),
   toggleModalOpen: () => set((state) => ({ isModalOpen: !state.isModalOpen })),
+  openModal: (tab) => set((state) => ({ isModalOpen: true, activeTab: tab ?? state.activeTab })),
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   frameConfig: { ...DEFAULT_FRAME_CONFIG },

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js';
-import { AlertTriangle, Frame, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, Loader2, Maximize2, RefreshCw, Sliders, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
 import { useAlbumStore } from '../../store/albumStore';
 import { useThemeStore } from '../../store/themeStore';
@@ -8,7 +8,6 @@ import { useLutStore } from '../../store/lutStore';
 import { useAdjustStore } from '../../store/adjustStore';
 import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
 import { ColorAdjustFilter, isAdjustmentsNoop } from '../../utils/adjustEngine';
-import { LutControlBar } from './LutControlBar';
 import { CompositionGridBar } from './CompositionGridBar';
 import { useGridStore } from '../../store/gridStore';
 import { renderCompositionGrid } from '../../utils/gridRenderer';
@@ -68,7 +67,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const colorAdjustFilterRef = useRef<ColorAdjustFilter | null>(null);
 
   const getPhotoAdjustments = useAdjustStore((state) => state.getPhotoAdjustments);
-  const toggleAdjustModalOpen = useAdjustStore((state) => state.toggleModalOpen);
+  const openModal = useAdjustStore((state) => state.openModal);
   const photoAdjustmentsMap = useAdjustStore((state) => state.photoAdjustments);
 
   const currentPhoto = photos[currentIndex];
@@ -76,6 +75,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const currentPhotoLut = currentPhoto ? photoLuts[currentPhoto.id] : null;
   const effectiveLutId = currentPhoto ? currentPhotoLut?.lutId ?? null : activeLutId;
   const effectiveLutIntensity = currentPhoto ? (currentPhotoLut ? currentPhotoLut.intensity : lutIntensity) : lutIntensity;
+  const hasActiveWorkbenchEffects = (currentAdjustments && !isAdjustmentsNoop(currentAdjustments)) || Boolean(effectiveLutId);
   const activeDisplayLutId =
     hoverLutId === '__bypass__'
       ? null
@@ -827,22 +827,21 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
 
-      {/* 悬浮控制栏（相框与调色 + 3D LUT 胶片调色 + 缩放控制） */}
+      {/* 悬浮控制栏（调色工作台 + 构图辅助 + 缩放控制） */}
       <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
-        {/* 相机参数相框与调色 [E] */}
+        {/* 调色工作台 [E] */}
         <button
-          onClick={toggleAdjustModalOpen}
-          title="相机参数相框与选片快速调色 [快捷键 E]"
+          onClick={() => openModal()}
+          title="打开调色工作台 [快捷键 E / 胶片 L] (包含基础微调、胶片LUT、相机相框、水印签名)"
           className="flex items-center space-x-1.5 bg-dark-800/85 hover:bg-dark-700 text-slate-200 border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-xs font-medium transition-all cursor-pointer select-none"
         >
-          <Frame className="w-3.5 h-3.5 text-brand-400" />
-          <span className="font-sans">相框与调色 (E)</span>
-          {currentAdjustments && !isAdjustmentsNoop(currentAdjustments) && (
+          <Sliders className="w-3.5 h-3.5 text-brand-400" />
+          <span className="font-sans">调色工作台 (E)</span>
+          {hasActiveWorkbenchEffects && (
             <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
           )}
         </button>
 
-        <LutControlBar />
         <CompositionGridBar />
 
         {/* 悬浮缩放控制栏 */}

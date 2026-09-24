@@ -33,6 +33,7 @@ import {
   Trash2,
   Grid3X3,
   Film,
+  Upload,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { shareCustomImagesViaAirDrop } from '../../services/tauriBridge';
@@ -77,6 +78,11 @@ export const FrameAndAdjustModal: React.FC = () => {
   const setPhotoLut = useLutStore((state) => state.setPhotoLut);
   const clearPhotoLut = useLutStore((state) => state.clearPhotoLut);
   const getCustomLutData = useLutStore((state) => state.getCustomLutData);
+  const importCubeContent = useLutStore((state) => state.importCubeContent);
+  const removeCustomLut = useLutStore((state) => state.removeCustomLut);
+  const batchApplyLut = useLutStore((state) => state.batchApplyLut);
+  const clearAllPhotoLuts = useLutStore((state) => state.clearAllPhotoLuts);
+  const cubeInputRef = useRef<HTMLInputElement>(null);
 
   const currentPhotoLut = currentPhoto ? photoLuts[currentPhoto.id] : null;
   const effectiveLutId = currentPhoto
@@ -114,6 +120,46 @@ export const FrameAndAdjustModal: React.FC = () => {
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 2400);
   }, []);
+
+  const handleCubeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result;
+      if (typeof content === 'string') {
+        try {
+          const newId = importCubeContent(content, file.name);
+          if (currentPhoto) {
+            setPhotoLut(currentPhoto.id, newId, effectiveLutIntensity);
+          }
+          showToast(`已成功导入胶片 LUT: ${file.name}`);
+        } catch (err) {
+          alert(`导入 .cube 文件失败: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleApplyLutToSelected = () => {
+    if (!effectiveLutId || selectedPhotoIds.length === 0) return;
+    batchApplyLut(selectedPhotoIds, effectiveLutId, effectiveLutIntensity);
+    showToast(`已将当前胶片风格同步应用至 ${selectedPhotoIds.length} 张已选照片`);
+  };
+
+  const handleApplyLutToAll = () => {
+    if (!effectiveLutId || photos.length === 0) return;
+    batchApplyLut(photos.map((p) => p.id), effectiveLutId, effectiveLutIntensity);
+    showToast(`已将当前胶片风格同步应用至全库 ${photos.length} 张照片`);
+  };
+
+  const handleClearAllLuts = () => {
+    clearAllPhotoLuts();
+    showToast('已清空全库所有照片的胶片 LUT 风格');
+  };
 
   // 处理 Logo 上传
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -658,7 +704,7 @@ export const FrameAndAdjustModal: React.FC = () => {
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                <span>相机 EXIF 参数相框与选片快速调色</span>
+                <span>调色工作台</span>
                 <span className="text-[10px] font-mono text-slate-400 bg-dark-750 px-2 py-0.5 rounded-full border border-dark-650">
                   {currentPhoto.filename}
                 </span>
@@ -669,40 +715,52 @@ export const FrameAndAdjustModal: React.FC = () => {
           {/* Tab 切换 */}
           <div className="flex items-center rounded-xl bg-dark-800/80 p-1 border border-dark-700">
             <button
-              onClick={() => setActiveTab('frame')}
-              className={clsx(
-                'flex items-center space-x-1.5 rounded-lg px-3.5 py-1 text-xs font-semibold transition-all cursor-pointer',
-                activeTab === 'frame'
-                  ? 'bg-brand-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200',
-              )}
-            >
-              <Frame className="h-3.5 w-3.5" />
-              <span>相机参数相框 (Frame)</span>
-            </button>
-            <button
               onClick={() => setActiveTab('adjust')}
               className={clsx(
-                'flex items-center space-x-1.5 rounded-lg px-3.5 py-1 text-xs font-semibold transition-all cursor-pointer',
+                'flex items-center space-x-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer',
                 activeTab === 'adjust'
                   ? 'bg-brand-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200',
               )}
             >
               <Sliders className="h-3.5 w-3.5" />
-              <span>快速调色 (Adjust)</span>
+              <span>基础微调 (Adjust)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('lut')}
+              className={clsx(
+                'flex items-center space-x-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer',
+                activeTab === 'lut'
+                  ? 'bg-brand-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200',
+              )}
+            >
+              <Film className="h-3.5 w-3.5" />
+              <span>胶片预设 (LUT)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('frame')}
+              className={clsx(
+                'flex items-center space-x-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer',
+                activeTab === 'frame'
+                  ? 'bg-brand-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200',
+              )}
+            >
+              <Frame className="h-3.5 w-3.5" />
+              <span>相机相框 (Frame)</span>
             </button>
             <button
               onClick={() => setActiveTab('watermark')}
               className={clsx(
-                'flex items-center space-x-1.5 rounded-lg px-3.5 py-1 text-xs font-semibold transition-all cursor-pointer',
+                'flex items-center space-x-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer',
                 activeTab === 'watermark'
                   ? 'bg-brand-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200',
               )}
             >
               <Stamp className="h-3.5 w-3.5" />
-              <span>水印与签名 (Watermark)</span>
+              <span>水印签名 (Watermark)</span>
             </button>
           </div>
 
@@ -1009,108 +1067,6 @@ export const FrameAndAdjustModal: React.FC = () => {
                     <Sparkles className="h-4 w-4 text-amber-400 group-hover:rotate-12 transition-transform" />
                     <span>✨ 算法一键调光 (快捷键 A)</span>
                   </button>
-
-                  {/* 3D 胶片色彩风格 (LUT) 深度整合 */}
-                  <div className="space-y-2 rounded-xl border border-dark-700/80 bg-dark-800/40 p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-1.5">
-                        <Film className="h-4 w-4 text-brand-400" />
-                        <span className="text-xs font-bold text-slate-200">3D 胶片色彩风格 (LUT)</span>
-                      </div>
-                      {effectiveLutId && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (currentPhoto) clearPhotoLut(currentPhoto.id);
-                          }}
-                          className="text-[11px] text-slate-400 hover:text-amber-300 transition-colors cursor-pointer"
-                        >
-                          清除风格
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (currentPhoto) clearPhotoLut(currentPhoto.id);
-                        }}
-                        className={clsx(
-                          'flex items-center space-x-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all cursor-pointer text-left',
-                          !effectiveLutId
-                            ? 'bg-brand-500/20 border-brand-400 text-white font-semibold'
-                            : 'bg-dark-800/80 hover:bg-dark-750 border-dark-700 text-slate-300',
-                        )}
-                      >
-                        <span className="truncate">原色直出 (无 LUT)</span>
-                      </button>
-
-                      {BUILTIN_LUTS.map((lut) => {
-                        const isSelected = effectiveLutId === lut.id;
-                        return (
-                          <button
-                            key={lut.id}
-                            type="button"
-                            onClick={() => {
-                              if (currentPhoto) setPhotoLut(currentPhoto.id, lut.id, effectiveLutIntensity);
-                            }}
-                            title={lut.description}
-                            className={clsx(
-                              'flex items-center space-x-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all cursor-pointer text-left',
-                              isSelected
-                                ? 'bg-amber-500/20 border-amber-400 text-amber-100 font-semibold shadow-sm'
-                                : 'bg-dark-800/80 hover:bg-dark-750 border-dark-700 text-slate-300',
-                            )}
-                          >
-                            <span className="truncate">{lut.name}</span>
-                          </button>
-                        );
-                      })}
-
-                      {customLuts.map((lut) => {
-                        const isSelected = effectiveLutId === lut.id;
-                        return (
-                          <button
-                            key={lut.id}
-                            type="button"
-                            onClick={() => {
-                              if (currentPhoto) setPhotoLut(currentPhoto.id, lut.id, effectiveLutIntensity);
-                            }}
-                            className={clsx(
-                              'flex items-center space-x-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all cursor-pointer text-left',
-                              isSelected
-                                ? 'bg-amber-500/20 border-amber-400 text-amber-100 font-semibold shadow-sm'
-                                : 'bg-dark-800/80 hover:bg-dark-750 border-dark-700 text-slate-300',
-                            )}
-                          >
-                            <span className="truncate">{lut.name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {effectiveLutId && (
-                      <div className="pt-2 border-t border-dark-750/70">
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                          <span>胶片风格强度 (Intensity)</span>
-                          <span className="font-mono text-slate-300">{Math.round(effectiveLutIntensity * 100)}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="1.0"
-                          step="0.05"
-                          value={effectiveLutIntensity}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            if (currentPhoto) setPhotoLut(currentPhoto.id, effectiveLutId, val);
-                          }}
-                          className="w-full h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-brand-400"
-                        />
-                      </div>
-                    )}
-                  </div>
 
                   {/* 一键快捷影调预设 */}
                   <div className="space-y-1.5">
@@ -1426,6 +1382,224 @@ export const FrameAndAdjustModal: React.FC = () => {
                       </button>
                     </div>
                   )}
+                </div>
+              ) : activeTab === 'lut' ? (
+                /* 3D 胶片色彩模拟 (LUT) 面板 */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-1.5">
+                      <Film className="h-4 w-4 text-brand-400" />
+                      <span className="text-xs font-bold text-slate-200">3D 胶片色彩模拟 (LUT)</span>
+                    </div>
+                    {effectiveLutId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentPhoto) clearPhotoLut(currentPhoto.id);
+                        }}
+                        className="text-[11px] text-slate-400 hover:text-amber-300 transition-colors cursor-pointer"
+                      >
+                        清除胶片风格
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 隐藏的 .cube 文件上传 input */}
+                  <input
+                    ref={cubeInputRef}
+                    type="file"
+                    accept=".cube"
+                    className="hidden"
+                    onChange={handleCubeUpload}
+                  />
+
+                  {/* 浓度/强度滑杆 */}
+                  {effectiveLutId && (
+                    <div className="rounded-xl border border-dark-700/80 bg-dark-800/50 p-3 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span className="font-medium">胶片风格渲染浓度</span>
+                        <span className="font-mono text-brand-400 font-semibold">
+                          {Math.round(effectiveLutIntensity * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="1.0"
+                        step="0.05"
+                        value={effectiveLutIntensity}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (currentPhoto) setPhotoLut(currentPhoto.id, effectiveLutId, val);
+                        }}
+                        className="w-full h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-brand-400"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                        <span>10% (淡雅微调)</span>
+                        <span>50%</span>
+                        <span>100% (标准全效)</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 导入自定义 LUT 按钮 */}
+                  <button
+                    type="button"
+                    onClick={() => cubeInputRef.current?.click()}
+                    className="w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-xl border border-dashed border-dark-600 hover:border-brand-400 bg-dark-800/40 hover:bg-dark-800 text-xs text-slate-300 hover:text-brand-300 transition-all cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>导入自定义 .cube 3D LUT 文件...</span>
+                  </button>
+
+                  {/* 预设卡片列表 */}
+                  <div className="space-y-1.5 max-h-[38vh] overflow-y-auto pr-1">
+                    {/* 原色直出 */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentPhoto) clearPhotoLut(currentPhoto.id);
+                      }}
+                      className={clsx(
+                        'w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer',
+                        !effectiveLutId
+                          ? 'bg-brand-500/15 border-brand-400/80 text-white shadow-sm'
+                          : 'bg-dark-800/60 hover:bg-dark-750 border-dark-700/80 text-slate-300',
+                      )}
+                    >
+                      <div>
+                        <div className="text-xs font-semibold">原片直出 (无 LUT)</div>
+                        <div className="text-[10px] text-slate-400">保留相机原始直出色彩与基础微调</div>
+                      </div>
+                      {!effectiveLutId && (
+                        <span className="text-[10px] bg-brand-500 text-white px-1.5 py-0.5 rounded font-mono">生效中</span>
+                      )}
+                    </button>
+
+                    {/* 内置胶片预设 */}
+                    {BUILTIN_LUTS.map((lut) => {
+                      const isSelected = effectiveLutId === lut.id;
+                      return (
+                        <button
+                          key={lut.id}
+                          type="button"
+                          onClick={() => {
+                            if (currentPhoto) setPhotoLut(currentPhoto.id, lut.id, effectiveLutIntensity);
+                          }}
+                          className={clsx(
+                            'w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer',
+                            isSelected
+                              ? 'bg-amber-500/15 border-amber-400/80 text-amber-100 shadow-sm'
+                              : 'bg-dark-800/60 hover:bg-dark-750 border-dark-700/80 text-slate-300',
+                          )}
+                        >
+                          <div>
+                            <div className="text-xs font-semibold flex items-center gap-1.5">
+                              <span>{lut.name}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400">{lut.description}</div>
+                          </div>
+                          {isSelected && (
+                            <span className="text-[10px] bg-amber-500 text-black font-bold px-1.5 py-0.5 rounded font-mono">
+                              生效中
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+
+                    {/* 用户自定义 LUT */}
+                    {customLuts.map((lut) => {
+                      const isSelected = effectiveLutId === lut.id;
+                      return (
+                        <div
+                          key={lut.id}
+                          className={clsx(
+                            'w-full flex items-center justify-between p-2.5 rounded-xl border transition-all',
+                            isSelected
+                              ? 'bg-amber-500/15 border-amber-400/80 text-amber-100 shadow-sm'
+                              : 'bg-dark-800/60 border-dark-700/80 text-slate-300',
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (currentPhoto) setPhotoLut(currentPhoto.id, lut.id, effectiveLutIntensity);
+                            }}
+                            className="flex-1 text-left cursor-pointer"
+                          >
+                            <div className="text-xs font-semibold truncate">{lut.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">自定义 .cube (Grid: {lut.size})</div>
+                          </button>
+                          <div className="flex items-center space-x-1.5">
+                            {isSelected && (
+                              <span className="text-[10px] bg-amber-500 text-black font-bold px-1.5 py-0.5 rounded font-mono">
+                                生效中
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeCustomLut(lut.id);
+                                if (effectiveLutId === lut.id && currentPhoto) {
+                                  clearPhotoLut(currentPhoto.id);
+                                }
+                              }}
+                              className="p-1 hover:bg-dark-700 text-slate-400 hover:text-red-400 rounded transition-colors cursor-pointer"
+                              title="删除此自定义 LUT"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 批量应用与复位 */}
+                  <div className="pt-2 border-t border-dark-750/80 space-y-1.5">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleApplyLutToSelected}
+                        disabled={!effectiveLutId || selectedPhotoIds.length === 0}
+                        className={clsx(
+                          'flex-1 py-1.5 px-2 rounded-lg border text-xs font-medium transition-all text-center',
+                          effectiveLutId && selectedPhotoIds.length > 0
+                            ? 'bg-dark-800 hover:bg-dark-750 border-dark-700 text-slate-200 hover:text-white cursor-pointer'
+                            : 'bg-dark-850 border-dark-800 text-slate-500 cursor-not-allowed',
+                        )}
+                        title={selectedPhotoIds.length > 0 ? `同步应用至 ${selectedPhotoIds.length} 张已选照片` : '需先通过快捷键 [Space] 标记至少一张已选照片'}
+                      >
+                        应用至已选 ({selectedPhotoIds.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyLutToAll}
+                        disabled={!effectiveLutId || photos.length === 0}
+                        className={clsx(
+                          'flex-1 py-1.5 px-2 rounded-lg border text-xs font-medium transition-all text-center',
+                          effectiveLutId && photos.length > 0
+                            ? 'bg-dark-800 hover:bg-dark-750 border-dark-700 text-slate-200 hover:text-white cursor-pointer'
+                            : 'bg-dark-850 border-dark-800 text-slate-500 cursor-not-allowed',
+                        )}
+                        title="将当前胶片 LUT 同步应用至全库所有照片"
+                      >
+                        应用至全库 ({photos.length})
+                      </button>
+                    </div>
+
+                    {Object.keys(photoLuts).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearAllLuts}
+                        className="w-full py-1 text-center text-[11px] text-slate-400 hover:text-red-300 transition-colors cursor-pointer"
+                      >
+                        清空全库所有照片的胶片 LUT 风格
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 /* 水印与摄影师签名面板 */

@@ -7,8 +7,8 @@ import { usePreviewStore } from '../../store/previewStore';
 import { useInsightStore } from '../../store/insightStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useLutStore } from '../../store/lutStore';
+import { useAdjustStore } from '../../store/adjustStore';
 import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
-import { LutControlBar } from './LutControlBar';
 import {
   ArrowRightLeft,
   X,
@@ -25,6 +25,7 @@ import {
   Unlock,
   Maximize2,
   Sparkles,
+  Sliders,
 } from 'lucide-react';
 import { computeVisualSimilarity } from '../../utils/phashUtils';
 
@@ -823,7 +824,14 @@ export const SplitCompareView: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
-          <LutControlBar />
+          <button
+            onClick={() => useAdjustStore.getState().openModal('lut')}
+            title="打开调色工作台 [快捷键 E / 胶片 L]"
+            className="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-dark-750 hover:bg-dark-700 text-slate-200 border border-dark-600 transition-colors cursor-pointer text-xs"
+          >
+            <Sliders className="w-3 h-3 text-brand-400" />
+            <span>调色工作台 (E)</span>
+          </button>
 
           <button
             onClick={swapComparePhotos}

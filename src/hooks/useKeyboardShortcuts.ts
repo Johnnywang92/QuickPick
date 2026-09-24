@@ -96,7 +96,7 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           }
           break;
 
-        // 相机参数相框与选片快速调色 [E]
+        // 调色工作台 [E]
         case 'e':
         case 'E':
           if (!isCompareMode) {
@@ -105,7 +105,7 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           }
           break;
 
-        // 3D LUT 胶片调色开关 [L]
+        // 3D LUT 胶片调色快捷开关 [L]
         case 'l':
         case 'L': {
           e.preventDefault();
