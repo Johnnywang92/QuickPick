@@ -31,6 +31,22 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
   const [activeTab, setActiveTab] = useState<FunnelCategory>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isShredding, setIsShredding] = useState<boolean>(false);
+  const [shreddingIds, setShreddingIds] = useState<Set<string>>(new Set());
+  const [particles, setParticles] = useState<
+    Array<{
+      id: number;
+      x: number;
+      y: number;
+      tx: number;
+      ty: number;
+      size: number;
+      color: string;
+      rot: number;
+      duration: number;
+      delay: number;
+    }>
+  >([]);
 
   // 1. 废片智能判断与特征分类
   const defectItems = useMemo(() => {
@@ -173,18 +189,49 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
     }
   };
 
-  // 核心粉碎动作：将选中的照片批量标记为已不选 (skipped)
+  // 核心粉碎动作：将选中的照片批量标记为已不选 (skipped) 并触发碎纸切片与飞溅粒子动效
   const handleCullSelected = () => {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || isShredding) return;
 
-    const updates = Array.from(selectedIds).map((id) => ({
+    const targetIds = Array.from(selectedIds);
+    const count = targetIds.length;
+
+    // 1. 同步更新选择状态 (保证单元测试与撤销栈即时可用)
+    const updates = targetIds.map((id) => ({
       photoId: id,
       state: 'skipped' as SelectionState,
     }));
-
     setSelectionStates(updates, `粉碎 ${updates.length} 张闭眼/模糊废片`);
-    setToastMessage(`⚡ 已成功粉碎 ${updates.length} 张废片！(可随时按 Cmd+Z 撤销)`);
-    setTimeout(() => setToastMessage(null), 3500);
+
+    // 2. 触发粉碎动效与粒子生成
+    setIsShredding(true);
+    setShreddingIds(new Set(targetIds));
+
+    // 生成飞溅粉碎粒子 (48 个高饱和荧光/炽热火星粒子)
+    const particleColors = ['#f43f5e', '#fb7185', '#f97316', '#fb923c', '#eab308', '#ef4444', '#fda4af'];
+    const newParticles = Array.from({ length: 48 }).map((_, i) => ({
+      id: Date.now() + i,
+      x: 30 + Math.random() * 40,
+      y: 35 + Math.random() * 35,
+      tx: (Math.random() - 0.5) * 550,
+      ty: -80 - Math.random() * 300,
+      size: 4 + Math.random() * 8,
+      color: particleColors[Math.floor(Math.random() * particleColors.length)],
+      rot: (Math.random() - 0.5) * 720,
+      duration: 0.55 + Math.random() * 0.3,
+      delay: Math.random() * 0.12,
+    }));
+    setParticles(newParticles);
+
+    // 3. 动效完成后重置粉碎状态并提示
+    setTimeout(() => {
+      setIsShredding(false);
+      setShreddingIds(new Set());
+      setSelectedIds(new Set());
+      setParticles([]);
+      setToastMessage(`⚡ 💥 已成功粉碎 ${count} 张废片！(已标记为不选 N，可随时按 Cmd+Z 撤销)`);
+      setTimeout(() => setToastMessage(null), 3500);
+    }, 720);
   };
 
   // 跳转到照片主界面
@@ -195,7 +242,31 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-150 select-none">
-      <div className="flex h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl overflow-hidden">
+      <div className="relative flex h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl overflow-hidden">
+        {/* 全局粉碎飞溅粒子层 */}
+        {particles.length > 0 && (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-50">
+            {particles.map((p) => (
+              <span
+                key={p.id}
+                className="absolute rounded-full"
+                style={{
+                  left: `${p.x}%`,
+                  top: `${p.y}%`,
+                  width: `${p.size}px`,
+                  height: `${p.size}px`,
+                  backgroundColor: p.color,
+                  boxShadow: `0 0 10px ${p.color}`,
+                  ['--tx' as string]: `${p.tx}px`,
+                  ['--ty' as string]: `${p.ty}px`,
+                  ['--rot' as string]: `${p.rot}deg`,
+                  animation: `shredParticleBurst ${p.duration}s cubic-bezier(0.2, 0.8, 0.2, 1) ${p.delay}s forwards`,
+                } as React.CSSProperties}
+              />
+            ))}
+          </div>
+        )}
+
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between border-b border-dark-750 bg-dark-850 px-5 py-3.5">
           <div className="flex items-center space-x-3">
@@ -307,19 +378,24 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
               {displayedItems.map((item) => {
                 const isChecked = selectedIds.has(item.photo.id);
+                const isItemShredding = shreddingIds.has(item.photo.id);
                 const thumb = previewCache.get(item.photo.path);
 
                 return (
                   <div
                     key={item.photo.id}
-                    onClick={() => togglePhoto(item.photo.id, item.isProtected)}
+                    onClick={() => {
+                      if (!isShredding) togglePhoto(item.photo.id, item.isProtected);
+                    }}
                     className={clsx(
-                      'group relative flex flex-col rounded-xl border p-2 transition-all cursor-pointer overflow-hidden',
-                      item.isProtected
-                        ? 'border-emerald-500/40 bg-emerald-500/5'
+                      'group relative flex flex-col rounded-xl border p-2 transition-all overflow-hidden',
+                      isItemShredding
+                        ? 'animate-shred-card border-rose-500 bg-rose-500/20 shadow-2xl shadow-rose-500/60'
+                        : item.isProtected
+                        ? 'border-emerald-500/40 bg-emerald-500/5 cursor-pointer'
                         : isChecked
-                        ? 'border-rose-500/80 bg-rose-500/10 ring-1 ring-rose-500/40 shadow-md'
-                        : 'border-dark-750 bg-dark-800/60 hover:border-dark-600',
+                        ? 'border-rose-500/80 bg-rose-500/10 ring-1 ring-rose-500/40 shadow-md cursor-pointer'
+                        : 'border-dark-750 bg-dark-800/60 hover:border-dark-600 cursor-pointer',
                     )}
                   >
                     {/* 缩略图区域 */}
@@ -328,12 +404,38 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                         <img
                           src={thumb}
                           alt={item.photo.filename}
-                          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          className={clsx(
+                            'h-full w-full object-cover transition-transform duration-200',
+                            isItemShredding ? 'scale-110 filter contrast-125' : 'group-hover:scale-105',
+                          )}
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-slate-600 text-xs font-mono">
                           载入中...
                         </div>
+                      )}
+
+                      {/* 废片粉碎动效：激光切线、纵向下落碎纸条与粉碎徽标 */}
+                      {isItemShredding && (
+                        <>
+                          {/* 激光切割扫描线 */}
+                          <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-rose-300 to-transparent shadow-[0_0_15px_#f43f5e] z-30 animate-shred-laser" />
+
+                          {/* 4 条下落的粉碎切片 */}
+                          <div className="absolute inset-0 z-20 pointer-events-none grid grid-cols-4 gap-[1px] overflow-hidden">
+                            <div className="h-full bg-rose-500/25 border-r border-rose-400/50 backdrop-blur-[0.5px] animate-shred-strip-1" />
+                            <div className="h-full bg-orange-500/25 border-r border-orange-400/50 backdrop-blur-[0.5px] animate-shred-strip-2" />
+                            <div className="h-full bg-amber-500/25 border-r border-amber-400/50 backdrop-blur-[0.5px] animate-shred-strip-3" />
+                            <div className="h-full bg-rose-500/25 backdrop-blur-[0.5px] animate-shred-strip-4" />
+                          </div>
+
+                          {/* 爆破中心文字徽标 */}
+                          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-black text-[10px] shadow-lg animate-ping">
+                              💥 粉碎
+                            </span>
+                          </div>
+                        </>
                       )}
 
                       {/* 勾选框 / 保护状态标志 */}
@@ -419,16 +521,22 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
 
             <button
               onClick={handleCullSelected}
-              disabled={selectedIds.size === 0}
+              disabled={selectedIds.size === 0 || isShredding}
               className={clsx(
                 'flex items-center space-x-2 rounded-xl px-5 py-2 text-xs font-bold transition-all shadow-lg cursor-pointer',
-                selectedIds.size > 0
+                isShredding
+                  ? 'bg-gradient-to-r from-rose-600 via-orange-600 to-amber-600 text-white shadow-rose-600/50 scale-[0.98]'
+                  : selectedIds.size > 0
                   ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30 active:scale-[0.98]'
                   : 'bg-dark-750 text-slate-500 border border-dark-700 cursor-not-allowed',
               )}
             >
-              <Flame className="h-4 w-4" />
-              <span>一键粉碎选中的 {selectedIds.size} 张废片 (标记为不选 N)</span>
+              <Flame className={clsx('h-4 w-4', isShredding ? 'animate-bounce text-amber-300' : '')} />
+              <span>
+                {isShredding
+                  ? `💥 正在粉碎选中的 ${selectedIds.size} 张废片...`
+                  : `一键粉碎选中的 ${selectedIds.size} 张废片 (标记为不选 N)`}
+              </span>
             </button>
           </div>
         </div>
