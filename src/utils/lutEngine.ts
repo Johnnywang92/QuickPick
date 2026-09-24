@@ -15,6 +15,17 @@ import { generateBuiltinLutData, clamp01 } from './lutPresets';
  */
 const textureCache = new Map<string, Texture>();
 
+export function clearLutTextureCache(): void {
+  for (const texture of textureCache.values()) {
+    try {
+      texture.destroy(true);
+    } catch {
+      // 忽略贴图销毁异常
+    }
+  }
+  textureCache.clear();
+}
+
 export function getOrCreateLutTexture(presetId: string, customData?: { size: number; data: Uint8Array }): {
   texture: Texture;
   size: number;
@@ -38,6 +49,8 @@ export function getOrCreateLutTexture(presetId: string, customData?: { size: num
     format: 'rgba8unorm',
     scaleMode: 'linear',
   });
+  source.style.addressModeU = 'clamp-to-edge';
+  source.style.addressModeV = 'clamp-to-edge';
 
   const texture = new Texture({ source });
   textureCache.set(cacheKey, texture);
@@ -278,16 +291,19 @@ export function apply3dLutToImageData(
     const b1 = Math.min(b0 + 1, maxIdx);
     const db = bf - b0;
 
-    // 8 个相邻顶点的偏移索引: (b * size * size + g * size + r) * 4
-    const i000 = (b0 * sizeSq + g0 * lutSize + r0) * 4;
-    const i100 = (b0 * sizeSq + g0 * lutSize + r1) * 4;
-    const i010 = (b0 * sizeSq + g1 * lutSize + r0) * 4;
-    const i110 = (b0 * sizeSq + g1 * lutSize + r1) * 4;
+    // 8 个相邻顶点的偏移索引
+    // 注意：2D 贴图数据在 generateBuiltinLutData 与 parseCubeLut 中按 pixelY = g, pixelX = b * size + r 存储
+    // 每一行的跨度为 size * size，因此 1D 数组中的内存偏移必须严格遵循 (g * sizeSq + b * lutSize + r) * 4，
+    // 从而与 GPU WebGL/WebGPU 纹理采样的内存布局 100% 保持完全一致！
+    const i000 = (g0 * sizeSq + b0 * lutSize + r0) * 4;
+    const i100 = (g0 * sizeSq + b0 * lutSize + r1) * 4;
+    const i010 = (g1 * sizeSq + b0 * lutSize + r0) * 4;
+    const i110 = (g1 * sizeSq + b0 * lutSize + r1) * 4;
 
-    const i001 = (b1 * sizeSq + g0 * lutSize + r0) * 4;
-    const i101 = (b1 * sizeSq + g0 * lutSize + r1) * 4;
-    const i011 = (b1 * sizeSq + g1 * lutSize + r0) * 4;
-    const i111 = (b1 * sizeSq + g1 * lutSize + r1) * 4;
+    const i001 = (g0 * sizeSq + b1 * lutSize + r0) * 4;
+    const i101 = (g0 * sizeSq + b1 * lutSize + r1) * 4;
+    const i011 = (g1 * sizeSq + b1 * lutSize + r0) * 4;
+    const i111 = (g1 * sizeSq + b1 * lutSize + r1) * 4;
 
     // 沿 R 轴进行双线性插值
     const rdr0 = 1 - dr;

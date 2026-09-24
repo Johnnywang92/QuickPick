@@ -66,16 +66,74 @@ export const BUILTIN_LUTS: LutPreset[] = [
 ];
 
 /**
- * 辅助色彩曲线变换 (S 曲线、伽马、冷暖偏移)
+ * 高精度 Rec.709 亮度权重（现代摄影与 sRGB 标准，比老旧 Rec.601 更符合人眼知觉）
  */
-function sCurve(x: number, power = 1.35): number {
-  return x < 0.5
-    ? 0.5 * Math.pow(2 * x, power)
-    : 1 - 0.5 * Math.pow(2 * (1 - x), power);
+export function getLuminance(r: number, g: number, b: number): number {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 export function clamp01(v: number): number {
+  if (isNaN(v)) return 0;
   return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * 安全连续的 S 型胶片特性反差曲线（带软高光 Shoulder 与暗部 Toe），
+ * 严格杜绝任何负底数幂计算造成的 NaN，保证输出平滑且在 [0, 1] 范围内。
+ */
+export function filmCurve(x: number, contrast = 1.15, toe = 0.0, shoulder = 1.0): number {
+  const v = clamp01(x);
+  let mapped: number;
+  if (v < 0.5) {
+    mapped = 0.5 * Math.pow(Math.max(0, 2 * v), contrast);
+  } else {
+    mapped = 1 - 0.5 * Math.pow(Math.max(0, 2 * (1 - v)), contrast);
+  }
+  return toe + mapped * (shoulder - toe);
+}
+
+/**
+ * 安全平滑的色彩饱和度微调函数，带色彩边界软截断保护，
+ * 避免强饱和色彩在通道边缘发生溢出或异常翻转。
+ */
+export function adjustSaturation(
+  r: number,
+  g: number,
+  b: number,
+  factor: number,
+): [number, number, number] {
+  const lum = getLuminance(r, g, b);
+  let nr = lum + (r - lum) * factor;
+  let ng = lum + (g - lum) * factor;
+  let nb = lum + (b - lum) * factor;
+
+  nr = clamp01(nr);
+  ng = clamp01(ng);
+  nb = clamp01(nb);
+
+  return [nr, ng, nb];
+}
+
+/**
+ * 分区色调微调 (Shadows / Highlights Split Toning)
+ * 模拟胶片冲洗时的阴影冷暖调与高光暖调化学沉淀
+ */
+export function applySplitToning(
+  r: number,
+  g: number,
+  b: number,
+  lum: number,
+  shadowTint: [number, number, number],
+  highlightTint: [number, number, number],
+): [number, number, number] {
+  const shadowWeight = Math.pow(1 - lum, 1.8);
+  const highlightWeight = Math.pow(lum, 1.6);
+
+  const outR = r + shadowTint[0] * shadowWeight + highlightTint[0] * highlightWeight;
+  const outG = g + shadowTint[1] * shadowWeight + highlightTint[1] * highlightWeight;
+  const outB = b + shadowTint[2] * shadowWeight + highlightTint[2] * highlightWeight;
+
+  return [clamp01(outR), clamp01(outG), clamp01(outB)];
 }
 
 /**
@@ -99,110 +157,121 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
         let outG = g;
         let outB = b;
 
-        // 根据胶片预设施加非线性色彩与明度映射
+        // 根据胶片预设施加专业摄影级色彩与反差映射
         switch (presetId) {
           case 'kodak_portra_400': {
-            // 暖金高光与柔和微青暗阶，降低高光死白，提亮暗部
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            const curveR = sCurve(r, 1.25);
-            const curveG = sCurve(g, 1.22);
-            const curveB = sCurve(b, 1.30);
+            // Kodak Portra 400: 经典人像胶片，通透健康肤色，温暖高光，柔和暗部
+            const lum = getLuminance(r, g, b);
+            const [satR, satG, satB] = adjustSaturation(r, g, b, 1.05);
 
-            // 高光偏暖，暗部微青
-            outR = curveR * 1.05 + 0.02 * (1 - lum);
-            outG = curveG * 1.01 + 0.03 * (1 - lum);
-            outB = curveB * 0.92 + 0.06 * (1 - lum);
-            // 柔和暗部压缩
-            outR = 0.04 + outR * 0.94;
-            outG = 0.03 + outG * 0.95;
-            outB = 0.05 + outB * 0.92;
+            // 肖像柔和反差，保留高光与暗部细腻层次
+            const cr = filmCurve(satR, 1.12, 0.015, 0.995);
+            const cg = filmCurve(satG, 1.10, 0.012, 0.995);
+            const cb = filmCurve(satB, 1.14, 0.018, 0.990);
+
+            // 高光微暖琥珀金，暗部微青，肤色保护
+            const [tr, tg, tb] = applySplitToning(
+              cr, cg, cb, lum,
+              [-0.010, 0.008, 0.022],
+              [0.032, 0.016, -0.020],
+            );
+            outR = tr;
+            outG = tg;
+            outB = tb;
             break;
           }
 
           case 'fuji_classic_chrome': {
-            // 稍硬的阴影，平缓的中途阶，降低青绿高饱和
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            // 去饱和 15%
-            const desatR = lum + (r - lum) * 0.85;
-            const desatG = lum + (g - lum) * 0.80;
-            const desatB = lum + (b - lum) * 0.88;
+            // Fuji Classic Chrome: 纪实人文，低饱和度，坚实阴影，典雅青绿天际
+            const lum = getLuminance(r, g, b);
+            const [satR, satG, satB] = adjustSaturation(r, g, b, 0.86);
 
-            outR = sCurve(desatR, 1.45);
-            outG = sCurve(desatG, 1.40);
-            outB = sCurve(desatB, 1.35);
+            const cr = filmCurve(satR, 1.22, 0.005, 0.995);
+            const cg = filmCurve(satG, 1.20, 0.005, 0.995);
+            const cb = filmCurve(satB, 1.18, 0.008, 0.995);
 
-            // 富士特有的暗部偏青与高光微品红
-            outR = outR * 1.02;
-            outB = outB * 0.96 + (1 - lum) * 0.03;
+            // 富士特有经典暗部青碧与高光微温
+            const [tr, tg, tb] = applySplitToning(
+              cr, cg, cb, lum,
+              [-0.015, 0.018, 0.028],
+              [0.015, -0.005, -0.010],
+            );
+            outR = tr;
+            outG = tg;
+            outB = tb;
             break;
           }
 
           case 'ccd_vintage_digital': {
-            // 千禧年复古 CCD 传感器风格：浓郁原色油画质感、高饱和宝石蓝天与微透暖光
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            // 千禧年复古 CCD: 浓郁原色油画质感、透亮蓝天、温润泛光与微抬底阶
+            const lum = getLuminance(r, g, b);
+            const [satR, satG, satB] = adjustSaturation(r, g, b, 1.18);
 
-            // 1. 中阶与原色饱和度强化 (经典 CCD 标志性油画感原色)
-            const satR = lum + (r - lum) * 1.22;
-            const satG = lum + (g - lum) * 1.18;
-            const satB = lum + (b - lum) * 1.26;
+            const cr = filmCurve(satR, 1.22, 0.018, 0.995);
+            const cg = filmCurve(satG, 1.20, 0.016, 0.995);
+            const cb = filmCurve(satB, 1.24, 0.020, 0.990);
 
-            // 2. CCD 适度反差 S 曲线 (硬朗明暗与层次感)
-            const curveR = sCurve(satR, 1.34);
-            const curveG = sCurve(satG, 1.32);
-            const curveB = sCurve(satB, 1.36);
-
-            // 3. 高光温润奶白微暖泛光，阴影微冷净透
-            const highlightWeight = Math.pow(lum, 1.6);
-            const shadowWeight = Math.pow(1 - lum, 1.5);
-
-            outR = curveR + highlightWeight * 0.04;
-            outG = curveG + highlightWeight * 0.02;
-            outB = curveB - highlightWeight * 0.02 + shadowWeight * 0.03;
-
-            // 4. 黑平阶与微雾感：适度抬升暗部底阶 (黑位约 0.025)，还原经典卡片机氛围
-            outR = 0.025 + outR * 0.96;
-            outG = 0.022 + outG * 0.96;
-            outB = 0.030 + outB * 0.95;
+            // 高光温润暖白（模拟 CCD 过曝漫反射光晕），暗部微冷通透
+            const [tr, tg, tb] = applySplitToning(
+              cr, cg, cb, lum,
+              [-0.008, 0.005, 0.020],
+              [0.030, 0.018, -0.015],
+            );
+            outR = tr;
+            outG = tg;
+            outB = tb;
             break;
           }
 
           case 'wedding_pure_white': {
-            // 日系高调透亮：高光柔和泛白，消除黄色杂色，暗部透光
-            // 提亮中低调
-            const liftR = Math.pow(r, 0.88);
-            const liftG = Math.pow(g, 0.88);
-            const liftB = Math.pow(b, 0.86);
+            // 日系通透纯白: 高调明朗透明感，消除黄绿杂色，纯净透亮婚纱与元气肤质
+            const lum = getLuminance(r, g, b);
+            const liftR = Math.pow(Math.max(0, r), 0.94);
+            const liftG = Math.pow(Math.max(0, g), 0.94);
+            const liftB = Math.pow(Math.max(0, b), 0.92);
 
-            // 抑制黄绿色偏，赋予微粉透亮感
-            outR = liftR * 1.04;
-            outG = liftG * 1.01;
-            outB = liftB * 1.03;
-            // 提亮极暗阶
-            outR = 0.03 + outR * 0.97;
-            outG = 0.03 + outG * 0.97;
-            outB = 0.04 + outB * 0.96;
+            const cr = filmCurve(liftR, 1.08, 0.010, 0.998);
+            const cg = filmCurve(liftG, 1.06, 0.010, 0.998);
+            const cb = filmCurve(liftB, 1.08, 0.012, 1.000);
+
+            const [tr, tg, tb] = applySplitToning(
+              cr, cg, cb, lum,
+              [0.010, 0.005, 0.025],
+              [0.012, 0.010, 0.018],
+            );
+            outR = tr;
+            outG = tg;
+            outB = tb;
             break;
           }
 
           case 'cinematic_teal_orange': {
-            // 电影感：暗部推向青蓝 (Teal)，高光推向金黄橙 (Orange)
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            const contrast = sCurve(lum, 1.4);
-            const shadowWeight = Math.pow(1 - lum, 1.8);
-            const highlightWeight = Math.pow(lum, 1.5);
+            // 电影冷暖对冲: 深邃青蓝暗阶，琥珀金暖高光，中阶曝光中正，肤色保护
+            const lum = getLuminance(r, g, b);
 
-            // 暗部加青(降低R，增加B和G)
-            outR = r * contrast - shadowWeight * 0.08 + highlightWeight * 0.12;
-            outG = g * contrast + shadowWeight * 0.02 + highlightWeight * 0.05;
-            outB = b * contrast + shadowWeight * 0.14 - highlightWeight * 0.08;
+            const cr = filmCurve(r, 1.20, 0.005, 0.995);
+            const cg = filmCurve(g, 1.18, 0.005, 0.995);
+            const cb = filmCurve(b, 1.22, 0.005, 0.995);
+
+            // 肤色区间保护
+            const isSkin = r > g && g > b && lum > 0.25;
+            const skinShield = isSkin ? 0.35 : 1.0;
+
+            const [tr, tg, tb] = applySplitToning(
+              cr, cg, cb, lum,
+              [-0.055 * skinShield, 0.020 * skinShield, 0.065 * skinShield],
+              [0.055, 0.022, -0.045],
+            );
+            outR = tr;
+            outG = tg;
+            outB = tb;
             break;
           }
 
           case 'leica_monochrome': {
-            // 莱卡高反差黑白
-            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-            // 强 S 曲线压暗低光，强化中高光层次
-            const mono = sCurve(gray, 1.55);
+            // 莱卡高反差黑白: 全色阶加权与橙镜质感，深邃黑位，利落光影轮廓
+            const gray = 0.26 * r + 0.64 * g + 0.10 * b;
+            const mono = filmCurve(gray, 1.30, 0.002, 0.998);
             outR = mono;
             outG = mono;
             outB = mono;
@@ -210,34 +279,42 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
           }
 
           case 'kodak_ektar_100': {
-            // 浓郁色彩，强化红黄色系与蓝天饱和度
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            // 饱和度提升 25%
-            const satR = lum + (r - lum) * 1.25;
-            const satG = lum + (g - lum) * 1.20;
-            const satB = lum + (b - lum) * 1.28;
+            // Kodak Ektar 100: 风光大片浓郁色彩，高饱和，高透亮蓝天与落日红霞
+            const lum = getLuminance(r, g, b);
+            const [satR, satG, satB] = adjustSaturation(r, g, b, 1.20);
 
-            outR = sCurve(satR, 1.32);
-            outG = sCurve(satG, 1.30);
-            outB = sCurve(satB, 1.32);
+            const cr = filmCurve(satR, 1.24, 0.002, 0.998);
+            const cg = filmCurve(satG, 1.22, 0.002, 0.998);
+            const cb = filmCurve(satB, 1.25, 0.002, 0.998);
+
+            const [tr, tg, tb] = applySplitToning(
+              cr, cg, cb, lum,
+              [-0.010, 0.005, 0.025],
+              [0.025, 0.010, -0.015],
+            );
+            outR = tr;
+            outG = tg;
+            outB = tb;
             break;
           }
 
           case 'nordic_clean': {
-            // 北欧极简冷白：降饱和，轻微偏冷，极净通透
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            const desat = lum + (r - lum) * 0.78;
-            const desatG = lum + (g - lum) * 0.80;
-            const desatB = lum + (b - lum) * 0.84;
+            // 北欧极简冷白: 清冷纯净，克制低饱和，高光冷白，静谧质感
+            const lum = getLuminance(r, g, b);
+            const [satR, satG, satB] = adjustSaturation(r, g, b, 0.82);
 
-            // 轻微冷调微偏
-            outR = desat * 0.98;
-            outG = desatG * 0.99;
-            outB = desatB * 1.04;
-            // 轻提阴影，微压纯白
-            outR = 0.02 + outR * 0.96;
-            outG = 0.02 + outG * 0.96;
-            outB = 0.03 + outB * 0.96;
+            const cr = filmCurve(satR, 1.12, 0.008, 0.996);
+            const cg = filmCurve(satG, 1.10, 0.008, 0.996);
+            const cb = filmCurve(satB, 1.14, 0.010, 0.996);
+
+            const [tr, tg, tb] = applySplitToning(
+              cr, cg, cb, lum,
+              [-0.010, 0.000, 0.018],
+              [-0.012, 0.004, 0.022],
+            );
+            outR = tr;
+            outG = tg;
+            outB = tb;
             break;
           }
 
