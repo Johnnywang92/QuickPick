@@ -1,4 +1,4 @@
-import { FrameConfig, PhotoAdjustments, WatermarkConfig } from '../types/adjust';
+import { CustomFrameTemplate, FrameConfig, PhotoAdjustments, WatermarkConfig } from '../types/adjust';
 import { LocalPhoto } from '../types/photo';
 import { isAdjustmentsNoop } from './adjustEngine';
 import { applyWatermarkToCanvas } from './watermarkRenderer';
@@ -9,6 +9,23 @@ export interface FrameLutConfig {
   lutId: string | null;
   intensity: number;
   customData?: { size: number; data: Uint8Array } | null;
+}
+
+/**
+ * 判断十六进制颜色是否属于深色系
+ */
+export function isColorDark(hexColor: string): boolean {
+  if (!hexColor) return false;
+  let hex = hexColor.replace(/^#/, '').trim();
+  if (hex.length === 3) {
+    hex = hex.split('').map((c) => c + c).join('');
+  }
+  if (hex.length !== 6) return false;
+  const r = parseInt(hex.substring(0, 2), 16) || 0;
+  const g = parseInt(hex.substring(2, 4), 16) || 0;
+  const b = parseInt(hex.substring(4, 6), 16) || 0;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum < 140;
 }
 
 /**
@@ -131,12 +148,13 @@ export function formatExifStrings(photo: LocalPhoto, config: FrameConfig): {
  */
 export function drawPhotographicBadge(
   ctx: CanvasRenderingContext2D,
-  badgeType: 'aperture' | 'rangefinder' | 'amber_lens' | 'cinema' | 'camera',
+  badgeType: 'aperture' | 'rangefinder' | 'amber_lens' | 'cinema' | 'camera' | 'none',
   x: number,
   y: number,
   size: number,
   isDark: boolean,
 ) {
+  if (badgeType === 'none') return;
   ctx.save();
   ctx.translate(x, y);
 
@@ -375,6 +393,7 @@ export async function renderFramedPhotoCanvas(
   maxEdge = 2560,
   watermarkConfig?: WatermarkConfig,
   lutConfig?: FrameLutConfig,
+  customTemplates?: CustomFrameTemplate[],
 ): Promise<HTMLCanvasElement> {
   // 1. 规范化缩放
   let photoW = sourceWidth;
@@ -428,7 +447,12 @@ export async function renderFramedPhotoCanvas(
 
   // 3. 模板版式与画布几何计算
   const template = config.template;
-  const borderScale = Math.max(0.06, Math.min(config.borderScale || 0.1, 0.18));
+  const customTpl = customTemplates?.find((t) => t.id === template);
+
+  let borderScale = Math.max(0.06, Math.min(config.borderScale || 0.1, 0.18));
+  if (customTpl && customTpl.borderScale && !config.borderScale) {
+    borderScale = Math.max(0.06, Math.min(customTpl.borderScale, 0.18));
+  }
   const longEdge = Math.max(adjustedPhotoW, adjustedPhotoH);
 
   let canvasW = adjustedPhotoW;
@@ -442,9 +466,44 @@ export async function renderFramedPhotoCanvas(
 
   // 规范化别名
   const isClassicWhite = template === 'classic_white' || template === 'leica_white';
-  const isPolaroid = template === 'retro_polaroid' || template === 'polaroid';
+  const isPolaroid =
+    template === 'retro_polaroid' ||
+    template === 'polaroid' ||
+    customTpl?.baseLayout === 'polaroid';
+  const isCinematic =
+    template === 'cinematic_scope' || customTpl?.baseLayout === 'cinematic';
+  const isOverlayBadge =
+    template === 'overlay_badge' || customTpl?.baseLayout === 'overlay_badge';
+  const isBottomBar =
+    isClassicWhite ||
+    template === 'obsidian_black' ||
+    template === 'amber_minimal' ||
+    customTpl?.baseLayout === 'bottom_bar' ||
+    (!isPolaroid && !isCinematic && !isOverlayBadge);
 
-  if (isClassicWhite) {
+  if (customTpl) {
+    bgColor = customTpl.bgColor || '#FFFFFF';
+    isDark = customTpl.isDark !== undefined ? customTpl.isDark : isColorDark(bgColor);
+    if (customTpl.baseLayout === 'bottom_bar') {
+      bottomBarH = Math.round(longEdge * borderScale);
+      canvasH = adjustedPhotoH + bottomBarH;
+    } else if (customTpl.baseLayout === 'cinematic') {
+      topBarH = Math.round(longEdge * 0.08);
+      bottomBarH = Math.round(longEdge * 0.1);
+      canvasH = adjustedPhotoH + topBarH + bottomBarH;
+      photoY = topBarH;
+    } else if (customTpl.baseLayout === 'polaroid') {
+      const sideMargin = Math.round(longEdge * 0.045);
+      bottomBarH = Math.round(longEdge * (borderScale + 0.05));
+      canvasW = adjustedPhotoW + sideMargin * 2;
+      canvasH = adjustedPhotoH + sideMargin + bottomBarH;
+      photoX = sideMargin;
+      photoY = sideMargin;
+    } else if (customTpl.baseLayout === 'overlay_badge') {
+      canvasW = adjustedPhotoW;
+      canvasH = adjustedPhotoH;
+    }
+  } else if (isClassicWhite) {
     bottomBarH = Math.round(longEdge * borderScale);
     canvasH = adjustedPhotoH + bottomBarH;
     isDark = false;
@@ -492,7 +551,7 @@ export async function renderFramedPhotoCanvas(
   }
 
   // 绘制底色
-  if (template !== 'overlay_badge') {
+  if (!isOverlayBadge) {
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvasW, canvasH);
   }
@@ -513,14 +572,21 @@ export async function renderFramedPhotoCanvas(
     formatExifStrings(photo, config);
 
   // 6. 各版式细节排版与徽标绘制
-  if (isClassicWhite || template === 'obsidian_black' || template === 'amber_minimal') {
+  if (isBottomBar) {
     const barTop = adjustedPhotoH;
     const paddingX = Math.round(canvasW * 0.04);
     const centerY = barTop + bottomBarH * 0.5;
 
     // 优雅分隔微弱细线
     if (!isDark) {
-      ctx.strokeStyle = template === 'amber_minimal' ? '#E5E7EB' : '#F1F5F9';
+      ctx.strokeStyle = template === 'amber_minimal' ? '#E5E7EB' : 'rgba(0, 0, 0, 0.06)';
+      ctx.lineWidth = Math.max(1, Math.round(bottomBarH * 0.008));
+      ctx.beginPath();
+      ctx.moveTo(0, barTop);
+      ctx.lineTo(canvasW, barTop);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.lineWidth = Math.max(1, Math.round(bottomBarH * 0.008));
       ctx.beginPath();
       ctx.moveTo(0, barTop);
@@ -532,16 +598,24 @@ export async function renderFramedPhotoCanvas(
     const badgeX = paddingX;
     const badgeY = centerY - badgeSize * 0.5;
 
-    const badgeType =
-      template === 'amber_minimal'
-        ? 'amber_lens'
-        : isClassicWhite
-        ? 'aperture'
-        : 'rangefinder';
+    const badgeType = customTpl
+      ? customTpl.badgeType
+      : template === 'amber_minimal'
+      ? 'amber_lens'
+      : isClassicWhite
+      ? 'aperture'
+      : template === 'obsidian_black'
+      ? 'rangefinder'
+      : 'camera';
 
-    drawPhotographicBadge(ctx, badgeType, badgeX, badgeY, badgeSize, isDark);
+    if (badgeType !== 'none') {
+      drawPhotographicBadge(ctx, badgeType, badgeX, badgeY, badgeSize, isDark);
+    }
 
-    const textStartX = badgeX + badgeSize + Math.round(bottomBarH * 0.16);
+    const textStartX =
+      badgeType === 'none'
+        ? paddingX
+        : badgeX + badgeSize + Math.round(bottomBarH * 0.16);
     const mainFontSize = Math.max(13, Math.round(bottomBarH * 0.23));
     const subFontSize = Math.max(10, Math.round(bottomBarH * 0.16));
 
@@ -581,23 +655,30 @@ export async function renderFramedPhotoCanvas(
       ctx.font = `normal ${subFontSize}px "SF Mono", Menlo, monospace`;
       ctx.fillText(dateString, rightX, centerY + bottomBarH * 0.24);
     }
-  } else if (template === 'cinematic_scope') {
-    // 电影胶片宽荧幕排版 (Cinematic Scope 2.39:1)
+  } else if (isCinematic) {
+    // 电影胶片宽荧幕排版 (Cinematic Scope)
     const paddingX = Math.round(canvasW * 0.04);
     const centerY = photoY + adjustedPhotoH + bottomBarH * 0.5;
 
-    // 左侧：电影底片编号与画幅提示
+    // 左侧徽标与标题
     const badgeSize = Math.round(bottomBarH * 0.35);
-    drawPhotographicBadge(ctx, 'cinema', paddingX, centerY - badgeSize * 0.5, badgeSize, true);
+    const badgeType = customTpl ? customTpl.badgeType : 'cinema';
+    if (badgeType !== 'none') {
+      drawPhotographicBadge(ctx, badgeType, paddingX, centerY - badgeSize * 0.5, badgeSize, isDark);
+    }
 
-    const textStartX = paddingX + badgeSize * 1.35;
+    const textStartX = badgeType === 'none' ? paddingX : paddingX + badgeSize * 1.35;
     ctx.textAlign = 'left';
 
-    ctx.fillStyle = '#F59E0B'; // 经典暖金
+    ctx.fillStyle = isDark ? '#F59E0B' : '#D97706';
     ctx.font = `bold ${Math.max(11, Math.round(bottomBarH * 0.2))}px "SF Mono", monospace`;
-    ctx.fillText('CINEMASCOPE 2.39:1', textStartX, centerY - bottomBarH * 0.08);
+    ctx.fillText(
+      customTpl ? customTpl.name.toUpperCase() : 'CINEMASCOPE 2.39:1',
+      textStartX,
+      centerY - bottomBarH * 0.08,
+    );
 
-    ctx.fillStyle = '#94A3B8';
+    ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
     ctx.font = `normal ${Math.max(10, Math.round(bottomBarH * 0.16))}px -apple-system, sans-serif`;
     const cineSub = [cameraTitle, lensTitle, photographerText].filter(Boolean).join('  ·  ');
     ctx.fillText(cineSub || 'ANALOG 35MM MOTION PICTURE', textStartX, centerY + bottomBarH * 0.22);
@@ -607,13 +688,13 @@ export async function renderFramedPhotoCanvas(
     ctx.textAlign = 'right';
 
     if (config.showParams && paramsString) {
-      ctx.fillStyle = '#F8FAFC';
+      ctx.fillStyle = isDark ? '#F8FAFC' : '#1E293B';
       ctx.font = `500 ${Math.max(11, Math.round(bottomBarH * 0.2))}px "SF Mono", monospace`;
       ctx.fillText(paramsString, rightX, centerY - bottomBarH * 0.08);
     }
 
     if (config.showDate && dateString) {
-      ctx.fillStyle = '#64748B';
+      ctx.fillStyle = isDark ? '#64748B' : '#94A3B8';
       ctx.font = `normal ${Math.max(10, Math.round(bottomBarH * 0.15))}px "SF Mono", monospace`;
       ctx.fillText(dateString, rightX, centerY + bottomBarH * 0.22);
     }
@@ -627,18 +708,18 @@ export async function renderFramedPhotoCanvas(
     const subFontSize = Math.max(11, Math.round(bottomBarH * 0.16));
 
     // 拍立得复古暖黑衬线字体
-    ctx.fillStyle = '#1E293B';
+    ctx.fillStyle = isDark ? '#F8FAFC' : '#1E293B';
     ctx.font = `600 ${mainFontSize}px Georgia, "Times New Roman", serif`;
     const title = photographerText || cameraTitle;
     ctx.fillText(title, paddingX, centerY - bottomBarH * 0.05);
 
     const subDetails = [lensTitle, paramsString, dateString].filter(Boolean).join('   ·   ');
     if (subDetails) {
-      ctx.fillStyle = '#64748B';
+      ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
       ctx.font = `normal ${subFontSize}px "SF Mono", monospace, sans-serif`;
       ctx.fillText(subDetails, paddingX, centerY + bottomBarH * 0.22);
     }
-  } else if (template === 'overlay_badge') {
+  } else if (isOverlayBadge) {
     const badgePadX = Math.round(canvasW * 0.035);
     const badgePadY = Math.round(canvasH * 0.035);
     const pillH = Math.max(38, Math.round(longEdge * 0.038));
@@ -653,15 +734,15 @@ export async function renderFramedPhotoCanvas(
     const pillY = canvasH - badgePadY - pillH;
 
     // 磨砂玻璃质感胶囊
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.88)';
+    ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.12)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.roundRect(pillX, pillY, pillW, pillH, pillH * 0.5);
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = isDark ? '#FFFFFF' : '#0F172A';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(displayParams, pillX + pillPad, pillY + pillH * 0.5);

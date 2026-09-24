@@ -73,4 +73,50 @@ describe('adjustStore', () => {
     expect(useAdjustStore.getState().getPhotoAdjustments('p1').exposure).toBe(-0.5);
     expect(useAdjustStore.getState().getPhotoAdjustments('p2').exposure).toBe(-0.5);
   });
+
+  it('manages custom frame templates lifecycle (save, apply, update, remove)', () => {
+    const initialCount = useAdjustStore.getState().customTemplates.length;
+    expect(initialCount).toBeGreaterThanOrEqual(1);
+
+    // 1. 创建自定义模板
+    const created = useAdjustStore.getState().saveCustomTemplate({
+      name: '哈苏米黄纸',
+      baseLayout: 'bottom_bar',
+      bgColor: '#F4EDE4',
+      badgeType: 'amber_lens',
+      borderScale: 0.14,
+      showCameraModel: true,
+      showLens: true,
+      showParams: true,
+      showDate: false,
+    });
+
+    expect(created.id).toContain('custom_');
+    expect(useAdjustStore.getState().customTemplates.length).toBe(initialCount + 1);
+
+    // 2. 应用模板
+    useAdjustStore.getState().applyCustomTemplate(created.id);
+    expect(useAdjustStore.getState().frameConfig.template).toBe(created.id);
+    expect(useAdjustStore.getState().frameConfig.borderScale).toBe(0.14);
+    expect(useAdjustStore.getState().frameConfig.showDate).toBe(false);
+
+    // 3. 更新模板
+    useAdjustStore.getState().updateCustomTemplate(created.id, {
+      name: '哈苏米黄纸 (改)',
+      borderScale: 0.16,
+    });
+    const updated = useAdjustStore.getState().customTemplates.find((t) => t.id === created.id);
+    expect(updated?.name).toBe('哈苏米黄纸 (改)');
+    expect(updated?.borderScale).toBe(0.16);
+
+    // 4. 保存当前配置为模板
+    const fromCurrent = useAdjustStore.getState().saveCurrentAsTemplate('从当前生成');
+    expect(fromCurrent.name).toBe('从当前生成');
+    expect(useAdjustStore.getState().frameConfig.template).toBe(fromCurrent.id);
+
+    // 5. 删除模板并验证重置
+    useAdjustStore.getState().removeCustomTemplate(fromCurrent.id);
+    expect(useAdjustStore.getState().customTemplates.find((t) => t.id === fromCurrent.id)).toBeUndefined();
+    expect(useAdjustStore.getState().frameConfig.template).toBe('classic_white');
+  });
 });

@@ -1,6 +1,6 @@
 export type WorkbenchTab = 'adjust' | 'lut' | 'frame' | 'watermark';
 
-export type FrameTemplate =
+export type BuiltinFrameTemplate =
   | 'classic_white'
   | 'leica_white'
   | 'obsidian_black'
@@ -9,6 +9,30 @@ export type FrameTemplate =
   | 'retro_polaroid'
   | 'polaroid'
   | 'overlay_badge';
+
+export type FrameTemplate = BuiltinFrameTemplate | (string & {});
+
+export type CustomFrameLayout = 'bottom_bar' | 'polaroid' | 'cinematic' | 'overlay_badge';
+export type CustomBadgeType = 'aperture' | 'rangefinder' | 'amber_lens' | 'cinema' | 'camera' | 'none';
+
+export interface CustomFrameTemplate {
+  id: string;
+  name: string;
+  desc?: string;
+  baseLayout: CustomFrameLayout;
+  bgColor: string;             // 十六进制颜色代码，例如 #FFFFFF, #0F1013, #F4EDE4
+  isDark?: boolean;            // 是否深色排版底色（若未指定按背景色亮度判定）
+  badgeType: CustomBadgeType;  // 摄影徽标风格
+  borderScale: number;         // 边框留白比例 (0.06 ~ 0.18)
+  showCameraModel: boolean;
+  showLens: boolean;
+  showParams: boolean;
+  showDate: boolean;
+  customPhotographer?: string;
+  customCameraModel?: string;
+  customLens?: string;
+  createdAt: number;
+}
 
 export interface PhotoAdjustments {
   exposure: number;          // 曝光补偿 (-3.0 ~ +3.0 EV, 默认 0)

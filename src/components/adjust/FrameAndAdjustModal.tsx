@@ -7,10 +7,17 @@ import {
   renderFramedPhotoCanvas,
   copyCanvasToClipboard,
   downloadCanvasAsImage,
+  isColorDark,
 } from '../../utils/frameRenderer';
 import { calculateAutoTone } from '../../utils/autoTone';
 import { isAdjustmentsNoop } from '../../utils/adjustEngine';
-import { FrameTemplate, DEFAULT_ADJUSTMENTS } from '../../types/adjust';
+import {
+  FrameTemplate,
+  DEFAULT_ADJUSTMENTS,
+  CustomFrameTemplate,
+  CustomFrameLayout,
+  CustomBadgeType,
+} from '../../types/adjust';
 import {
   X,
   Sliders,
@@ -34,6 +41,8 @@ import {
   Grid3X3,
   Film,
   Upload,
+  Plus,
+  Palette,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { shareCustomImagesViaAirDrop } from '../../services/tauriBridge';
@@ -48,6 +57,10 @@ export const FrameAndAdjustModal: React.FC = () => {
     setActiveTab,
     frameConfig,
     updateFrameConfig,
+    customTemplates,
+    saveCustomTemplate,
+    removeCustomTemplate,
+    applyCustomTemplate,
     setPhotoAdjustments,
     resetPhotoAdjustments,
     batchApplyAdjustments,
@@ -108,6 +121,14 @@ export const FrameAndAdjustModal: React.FC = () => {
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
 
+  // 自定义相框模板创建与编辑状态
+  const [isCreatingCustomTpl, setIsCreatingCustomTpl] = useState(false);
+  const [customTplName, setCustomTplName] = useState('');
+  const [customTplLayout, setCustomTplLayout] = useState<CustomFrameLayout>('bottom_bar');
+  const [customTplBgColor, setCustomTplBgColor] = useState('#FFFFFF');
+  const [customTplBadgeType, setCustomTplBadgeType] = useState<CustomBadgeType>('aperture');
+  const [customTplBorderScale, setCustomTplBorderScale] = useState(0.1);
+
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const splitBeforeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const currentRenderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -120,6 +141,82 @@ export const FrameAndAdjustModal: React.FC = () => {
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 2400);
   }, []);
+
+  const handleStartCreateCustomTpl = () => {
+    const cur = frameConfig.template;
+    const isPolaroid = cur === 'retro_polaroid' || cur === 'polaroid';
+    const isCinema = cur === 'cinematic_scope';
+    const isOverlay = cur === 'overlay_badge';
+    const activeCustom = customTemplates.find((t) => t.id === cur);
+
+    const layout: CustomFrameLayout = activeCustom
+      ? activeCustom.baseLayout
+      : isCinema
+      ? 'cinematic'
+      : isPolaroid
+      ? 'polaroid'
+      : isOverlay
+      ? 'overlay_badge'
+      : 'bottom_bar';
+
+    const bg: string = activeCustom
+      ? activeCustom.bgColor
+      : cur === 'obsidian_black'
+      ? '#0F1013'
+      : cur === 'amber_minimal'
+      ? '#FBFBFA'
+      : cur === 'cinematic_scope'
+      ? '#08080A'
+      : cur === 'retro_polaroid' || cur === 'polaroid'
+      ? '#F9F9F6'
+      : '#FFFFFF';
+
+    const badge: CustomBadgeType = activeCustom
+      ? activeCustom.badgeType
+      : cur === 'amber_minimal'
+      ? 'amber_lens'
+      : cur === 'obsidian_black'
+      ? 'rangefinder'
+      : cur === 'cinematic_scope'
+      ? 'cinema'
+      : 'aperture';
+
+    setCustomTplName(`自定义相框 ${customTemplates.length + 1}`);
+    setCustomTplLayout(layout);
+    setCustomTplBgColor(bg);
+    setCustomTplBadgeType(badge);
+    setCustomTplBorderScale(frameConfig.borderScale || 0.1);
+    setIsCreatingCustomTpl(true);
+  };
+
+  const handleConfirmCreateCustomTpl = () => {
+    const name = customTplName.trim() || `自定义相框 ${customTemplates.length + 1}`;
+    const newTpl = saveCustomTemplate({
+      name,
+      baseLayout: customTplLayout,
+      bgColor: customTplBgColor,
+      badgeType: customTplBadgeType,
+      borderScale: customTplBorderScale,
+      showCameraModel: frameConfig.showCameraModel,
+      showLens: frameConfig.showLens,
+      showParams: frameConfig.showParams,
+      showDate: frameConfig.showDate,
+      customPhotographer: frameConfig.customPhotographer,
+      customCameraModel: frameConfig.customCameraModel,
+      customLens: frameConfig.customLens,
+    });
+    applyCustomTemplate(newTpl.id);
+    setIsCreatingCustomTpl(false);
+    showToast(`已成功保存自定义相框模板「${newTpl.name}」并应用`);
+  };
+
+  const handleDeleteCustomTpl = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
+    if (window.confirm(`确定要删除自定义相框模板「${name}」吗？`)) {
+      removeCustomTemplate(id);
+      showToast(`已删除相框模板「${name}」`);
+    }
+  };
 
   const handleCubeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -217,6 +314,7 @@ export const FrameAndAdjustModal: React.FC = () => {
           1600,
           isComparingBefore ? undefined : watermarkConfig,
           effectiveLutConfig,
+          customTemplates,
         );
 
         if (isCancelled) return;
@@ -244,6 +342,8 @@ export const FrameAndAdjustModal: React.FC = () => {
             { ...DEFAULT_ADJUSTMENTS, rotation: photoAdjustments.rotation },
             1600,
             undefined,
+            undefined,
+            customTemplates,
           );
           if (isCancelled) return;
           const beforeTarget = splitBeforeCanvasRef.current;
@@ -304,6 +404,7 @@ export const FrameAndAdjustModal: React.FC = () => {
     effectiveLutId,
     effectiveLutIntensity,
     getCustomLutData,
+    customTemplates,
   ]);
 
   // 分屏拖拽交互计算
@@ -358,6 +459,7 @@ export const FrameAndAdjustModal: React.FC = () => {
             intensity: effectiveLutIntensity,
             customData: effectiveLutId ? getCustomLutData(effectiveLutId) : null,
           },
+          customTemplates,
         );
       }
       if (currentRenderedCanvasRef.current) {
@@ -373,6 +475,7 @@ export const FrameAndAdjustModal: React.FC = () => {
       effectiveLutId,
       effectiveLutIntensity,
       getCustomLutData,
+      customTemplates,
     ],
   );
 
@@ -664,6 +767,118 @@ export const FrameAndAdjustModal: React.FC = () => {
     },
   ];
 
+  const renderCustomMockup = (t: CustomFrameTemplate) => {
+    const isDark = t.isDark !== undefined ? t.isDark : isColorDark(t.bgColor);
+    const badgeColor =
+      t.badgeType === 'aperture'
+        ? '#E11D48'
+        : t.badgeType === 'amber_lens'
+        ? '#D97706'
+        : t.badgeType === 'cinema'
+        ? '#F59E0B'
+        : isDark
+        ? '#94A3B8'
+        : '#475569';
+
+    if (t.baseLayout === 'polaroid') {
+      return (
+        <div
+          className="w-full h-11 rounded border border-dark-650 flex flex-col overflow-hidden p-1 shadow-xs"
+          style={{ backgroundColor: t.bgColor }}
+        >
+          <div className="flex-1 bg-dark-800 rounded-[1px]" />
+          <div className="h-2 flex items-center justify-between pt-0.5 px-0.5">
+            <span
+              className="w-5 h-0.5 rounded"
+              style={{ backgroundColor: isDark ? '#E2E8F0' : '#475569' }}
+            />
+            <span
+              className="w-4 h-0.5 rounded"
+              style={{ backgroundColor: isDark ? '#64748B' : '#94A3B8' }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (t.baseLayout === 'cinematic') {
+      return (
+        <div
+          className="w-full h-11 rounded border border-dark-650 flex flex-col overflow-hidden shadow-xs"
+          style={{ backgroundColor: t.bgColor }}
+        >
+          <div className="h-1.5" style={{ backgroundColor: t.bgColor }} />
+          <div className="flex-1 bg-dark-700 mx-1 rounded-[1px]" />
+          <div
+            className="h-3 px-1 flex items-center justify-between"
+            style={{ backgroundColor: t.bgColor }}
+          >
+            {t.badgeType !== 'none' && (
+              <span className="w-5 h-0.5 rounded" style={{ backgroundColor: badgeColor }} />
+            )}
+            <span
+              className="w-6 h-0.5 rounded"
+              style={{ backgroundColor: isDark ? '#CBD5E1' : '#475569' }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (t.baseLayout === 'overlay_badge') {
+      return (
+        <div className="w-full h-11 rounded border border-dark-650 relative overflow-hidden bg-dark-800 shadow-xs">
+          <div
+            className="absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 flex items-center space-x-1"
+            style={{
+              backgroundColor: isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+              border: isDark
+                ? '1px solid rgba(255,255,255,0.3)'
+                : '1px solid rgba(0,0,0,0.15)',
+            }}
+          >
+            <span
+              className="w-3 h-0.5 rounded"
+              style={{ backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }}
+            />
+            <span
+              className="w-4 h-0.5 rounded"
+              style={{ backgroundColor: isDark ? '#94A3B8' : '#64748B' }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    // bottom_bar
+    return (
+      <div
+        className="w-full h-11 rounded border border-dark-650 flex flex-col overflow-hidden shadow-xs"
+        style={{ backgroundColor: t.bgColor }}
+      >
+        <div className="flex-1 bg-dark-800 m-1 rounded-[2px]" />
+        <div
+          className="h-3 px-1.5 flex items-center justify-between"
+          style={{ backgroundColor: t.bgColor }}
+        >
+          <div className="flex items-center space-x-1">
+            {t.badgeType !== 'none' && (
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: badgeColor }} />
+            )}
+            <span
+              className="w-4 h-0.5 rounded"
+              style={{ backgroundColor: isDark ? '#E2E8F0' : '#1E293B' }}
+            />
+          </div>
+          <span
+            className="w-6 h-0.5 rounded"
+            style={{ backgroundColor: isDark ? '#94A3B8' : '#64748B' }}
+          />
+        </div>
+      </div>
+    );
+  };
+
   const isOriginalActive = isAdjustmentsNoop(photoAdjustments) && !effectiveLutId;
   const isWarmActive =
     photoAdjustments.exposure === 0.3 &&
@@ -937,6 +1152,252 @@ export const FrameAndAdjustModal: React.FC = () => {
                           </button>
                         );
                       })}
+                    </div>
+
+                    {/* 自定义相框模板 */}
+                    <div className="mt-4 pt-3 border-t border-dark-750">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-xs font-bold text-slate-300">
+                            自定义相框模板
+                          </label>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-dark-700 text-slate-400">
+                            {customTemplates.length}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleStartCreateCustomTpl}
+                          className="flex items-center gap-1 text-[11px] font-medium text-brand-400 hover:text-brand-300 px-2 py-1 rounded-md bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>保存为新模板</span>
+                        </button>
+                      </div>
+
+                      {/* 创建新自定义模板弹层面板 */}
+                      {isCreatingCustomTpl && (
+                        <div className="mb-3.5 p-3 rounded-xl border border-brand-500/30 bg-dark-800/95 shadow-xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Palette className="w-3.5 h-3.5 text-brand-400" />
+                              新建自定义相框模板
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setIsCreatingCustomTpl(false)}
+                              className="text-slate-400 hover:text-slate-200 p-0.5 rounded cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* 模板名称 */}
+                          <div>
+                            <label className="text-[11px] text-slate-400 block mb-1">模板名称</label>
+                            <input
+                              type="text"
+                              value={customTplName}
+                              onChange={(e) => setCustomTplName(e.target.value)}
+                              placeholder="例如：典雅暖纸画廊"
+                              className="w-full rounded-lg bg-dark-900 border border-dark-650 px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:border-brand-500 focus:outline-none"
+                            />
+                          </div>
+
+                          {/* 版式类型 */}
+                          <div>
+                            <label className="text-[11px] text-slate-400 block mb-1">基础排版结构</label>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {(
+                                [
+                                  { id: 'bottom_bar', label: '标准底栏' },
+                                  { id: 'polaroid', label: '复古相纸' },
+                                  { id: 'cinematic', label: '电影宽幅' },
+                                  { id: 'overlay_badge', label: '悬浮角标' },
+                                ] as const
+                              ).map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => setCustomTplLayout(item.id)}
+                                  className={clsx(
+                                    'py-1.5 px-2 rounded-lg text-[11px] font-medium border text-center transition-all cursor-pointer',
+                                    customTplLayout === item.id
+                                      ? 'border-brand-500 bg-brand-500/20 text-brand-300'
+                                      : 'border-dark-700 bg-dark-900/60 text-slate-400 hover:text-slate-200',
+                                  )}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 背景底色 */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[11px] text-slate-400">相框背景底色</label>
+                              <span className="font-mono text-[10px] text-slate-400">{customTplBgColor}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {[
+                                '#FFFFFF',
+                                '#FBFBFA',
+                                '#F4EDE4',
+                                '#E2E8F0',
+                                '#1E293B',
+                                '#0F1013',
+                                '#0D1F2D',
+                                '#1F0D15',
+                              ].map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => setCustomTplBgColor(c)}
+                                  className={clsx(
+                                    'w-6 h-6 rounded-full border transition-transform cursor-pointer',
+                                    customTplBgColor.toUpperCase() === c.toUpperCase()
+                                      ? 'ring-2 ring-brand-500 ring-offset-1 ring-offset-dark-800 scale-110'
+                                      : 'border-dark-600 hover:scale-105',
+                                  )}
+                                  style={{ backgroundColor: c }}
+                                  title={c}
+                                />
+                              ))}
+                              {/* 任意色拾色器 */}
+                              <label className="relative w-6 h-6 rounded-full border border-dark-600 bg-dark-900 flex items-center justify-center cursor-pointer hover:border-slate-400 overflow-hidden">
+                                <input
+                                  type="color"
+                                  value={customTplBgColor}
+                                  onChange={(e) => setCustomTplBgColor(e.target.value)}
+                                  className="absolute opacity-0 w-full h-full cursor-pointer"
+                                />
+                                <Palette className="w-3 h-3 text-slate-400" />
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* 徽标风格 */}
+                          <div>
+                            <label className="text-[11px] text-slate-400 block mb-1">摄影徽标风格</label>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {(
+                                [
+                                  { id: 'aperture', label: '绯红光圈' },
+                                  { id: 'amber_lens', label: '琥珀刻度' },
+                                  { id: 'rangefinder', label: '旁轴取景' },
+                                  { id: 'cinema', label: '35mm胶片' },
+                                  { id: 'camera', label: '几何微单' },
+                                  { id: 'none', label: '无徽标' },
+                                ] as const
+                              ).map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => setCustomTplBadgeType(item.id)}
+                                  className={clsx(
+                                    'py-1 px-1.5 rounded-lg text-[10px] font-medium border text-center transition-all cursor-pointer truncate',
+                                    customTplBadgeType === item.id
+                                      ? 'border-brand-500 bg-brand-500/20 text-brand-300'
+                                      : 'border-dark-700 bg-dark-900/60 text-slate-400 hover:text-slate-200',
+                                  )}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 留白比例 */}
+                          {customTplLayout !== 'overlay_badge' && (
+                            <div>
+                              <div className="flex justify-between text-[11px] mb-1">
+                                <span className="text-slate-400">留白厚度</span>
+                                <span className="font-mono text-brand-400">
+                                  {Math.round(customTplBorderScale * 100)}%
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0.06"
+                                max="0.16"
+                                step="0.01"
+                                value={customTplBorderScale}
+                                onChange={(e) => setCustomTplBorderScale(parseFloat(e.target.value))}
+                                className="w-full accent-brand-500 cursor-pointer"
+                              />
+                            </div>
+                          )}
+
+                          {/* 确认与取消操作 */}
+                          <div className="flex items-center justify-end gap-2 pt-1 border-t border-dark-700">
+                            <button
+                              type="button"
+                              onClick={() => setIsCreatingCustomTpl(false)}
+                              className="px-2.5 py-1 rounded-lg text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                            >
+                              取消
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleConfirmCreateCustomTpl}
+                              className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-[11px] font-bold shadow transition-colors cursor-pointer"
+                            >
+                              保存并应用
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 自定义模板列表 */}
+                      {customTemplates.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {customTemplates.map((t) => {
+                            const isSelected = frameConfig.template === t.id;
+                            return (
+                              <div
+                                key={t.id}
+                                onClick={() => applyCustomTemplate(t.id)}
+                                className={clsx(
+                                  'group relative flex flex-col p-2.5 rounded-xl border text-left transition-all cursor-pointer select-none',
+                                  isSelected
+                                    ? 'border-brand-500 bg-brand-500/10 shadow-md ring-1 ring-brand-500/30'
+                                    : 'border-dark-700 bg-dark-800/70 hover:border-dark-600 hover:bg-dark-800',
+                                )}
+                              >
+                                {/* 实时微缩排版图 */}
+                                <div className="mb-2 w-full">{renderCustomMockup(t)}</div>
+
+                                <div className="flex items-center justify-between w-full mb-1">
+                                  <span className="text-xs font-bold text-slate-200 group-hover:text-white flex items-center gap-1.5 truncate">
+                                    <span className="truncate">{t.name}</span>
+                                  </span>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {isSelected && (
+                                      <Check className="h-3.5 w-3.5 text-brand-400 stroke-[3]" />
+                                    )}
+                                    <button
+                                      type="button"
+                                      title="删除此模板"
+                                      onClick={(e) => handleDeleteCustomTpl(e, t.id, t.name)}
+                                      className="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-0.5 rounded text-slate-500 transition-opacity cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
+                                  {t.desc || `${t.baseLayout === 'polaroid' ? '复古相纸' : t.baseLayout === 'cinematic' ? '电影宽幅' : t.baseLayout === 'overlay_badge' ? '悬浮角标' : '标准底栏'} · ${t.bgColor}`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 px-3 rounded-xl border border-dashed border-dark-700 text-slate-500 text-xs">
+                          暂无自定义模板，调整右侧参数后点击「保存为新模板」即可收录
+                        </div>
+                      )}
                     </div>
                   </div>
 

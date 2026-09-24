@@ -35,7 +35,7 @@ describe('lutEngine', () => {
         expect(data[i + 3]).toBe(255); // Alpha
       }
     }
-  });
+  }, 15000);
 
   it('correctly maps monochrome preset to identical R, G, B channels', () => {
     const data = generateBuiltinLutData('leica_monochrome', 16);

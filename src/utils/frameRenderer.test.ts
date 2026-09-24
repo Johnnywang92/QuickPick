@@ -3,6 +3,8 @@ import {
   detectCameraBrand,
   formatExifStrings,
   applyAdjustmentsToImageData,
+  isColorDark,
+  drawPhotographicBadge,
 } from './frameRenderer';
 import { DEFAULT_FRAME_CONFIG, DEFAULT_ADJUSTMENTS } from '../types/adjust';
 import { LocalPhoto } from '../types/photo';
@@ -158,5 +160,37 @@ describe('frameRenderer - EXIF formatting & detection', () => {
     expect(mockImageData.data[0]).toBeGreaterThan(100);
     expect(mockImageData.data[1]).toBeGreaterThan(150);
     expect(mockImageData.data[2]).toBeGreaterThan(200);
+  });
+
+  it('correctly assesses dark vs light colors via isColorDark', () => {
+    // 浅色 / 白色
+    expect(isColorDark('#FFFFFF')).toBe(false);
+    expect(isColorDark('#FFF')).toBe(false);
+    expect(isColorDark('#FBFBFA')).toBe(false);
+    expect(isColorDark('#F4EDE4')).toBe(false);
+    expect(isColorDark('#E2E8F0')).toBe(false);
+
+    // 深色 / 黑色
+    expect(isColorDark('#000000')).toBe(true);
+    expect(isColorDark('#000')).toBe(true);
+    expect(isColorDark('#0F1013')).toBe(true);
+    expect(isColorDark('#1E293B')).toBe(true);
+    expect(isColorDark('#08080A')).toBe(true);
+  });
+
+  it('drawPhotographicBadge safely handles none without throwing', () => {
+    const mockCtx = {
+      save: () => {},
+      restore: () => {},
+      translate: () => {},
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => {},
+      stroke: () => {},
+    } as unknown as CanvasRenderingContext2D;
+
+    expect(() => {
+      drawPhotographicBadge(mockCtx, 'none', 0, 0, 24, false);
+    }).not.toThrow();
   });
 });
