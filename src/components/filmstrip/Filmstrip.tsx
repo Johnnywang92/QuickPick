@@ -33,6 +33,7 @@ export const Filmstrip: React.FC = () => {
   const compareTargetIndex = useCompareStore((s) => s.compareTargetIndex);
   const insights = useInsightStore((s) => s.insights);
   const selections = useSelectionStore((s) => s.selections);
+  const lastTriageFeedback = useSelectionStore((s) => s.lastTriageFeedback);
   const viewedPhotoIds = useSelectionStore((s) => s.viewedPhotoIds);
   const photoLuts = useLutStore((s) => s.photoLuts);
   const customLuts = useLutStore((s) => s.customLuts);
@@ -296,6 +297,9 @@ export const Filmstrip: React.FC = () => {
             ? '0 12px 24px -4px rgba(0, 0, 0, 0.65), 0 4px 10px -2px rgba(0, 0, 0, 0.45)'
             : undefined;
 
+          const isRecentlyTriaged =
+            Boolean(lastTriageFeedback && lastTriageFeedback.photoId === photo.id && Date.now() - lastTriageFeedback.timestamp < 600);
+
           return (
             <div
               key={photo.id || photo.path}
@@ -327,6 +331,21 @@ export const Filmstrip: React.FC = () => {
                   : 'border border-dark-700/70 opacity-75 hover:opacity-95 hover:border-slate-500'
               }`}
             >
+              {/* 选片即刻触觉高光外发光反馈 */}
+              {isRecentlyTriaged && lastTriageFeedback && (
+                <div
+                  key={`triage-flash-${lastTriageFeedback.timestamp}`}
+                  className={clsx(
+                    'absolute inset-0 pointer-events-none rounded-md ring-2 z-20 animate-triage-flash',
+                    lastTriageFeedback.state === 'selected'
+                      ? 'ring-emerald-400 bg-emerald-500/20'
+                      : lastTriageFeedback.state === 'maybe'
+                      ? 'ring-amber-400 bg-amber-500/20'
+                      : 'ring-slate-400 bg-slate-500/20',
+                  )}
+                />
+              )}
+
               {/* 背景缩略图高清展示：保持纯黑底色杜绝浅色透白，中间主体无遮罩 */}
               {thumbnailUrl ? (
                 <>
@@ -348,7 +367,13 @@ export const Filmstrip: React.FC = () => {
               )}
 
               {/* 胶片卡片内容 */}
-              <div className="relative z-10 w-full h-full flex flex-col justify-between p-1.5">
+              <div
+                key={isRecentlyTriaged && lastTriageFeedback ? `pop-${lastTriageFeedback.timestamp}` : undefined}
+                className={clsx(
+                  'relative z-10 w-full h-full flex flex-col justify-between p-1.5',
+                  isRecentlyTriaged && 'animate-triage-pop',
+                )}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1">
                     {isFiltered ? (
@@ -445,21 +470,39 @@ export const Filmstrip: React.FC = () => {
 
                   {/* 用户选择状态徽标 */}
                   {selections[photo.id]?.state === 'selected' && (
-                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-white font-bold shadow-sm">
-                      <Check className="w-2.5 h-2.5 stroke-[3.5]" />
+                    <span className="relative flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-white font-bold shadow-sm">
+                      <Check className="w-2.5 h-2.5 stroke-[3.5] relative z-10" />
+                      {isRecentlyTriaged && lastTriageFeedback?.state === 'selected' && (
+                        <span
+                          key={`ripple-${lastTriageFeedback.timestamp}`}
+                          className="absolute inset-0 rounded-full bg-emerald-400 animate-triage-ripple pointer-events-none"
+                        />
+                      )}
                     </span>
                   )}
                   {selections[photo.id]?.state === 'maybe' && (
-                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-amber-950 font-extrabold text-[9px] shadow-sm">
-                      ?
+                    <span className="relative flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-amber-950 font-extrabold text-[9px] shadow-sm">
+                      <span className="relative z-10 leading-none">?</span>
+                      {isRecentlyTriaged && lastTriageFeedback?.state === 'maybe' && (
+                        <span
+                          key={`ripple-${lastTriageFeedback.timestamp}`}
+                          className="absolute inset-0 rounded-full bg-amber-400 animate-triage-ripple pointer-events-none"
+                        />
+                      )}
                     </span>
                   )}
                   {selections[photo.id]?.state === 'skipped' && (
                     <span
-                      className="flex h-3.5 items-center justify-center rounded-full bg-slate-600 px-1 text-[8px] font-bold text-white shadow-sm"
+                      className="relative flex h-3.5 items-center justify-center rounded-full bg-slate-600 px-1 text-[8px] font-bold text-white shadow-sm"
                       title="已明确标记为不选"
                     >
-                      不选
+                      <span className="relative z-10">不选</span>
+                      {isRecentlyTriaged && lastTriageFeedback?.state === 'skipped' && (
+                        <span
+                          key={`ripple-${lastTriageFeedback.timestamp}`}
+                          className="absolute inset-0 rounded-full bg-slate-400 animate-triage-ripple pointer-events-none"
+                        />
+                      )}
                     </span>
                   )}
                 </div>

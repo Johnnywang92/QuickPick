@@ -96,6 +96,21 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const [textureVersion, setTextureVersion] = useState(0);
   const [swipeVisualOffset, setSwipeVisualOffset] = useState<number>(0);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const prevSpriteRef = useRef<Sprite | null>(null);
+  const transitionRafRef = useRef<number | null>(null);
+  const lastIndexRef = useRef<number>(currentIndex);
+  const navDirectionRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (currentIndex > lastIndexRef.current) {
+      navDirectionRef.current = 1;
+    } else if (currentIndex < lastIndexRef.current) {
+      navDirectionRef.current = -1;
+    } else {
+      navDirectionRef.current = 0;
+    }
+    lastIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   const updateCompositionGrid = useCallback(() => {
     if (!gridGraphicsRef.current || !spriteRef.current) return;
@@ -240,6 +255,10 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
     return () => {
       isMounted = false;
+      if (transitionRafRef.current) {
+        cancelAnimationFrame(transitionRafRef.current);
+        transitionRafRef.current = null;
+      }
       if (appRef.current) {
         try {
           appRef.current.destroy(true, { children: true, texture: false });
@@ -250,6 +269,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       }
       imageContainerRef.current = null;
       spriteRef.current = null;
+      prevSpriteRef.current = null;
     };
   }, [initAttempt]);
 
@@ -286,13 +306,18 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     return () => clearTimeout(timer);
   }, [isCinemaMode, fitImageToViewport]);
 
-  // 当图片 URL 切换时，更新纹理（采用双缓冲就地置换，彻底消除切图黑屏闪烁）
+  // 当图片 URL 切换时，更新纹理（采用双缓冲就地置换与 GPU 毫秒级微过渡，消除黑屏闪烁并呈现丝滑流动感）
   useEffect(() => {
     if (!imageUrl) {
+      if (transitionRafRef.current) {
+        cancelAnimationFrame(transitionRafRef.current);
+        transitionRafRef.current = null;
+      }
       if (imageContainerRef.current) {
         imageContainerRef.current.children.forEach((child) => child.destroy());
         imageContainerRef.current.removeChildren();
       }
+      prevSpriteRef.current = null;
       spriteRef.current = null;
       gridGraphicsRef.current = null;
       pinsContainerRef.current = null;
@@ -315,11 +340,41 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         if (!isCurrent || !imageContainerRef.current || !appRef.current) return;
 
         const container = imageContainerRef.current;
+        const oldTexture = spriteRef.current?.texture;
+        const oldScale = container.scale.x;
+
+        if (transitionRafRef.current) {
+          cancelAnimationFrame(transitionRafRef.current);
+          transitionRafRef.current = null;
+        }
+
+        const shouldAnimate = Boolean(
+          spriteRef.current &&
+          prevSpriteRef.current &&
+          oldTexture &&
+          oldTexture !== texture &&
+          oldTexture.width > 0 &&
+          texture.width > 0
+        );
+
         if (spriteRef.current) {
+          if (shouldAnimate && prevSpriteRef.current && oldTexture) {
+            const prevSprite = prevSpriteRef.current;
+            prevSprite.texture = oldTexture;
+            prevSprite.visible = true;
+            prevSprite.alpha = 1.0;
+            prevSprite.filters = spriteRef.current.filters ? [...spriteRef.current.filters] : null;
+          }
           // 双缓冲原位替换：直接换装新纹理
           spriteRef.current.texture = texture;
         } else {
-          // 初次挂载生成主精灵与图钉层
+          // 初次挂载生成底层过渡精灵、主精灵与图钉层
+          const prevSprite = new Sprite();
+          prevSprite.anchor.set(0.5);
+          prevSprite.visible = false;
+          container.addChild(prevSprite);
+          prevSpriteRef.current = prevSprite;
+
           const sprite = new Sprite(texture);
           sprite.anchor.set(0.5);
           container.addChild(sprite);
@@ -337,6 +392,71 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         fitImageToViewport();
         setImageStatus('loaded');
         setTextureVersion((v) => v + 1);
+
+        // 执行超高速 GPU 微淡入与微滑动过渡 (95ms)
+        if (shouldAnimate && prevSpriteRef.current && spriteRef.current) {
+          const prevSprite = prevSpriteRef.current;
+          const currentSprite = spriteRef.current;
+          const newScale = container.scale.x;
+
+          if (newScale > 0) {
+            prevSprite.scale.set(oldScale / newScale);
+          }
+
+          const dir = navDirectionRef.current;
+          // 若处于 100% 原始比例查看，仅做纯微淡入，不做水平滑移避免混淆
+          const isZoomed = Math.abs(oldScale - newScale) > 0.1 || newScale > 0.99;
+          const slidePx = isZoomed || dir === 0 ? 0 : 20 / Math.max(newScale, 0.05);
+
+          const startIncomingX = dir * slidePx;
+          const endIncomingX = 0;
+          const startOutgoingX = 0;
+          const endOutgoingX = -dir * slidePx;
+
+          currentSprite.alpha = 0.25;
+          currentSprite.x = startIncomingX;
+          prevSprite.alpha = 1.0;
+          prevSprite.x = startOutgoingX;
+
+          const startTime = performance.now();
+          const DURATION = 95;
+
+          const tick = (now: number) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / DURATION);
+            const ease = 1 - (1 - progress) * (1 - progress);
+
+            if (prevSpriteRef.current && prevSpriteRef.current.visible) {
+              prevSpriteRef.current.alpha = 1.0 - ease;
+              prevSpriteRef.current.x = startOutgoingX + (endOutgoingX - startOutgoingX) * ease;
+            }
+
+            if (spriteRef.current) {
+              spriteRef.current.alpha = 0.25 + 0.75 * ease;
+              spriteRef.current.x = startIncomingX + (endIncomingX - startIncomingX) * ease;
+            }
+
+            if (progress < 1) {
+              transitionRafRef.current = requestAnimationFrame(tick);
+            } else {
+              if (prevSpriteRef.current) {
+                prevSpriteRef.current.visible = false;
+                prevSpriteRef.current.alpha = 0;
+                prevSpriteRef.current.filters = null;
+              }
+              if (spriteRef.current) {
+                spriteRef.current.alpha = 1.0;
+                spriteRef.current.x = 0;
+              }
+              transitionRafRef.current = null;
+            }
+          };
+
+          transitionRafRef.current = requestAnimationFrame(tick);
+        } else if (spriteRef.current) {
+          spriteRef.current.alpha = 1.0;
+          spriteRef.current.x = 0;
+        }
       } catch (e) {
         console.error('Failed to render Pixi texture', e);
         if (isCurrent) {
@@ -644,6 +764,19 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
   // 鼠标拖动画布：仅在放大查看细节时响应平移，全屏适配状态禁止破坏居中
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (transitionRafRef.current) {
+      cancelAnimationFrame(transitionRafRef.current);
+      transitionRafRef.current = null;
+      if (prevSpriteRef.current) {
+        prevSpriteRef.current.visible = false;
+        prevSpriteRef.current.filters = null;
+      }
+      if (spriteRef.current) {
+        spriteRef.current.alpha = 1.0;
+        spriteRef.current.x = 0;
+      }
+    }
+
     if (e.button === 0 || e.button === 1) {
       mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
       const fitScale = getFitScale();
