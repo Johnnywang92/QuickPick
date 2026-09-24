@@ -38,9 +38,12 @@ import {
   Sun,
   Moon,
   Filter,
+  Film,
 } from 'lucide-react';
 import { useThemeStore } from './store/themeStore';
 import { useAdjustStore } from './store/adjustStore';
+import { useCinemaStore } from './store/cinemaStore';
+import { CinemaHud } from './components/viewport/CinemaHud';
 
 const PixiCanvas = lazy(() =>
   import('./components/viewport/PixiCanvas').then((module) => ({ default: module.PixiCanvas })),
@@ -160,6 +163,7 @@ export default function App() {
   const { isExportModalOpen, setExportModalOpen } = useExportStore();
   const { isSettingsOpen, setSettingsOpen, effectiveTheme, setThemeMode } = useThemeStore();
   const isAdjustModalOpen = useAdjustStore((state) => state.isModalOpen);
+  const { isCinemaMode, toggleCinemaMode } = useCinemaStore();
   const {
     isFaceLoupeOpen,
     isAnalyzing,
@@ -347,8 +351,9 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-dark-900 text-slate-100 select-none overflow-hidden font-sans">
-      {/* 顶部工具与状态栏 */}
-      <header className="h-12 border-b border-dark-700 bg-dark-800/95 backdrop-blur flex items-center justify-between px-3 md:px-4 z-30 shrink-0 gap-2 select-none overflow-x-auto no-scrollbar">
+      {/* 顶部工具与状态栏（沉浸看片模式下隐藏） */}
+      {!isCinemaMode && (
+        <header className="h-12 border-b border-dark-700 bg-dark-800/95 backdrop-blur flex items-center justify-between px-3 md:px-4 z-30 shrink-0 gap-2 select-none overflow-x-auto no-scrollbar">
         {/* 左侧：Logo 与相册名称 */}
         <div className="flex items-center space-x-2 md:space-x-3 shrink-0 min-w-0">
           <div className="flex items-center space-x-2 font-semibold tracking-wide shrink-0">
@@ -521,6 +526,18 @@ export default function App() {
             )}
           </button>
 
+          {/* 纯粹沉浸看片模式 (Cinema / Lights Out) [Tab / Shift+F] */}
+          {photos.length > 0 && (
+            <button
+              onClick={toggleCinemaMode}
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-brand-300 cursor-pointer shrink-0"
+              title="纯粹沉浸看片模式 (快捷键 Tab / Shift+F)"
+              aria-label="纯粹沉浸看片模式"
+            >
+              <Film className="h-4 w-4 text-brand-400 hover:text-brand-300 transition-transform hover:scale-110" />
+            </button>
+          )}
+
           <button
             onClick={() => setIsShortcutsOpen(true)}
             className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
@@ -548,9 +565,10 @@ export default function App() {
           </button>
         </div>
       </header>
+      )}
 
-      {/* 故事线常驻胶囊进度条 */}
-      {photos.length > 0 && (
+      {/* 故事线常驻胶囊进度条（沉浸模式隐藏） */}
+      {!isCinemaMode && photos.length > 0 && (
         <StorylineBar
           onOpenFamilyRadar={() => setIsFamilyRadarOpen(true)}
           onOpenMerge={() => setIsMergeModalOpen(true)}
@@ -558,8 +576,8 @@ export default function App() {
         />
       )}
 
-      {/* 视图过滤条 */}
-      {photos.length > 0 && (
+      {/* 视图过滤条（沉浸模式隐藏） */}
+      {!isCinemaMode && photos.length > 0 && (
         <FilterToolbar
           onOpenReviewCenter={() => setIsReviewCenterOpen(true)}
           onOpenDefectFunnel={() => setIsDefectFunnelOpen(true)}
@@ -595,7 +613,12 @@ export default function App() {
       )}
 
       {/* 主工作区 */}
-      <main className="flex-1 relative flex items-center justify-center bg-dark-900 overflow-hidden">
+      <main
+        className={clsx(
+          'flex-1 relative flex items-center justify-center overflow-hidden transition-colors duration-300',
+          isCinemaMode ? 'bg-black' : 'bg-dark-900',
+        )}
+      >
         {photos.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 md:p-10 text-center max-w-lg border border-dashed border-dark-700/90 rounded-2xl bg-dark-850/60 shadow-2xl backdrop-blur-sm">
             <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/15 dark:ring-white/15 ring-black/5 mb-5">
@@ -747,51 +770,61 @@ export default function App() {
               {/* 画布中央瞬态操作微反馈 */}
               <TriageFeedbackOverlay currentPhotoId={currentPhoto?.id} />
 
-              {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
-              <div className="absolute top-4 left-4 z-20">
-                <PhotoInfoHud />
-              </div>
+              {/* 沉浸看片模式专属浮动控制条 */}
+              {isCinemaMode && <CinemaHud />}
 
-              {/* 视口上方：本地辅助提示药丸 */}
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
-                <DefectBadge />
-              </div>
+              {/* 普通模式视口辅助 UI */}
+              {!isCinemaMode && (
+                <>
+                  {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
+                  <div className="absolute top-4 left-4 z-20">
+                    <PhotoInfoHud />
+                  </div>
 
-              {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
-              {isFaceLoupeOpen && (
-                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
-                  <Suspense fallback={null}>
-                    <FaceLoupe />
-                  </Suspense>
-                </div>
+                  {/* 视口上方：本地辅助提示药丸 */}
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+                    <DefectBadge />
+                  </div>
+
+                  {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
+                  {isFaceLoupeOpen && (
+                    <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
+                      <Suspense fallback={null}>
+                        <FaceLoupe />
+                      </Suspense>
+                    </div>
+                  )}
+
+                  {/* 视口下方：快捷打标签与核心选片操作条 */}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
+                    <QuickTagBar />
+                    <TriageControls
+                      onToggleRetouch={() => setIsRetouchOpen((v) => !v)}
+                      isRetouchOpen={isRetouchOpen}
+                    />
+                  </div>
+                </>
               )}
-
-              {/* 视口下方：快捷打标签与核心选片操作条 */}
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
-                <QuickTagBar />
-                <TriageControls
-                  onToggleRetouch={() => setIsRetouchOpen((v) => !v)}
-                  isRetouchOpen={isRetouchOpen}
-                />
-              </div>
             </div>
 
-            {/* 独立右侧栏：占用布局空间，不覆盖照片 */}
-            <RetouchPanel
-              isOpen={isRetouchOpen}
-              onClose={() => {
-                setIsRetouchOpen(false);
-                setIsAddingPin(false);
-              }}
-              isAddingPin={isAddingPin}
-              setIsAddingPin={setIsAddingPin}
-            />
+            {/* 独立右侧栏：占用布局空间，不覆盖照片（沉浸模式隐藏） */}
+            {!isCinemaMode && (
+              <RetouchPanel
+                isOpen={isRetouchOpen}
+                onClose={() => {
+                  setIsRetouchOpen(false);
+                  setIsAddingPin(false);
+                }}
+                isAddingPin={isAddingPin}
+                setIsAddingPin={setIsAddingPin}
+              />
+            )}
           </div>
         )}
       </main>
 
-      {/* 底部缩略图轮播栏 (支持 macOS Dock 鱼眼悬停放大) */}
-      {photos.length > 0 && (
+      {/* 底部缩略图轮播栏（沉浸模式隐藏，支持 macOS Dock 鱼眼悬停放大） */}
+      {!isCinemaMode && photos.length > 0 && (
         <footer className="h-24 border-t border-dark-700 bg-dark-800/95 flex items-center shrink-0 z-20">
           <Filmstrip />
         </footer>

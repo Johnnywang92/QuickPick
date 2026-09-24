@@ -10,6 +10,7 @@ import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
 import { ColorAdjustFilter, isAdjustmentsNoop } from '../../utils/adjustEngine';
 import { CompositionGridBar } from './CompositionGridBar';
 import { useGridStore } from '../../store/gridStore';
+import { useCinemaStore } from '../../store/cinemaStore';
 import { renderCompositionGrid } from '../../utils/gridRenderer';
 import { VisualPin } from '../../types/photo';
 import clsx from 'clsx';
@@ -52,7 +53,9 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
   const focusedFace = useInsightStore((state) => state.focusedFace);
   const effectiveTheme = useThemeStore((state) => state.effectiveTheme);
-  const canvasBgColor = effectiveTheme === 'light' ? 0xf8fafc : 0x0d0f12;
+  const isCinemaMode = useCinemaStore((state) => state.isCinemaMode);
+  // 沉浸看片模式下使用纯黑 #000000 营造无边际悬浮观感，普通模式跟随主题
+  const canvasBgColor = isCinemaMode ? 0x000000 : effectiveTheme === 'light' ? 0xf8fafc : 0x0d0f12;
 
   const photos = useAlbumStore((state) => state.photos);
   const currentIndex = useAlbumStore((state) => state.currentIndex);
@@ -274,6 +277,14 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     observer.observe(parent);
     return () => observer.disconnect();
   }, [fitImageToViewport, pixiStatus]);
+
+  // 进入或退出沉浸看片模式时，等待容器展开后自动居中适配最大画幅
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitImageToViewport();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [isCinemaMode, fitImageToViewport]);
 
   // 当图片 URL 切换时，更新纹理（采用双缓冲就地置换，彻底消除切图黑屏闪烁）
   useEffect(() => {
@@ -827,72 +838,74 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
 
-      {/* 悬浮控制栏（调色工作台 + 构图辅助 + 缩放控制） */}
-      <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
-        {/* 调色工作台 [E] */}
-        <button
-          onClick={() => openModal()}
-          title="打开调色工作台 [快捷键 E / 胶片 L] (包含基础微调、胶片LUT、相机相框、水印签名)"
-          className="flex items-center space-x-1.5 bg-dark-800/85 hover:bg-dark-700 text-slate-200 border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-xs font-medium transition-all cursor-pointer select-none"
-        >
-          <Sliders className="w-3.5 h-3.5 text-brand-400" />
-          <span className="font-sans">调色工作台 (E)</span>
-          {hasActiveWorkbenchEffects && (
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
-          )}
-        </button>
-
-        <CompositionGridBar />
-
-        {/* 悬浮缩放控制栏 */}
-        <div className="flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300 text-xs">
-          <span className="font-mono text-slate-400 w-12 text-center">{zoomLevel}%</span>
-          <div className="w-[1px] h-3.5 bg-dark-600" />
+      {/* 悬浮控制栏（调色工作台 + 构图辅助 + 缩放控制，沉浸模式下隐藏以还给画面纯粹空间） */}
+      {!isCinemaMode && (
+        <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
+          {/* 调色工作台 [E] */}
           <button
-            onClick={resetToFit}
-            title="适应屏幕"
-            className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
+            onClick={() => openModal()}
+            title="打开调色工作台 [快捷键 E / 胶片 L] (包含基础微调、胶片LUT、相机相框、水印签名)"
+            className="flex items-center space-x-1.5 bg-dark-800/85 hover:bg-dark-700 text-slate-200 border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-xs font-medium transition-all cursor-pointer select-none"
           >
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={toggleZoom100}
-            title="100% 真实传感器像素查焦 [快捷键 Z]"
-            className={clsx(
-              'px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer',
-              isZoomed ? 'bg-brand-600 text-white shadow-sm' : 'hover:bg-dark-700 text-slate-300',
+            <Sliders className="w-3.5 h-3.5 text-brand-400" />
+            <span className="font-sans">调色工作台 (E)</span>
+            {hasActiveWorkbenchEffects && (
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
             )}
-          >
-            1:1 查焦 (Z)
           </button>
-          <button
-            onClick={() => {
-              if (imageContainerRef.current) {
-                const s = Math.min(imageContainerRef.current.scale.x * 1.25, 8.0);
-                imageContainerRef.current.scale.set(s);
-                setZoomLevel(Math.round(s * 100));
-              }
-            }}
-            title="放大"
-            className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              if (imageContainerRef.current) {
-                const s = Math.max(imageContainerRef.current.scale.x * 0.8, 0.1);
-                imageContainerRef.current.scale.set(s);
-                setZoomLevel(Math.round(s * 100));
-              }
-            }}
-            title="缩小"
-            className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
+
+          <CompositionGridBar />
+
+          {/* 悬浮缩放控制栏 */}
+          <div className="flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300 text-xs">
+            <span className="font-mono text-slate-400 w-12 text-center">{zoomLevel}%</span>
+            <div className="w-[1px] h-3.5 bg-dark-600" />
+            <button
+              onClick={resetToFit}
+              title="适应屏幕"
+              className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={toggleZoom100}
+              title="100% 真实传感器像素查焦 [快捷键 Z]"
+              className={clsx(
+                'px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer',
+                isZoomed ? 'bg-brand-600 text-white shadow-sm' : 'hover:bg-dark-700 text-slate-300',
+              )}
+            >
+              1:1 查焦 (Z)
+            </button>
+            <button
+              onClick={() => {
+                if (imageContainerRef.current) {
+                  const s = Math.min(imageContainerRef.current.scale.x * 1.25, 8.0);
+                  imageContainerRef.current.scale.set(s);
+                  setZoomLevel(Math.round(s * 100));
+                }
+              }}
+              title="放大"
+              className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => {
+                if (imageContainerRef.current) {
+                  const s = Math.max(imageContainerRef.current.scale.x * 0.8, 0.1);
+                  imageContainerRef.current.scale.set(s);
+                  setZoomLevel(Math.round(s * 100));
+                }
+              }}
+              title="缩小"
+              className="p-1 hover:bg-dark-700 rounded transition-colors cursor-pointer"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

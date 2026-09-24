@@ -8,6 +8,7 @@ import { useTagStore } from '../store/tagStore';
 import { useLutStore } from '../store/lutStore';
 import { useAdjustStore } from '../store/adjustStore';
 import { useGridStore } from '../store/gridStore';
+import { useCinemaStore } from '../store/cinemaStore';
 
 interface KeyboardShortcutsOptions {
   onToggleRetouch?: () => void;
@@ -238,12 +239,25 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           break;
         }
 
-        // 查看人脸特写抽屉 [F]
-        case 'f':
-        case 'F':
+        // 沉浸看片模式 [Tab] 与 [F11]
+        case 'Tab':
+        case 'F11': {
           e.preventDefault();
-          useInsightStore.getState().toggleFaceLoupe();
+          useCinemaStore.getState().toggleCinemaMode();
           break;
+        }
+
+        // 查看人脸特写抽屉 [F] / 沉浸看片模式 [Shift + F]
+        case 'f':
+        case 'F': {
+          e.preventDefault();
+          if (e.shiftKey) {
+            useCinemaStore.getState().toggleCinemaMode();
+          } else {
+            useInsightStore.getState().toggleFaceLoupe();
+          }
+          break;
+        }
 
         // 双图分屏比对 [C]
         case 'c':
@@ -261,9 +275,12 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           }
           break;
 
-        // 退出对比模式 或 重置筛选 [Escape]
+        // 退出对比模式、退出沉浸看片模式 或 重置筛选 [Escape]
         case 'Escape':
-          if (isCompareMode) {
+          if (useCinemaStore.getState().isCinemaMode) {
+            e.preventDefault();
+            useCinemaStore.getState().exitCinemaMode();
+          } else if (isCompareMode) {
             e.preventDefault();
             exitCompareMode();
           } else {
