@@ -80,6 +80,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const [initAttempt, setInitAttempt] = useState(0);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [textureVersion, setTextureVersion] = useState(0);
+  const [swipeVisualOffset, setSwipeVisualOffset] = useState<number>(0);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const keepPinMarkersReadable = useCallback(() => {
@@ -520,26 +521,40 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       container.y = clampedY;
       keepPinMarkersReadable();
     } else {
-      // 全屏未放大状态：触控板双指横向轻扫触发切换上一张/下一张
+      // 全屏未放大状态：触控板双指横向轻扫触发切换上一张/下一张（带实时交互弹性阻尼位移与视觉反馈）
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2) {
         swipeDeltaXRef.current += e.deltaX;
+        setSwipeVisualOffset(swipeDeltaXRef.current);
+
+        // 施加 macOS 原生橡皮筋阻尼轻微跟随位移 (Rubber-band stretch)
+        const elasticOffset = -Math.sign(swipeDeltaXRef.current) * Math.min(Math.abs(swipeDeltaXRef.current) * 0.35, 48);
+        container.x = app.screen.width / 2 + elasticOffset;
+
         if (swipeResetTimeoutRef.current) {
           clearTimeout(swipeResetTimeoutRef.current);
         }
         swipeResetTimeoutRef.current = window.setTimeout(() => {
           swipeDeltaXRef.current = 0;
-        }, 280);
+          setSwipeVisualOffset(0);
+          if (imageContainerRef.current && appRef.current) {
+            imageContainerRef.current.x = appRef.current.screen.width / 2;
+          }
+        }, 240);
 
         const now = performance.now();
         if (now - swipeCooldownRef.current > 350) {
-          if (swipeDeltaXRef.current > 70) {
+          if (swipeDeltaXRef.current > 65) {
             useAlbumStore.getState().nextPhoto();
             swipeDeltaXRef.current = 0;
+            setSwipeVisualOffset(0);
             swipeCooldownRef.current = now;
-          } else if (swipeDeltaXRef.current < -70) {
+            container.x = app.screen.width / 2;
+          } else if (swipeDeltaXRef.current < -65) {
             useAlbumStore.getState().prevPhoto();
             swipeDeltaXRef.current = 0;
+            setSwipeVisualOffset(0);
             swipeCooldownRef.current = now;
+            container.x = app.screen.width / 2;
           }
         }
       }
@@ -634,20 +649,50 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     }
   };
 
+  // 100% 真实感光元件像素查焦 (1:1 Sensor Pixel Peeping) / 适应屏幕切换
+  const toggleZoom100 = useCallback(() => {
+    if (!imageContainerRef.current || !appRef.current || !spriteRef.current || !containerRef.current) return;
+    const container = imageContainerRef.current;
+    const app = appRef.current;
+    const fitScale = getFitScale();
+    const isCurrentlyFit = Math.abs(container.scale.x - fitScale) < 0.05;
+
+    if (isCurrentlyFit) {
+      const targetScale = Math.max(1.0, fitScale * 2.0);
+      container.x = app.screen.width / 2;
+      container.y = app.screen.height / 2;
+      container.scale.set(targetScale);
+      setZoomLevel(Math.round(targetScale * 100));
+    } else {
+      fitImageToViewport();
+    }
+    keepPinMarkersReadable();
+  }, [getFitScale, fitImageToViewport, keepPinMarkersReadable]);
+
+  // 监听键盘快捷键 Z：一键在 100% 像素查焦与全屏适配之间切换
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable) ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
+      ) {
+        return;
+      }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        toggleZoom100();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleZoom100]);
+
   // 100% 点对点与重置适配
   const resetToFit = () => {
     fitImageToViewport();
-  };
-
-  const zoomTo100 = () => {
-    if (!imageContainerRef.current || !appRef.current) return;
-    const app = appRef.current;
-    const container = imageContainerRef.current;
-    container.x = app.screen.width / 2;
-    container.y = app.screen.height / 2;
-    container.scale.set(1.0);
-    keepPinMarkersReadable();
-    setZoomLevel(100);
   };
 
   const fitZoom = Math.round(getFitScale() * 100);
@@ -712,6 +757,26 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
 
+      {/* 触控板左右平滑轻扫切图悬浮指示 */}
+      {swipeVisualOffset > 20 && (
+        <div
+          className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 z-30 flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-dark-900/90 text-white font-bold text-xs shadow-2xl backdrop-blur-md border border-white/20 transition-opacity"
+          style={{ opacity: Math.min(1, (swipeVisualOffset - 15) / 50) }}
+        >
+          <span>下一张</span>
+          <span className="font-mono text-brand-400">▶</span>
+        </div>
+      )}
+      {swipeVisualOffset < -20 && (
+        <div
+          className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 z-30 flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-dark-900/90 text-white font-bold text-xs shadow-2xl backdrop-blur-md border border-white/20 transition-opacity"
+          style={{ opacity: Math.min(1, (-swipeVisualOffset - 15) / 50) }}
+        >
+          <span className="font-mono text-brand-400">◀</span>
+          <span>上一张</span>
+        </div>
+      )}
+
       {/* 悬浮控制栏（相框与调色 + 3D LUT 胶片调色 + 缩放控制） */}
       <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
         {/* 相机参数相框与调色 [E] */}
@@ -741,11 +806,14 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
             <Maximize2 className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={zoomTo100}
-            title="1:1 显示当前内嵌或代理预览的实际像素，不代表完整 RAW 像素"
-            className="px-1.5 py-0.5 hover:bg-dark-700 rounded text-[11px] font-mono transition-colors cursor-pointer"
+            onClick={toggleZoom100}
+            title="100% 真实传感器像素查焦 [快捷键 Z]"
+            className={clsx(
+              'px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer',
+              isZoomed ? 'bg-brand-600 text-white shadow-sm' : 'hover:bg-dark-700 text-slate-300',
+            )}
           >
-            1:1 预览
+            1:1 查焦 (Z)
           </button>
           <button
             onClick={() => {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAlbumStore } from '../../store/albumStore';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react';
+import { isDisplayP3Supported } from '../../utils/colorSpace';
 
 export const PhotoInfoHud: React.FC = () => {
   const { photos, currentIndex, scenes, setScenesModalOpen } = useAlbumStore();
@@ -34,6 +35,14 @@ export const PhotoInfoHud: React.FC = () => {
         <span className="text-[9px] bg-dark-750 text-slate-400 px-1 py-0.2 rounded font-sans">
           {currentPhoto.isRaw ? 'RAW' : 'JPG'}
         </span>
+        {isDisplayP3Supported() && (
+          <span
+            className="text-[9px] bg-rose-500/15 border border-rose-500/30 text-rose-300 px-1 py-0.2 rounded font-sans font-medium"
+            title="当前屏幕已启用 Apple Display P3 广色域色彩空间"
+          >
+            P3
+          </span>
+        )}
 
         {currentPhoto.isRaw && (
           <span

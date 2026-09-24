@@ -1,4 +1,5 @@
 import { WatermarkConfig, WatermarkFontFamily, WatermarkPosition } from '../types/adjust';
+import { get2DContextWithOptions } from './colorSpace';
 
 const FONT_MAP: Record<WatermarkFontFamily, string> = {
   sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -69,7 +70,7 @@ export async function applyWatermarkToCanvas(
 ): Promise<void> {
   if (!config.enabled) return;
 
-  const ctx = canvas.getContext('2d');
+  const ctx = get2DContextWithOptions(canvas);
   if (!ctx) return;
 
   const width = canvas.width;

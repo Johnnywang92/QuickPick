@@ -9,6 +9,7 @@ import { useInsightStore } from './store/insightStore';
 import {
   fetchEngineInfo,
   fetchStartupHealth,
+  isTauri,
   listRecentProjects,
   RecentProject,
   selectFolder,
@@ -174,10 +175,79 @@ export default function App() {
   const [isFamilyRadarOpen, setIsFamilyRadarOpen] = useState<boolean>(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState<boolean>(false);
   const [isAlbumPreviewOpen, setIsAlbumPreviewOpen] = useState<boolean>(false);
+  const [isDragHovering, setIsDragHovering] = useState<boolean>(false);
 
   useKeyboardShortcuts({
     onToggleRetouch: () => setIsRetouchOpen((prev) => !prev),
   });
+
+  // macOS 访达 (Finder) 原生拖拽目录支持
+  useEffect(() => {
+    let unlistenTauri: (() => void) | undefined;
+
+    if (isTauri()) {
+      import('@tauri-apps/api/webview')
+        .then(({ getCurrentWebview }) => {
+          return getCurrentWebview().onDragDropEvent((event) => {
+            if (event.payload.type === 'enter' || event.payload.type === 'over') {
+              setIsDragHovering(true);
+            } else if (event.payload.type === 'leave') {
+              setIsDragHovering(false);
+            } else if (event.payload.type === 'drop') {
+              setIsDragHovering(false);
+              const paths = event.payload.paths;
+              if (paths && paths.length > 0) {
+                let targetPath = paths[0];
+                const isImageFile = /\.(arw|cr2|cr3|nef|dng|raw|jpg|jpeg|png|webp|heic|tiff?)$/i.test(targetPath);
+                if (isImageFile) {
+                  const lastSlash = targetPath.lastIndexOf('/');
+                  if (lastSlash > 0) {
+                    targetPath = targetPath.substring(0, lastSlash);
+                  }
+                }
+                void openFolder(targetPath);
+                listRecentProjects().then(setRecentProjects).catch(() => undefined);
+              }
+            }
+          });
+        })
+        .then((fn) => {
+          unlistenTauri = fn;
+        })
+        .catch(() => undefined);
+    }
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragHovering(true);
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.relatedTarget === null) {
+        setIsDragHovering(false);
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragHovering(false);
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+
+    return () => {
+      if (unlistenTauri) unlistenTauri();
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [openFolder]);
 
   useEffect(() => {
     fetchEngineInfo()
@@ -485,6 +555,21 @@ export default function App() {
       {/* 视图过滤条 */}
       {photos.length > 0 && (
         <FilterToolbar onOpenReviewCenter={() => setIsReviewCenterOpen(true)} />
+      )}
+
+      {/* macOS 访达拖拽打开目录全屏毛玻璃指引遮罩 */}
+      {isDragHovering && (
+        <div className="fixed inset-0 z-60 flex flex-col items-center justify-center bg-black/70 backdrop-blur-md animate-in fade-in duration-150 pointer-events-none border-4 border-dashed border-brand-500/80 m-3 rounded-3xl">
+          <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-500/20 text-brand-400 border border-brand-500/40 shadow-2xl mb-4 animate-bounce">
+            <FolderOpen className="h-10 w-10" />
+          </div>
+          <h2 className="text-xl font-bold text-white drop-shadow-md tracking-wide">
+            松开即可载入照片目录
+          </h2>
+          <p className="text-xs text-slate-300 mt-1.5 font-sans">
+            支持拖入整个 RAW / JPG 文件夹或任意照片，全程只读安全
+          </p>
+        </div>
       )}
 
       {/* 正在扫描目录时的加载动效 */}

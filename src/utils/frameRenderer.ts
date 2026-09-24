@@ -2,6 +2,7 @@ import { FrameConfig, PhotoAdjustments, WatermarkConfig } from '../types/adjust'
 import { LocalPhoto } from '../types/photo';
 import { isAdjustmentsNoop } from './adjustEngine';
 import { applyWatermarkToCanvas } from './watermarkRenderer';
+import { get2DContextWithOptions } from './colorSpace';
 
 /**
  * 相机品牌识别与规范化 (用于元数据合规文本呈现)
@@ -386,7 +387,7 @@ export async function renderFramedPhotoCanvas(
   const photoCanvas = document.createElement('canvas');
   photoCanvas.width = adjustedPhotoW;
   photoCanvas.height = adjustedPhotoH;
-  const photoCtx = photoCanvas.getContext('2d', { willReadFrequently: true });
+  const photoCtx = get2DContextWithOptions(photoCanvas, { willReadFrequently: true });
   if (!photoCtx) {
     throw new Error('无法初始化照片 2D 绘图环境');
   }
@@ -463,7 +464,7 @@ export async function renderFramedPhotoCanvas(
   const finalCanvas = document.createElement('canvas');
   finalCanvas.width = canvasW;
   finalCanvas.height = canvasH;
-  const ctx = finalCanvas.getContext('2d');
+  const ctx = get2DContextWithOptions(finalCanvas);
   if (!ctx) {
     throw new Error('无法初始化主排版画布');
   }
