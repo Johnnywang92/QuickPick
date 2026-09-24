@@ -32,9 +32,12 @@ import {
   Image as ImageIcon,
   Trash2,
   Grid3X3,
+  Film,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { shareCustomImagesViaAirDrop } from '../../services/tauriBridge';
+import { useLutStore } from '../../store/lutStore';
+import { BUILTIN_LUTS } from '../../utils/lutPresets';
 
 export const FrameAndAdjustModal: React.FC = () => {
   const {
@@ -66,6 +69,26 @@ export const FrameAndAdjustModal: React.FC = () => {
     (state) => (currentPhotoId ? state.photoAdjustments[currentPhotoId] : undefined),
   );
   const photoAdjustments = currentAdjustmentsFromStore || DEFAULT_ADJUSTMENTS;
+
+  const activeLutId = useLutStore((state) => state.activeLutId);
+  const photoLuts = useLutStore((state) => state.photoLuts);
+  const customLuts = useLutStore((state) => state.customLuts);
+  const lutIntensity = useLutStore((state) => state.intensity);
+  const setPhotoLut = useLutStore((state) => state.setPhotoLut);
+  const clearPhotoLut = useLutStore((state) => state.clearPhotoLut);
+  const getCustomLutData = useLutStore((state) => state.getCustomLutData);
+
+  const currentPhotoLut = currentPhoto ? photoLuts[currentPhoto.id] : null;
+  const effectiveLutId = currentPhoto
+    ? currentPhotoLut !== undefined
+      ? currentPhotoLut?.lutId ?? null
+      : activeLutId
+    : activeLutId;
+  const effectiveLutIntensity = currentPhoto
+    ? currentPhotoLut
+      ? currentPhotoLut.intensity
+      : lutIntensity
+    : lutIntensity;
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState(false);
@@ -132,6 +155,12 @@ export const FrameAndAdjustModal: React.FC = () => {
           ? { ...frameConfig, includeAdjustments: false }
           : frameConfig;
 
+        const effectiveLutConfig = {
+          lutId: isComparingBefore ? null : effectiveLutId,
+          intensity: effectiveLutIntensity,
+          customData: effectiveLutId ? getCustomLutData(effectiveLutId) : null,
+        };
+
         const canvas = await renderFramedPhotoCanvas(
           img,
           img.naturalWidth || 1920,
@@ -141,6 +170,7 @@ export const FrameAndAdjustModal: React.FC = () => {
           effectiveAdjustments,
           1600,
           isComparingBefore ? undefined : watermarkConfig,
+          effectiveLutConfig,
         );
 
         if (isCancelled) return;
@@ -225,6 +255,9 @@ export const FrameAndAdjustModal: React.FC = () => {
     isComparingBefore,
     isSplitMode,
     watermarkConfig,
+    effectiveLutId,
+    effectiveLutIntensity,
+    getCustomLutData,
   ]);
 
   // 分屏拖拽交互计算
@@ -274,6 +307,11 @@ export const FrameAndAdjustModal: React.FC = () => {
           photoAdjustments,
           maxEdge,
           watermarkConfig,
+          {
+            lutId: effectiveLutId,
+            intensity: effectiveLutIntensity,
+            customData: effectiveLutId ? getCustomLutData(effectiveLutId) : null,
+          },
         );
       }
       if (currentRenderedCanvasRef.current) {
@@ -281,7 +319,15 @@ export const FrameAndAdjustModal: React.FC = () => {
       }
       throw new Error('相框尚未渲染就绪');
     },
-    [currentPhoto, frameConfig, photoAdjustments, watermarkConfig],
+    [
+      currentPhoto,
+      frameConfig,
+      photoAdjustments,
+      watermarkConfig,
+      effectiveLutId,
+      effectiveLutIntensity,
+      getCustomLutData,
+    ],
   );
 
   // 算法一键调光
@@ -572,7 +618,7 @@ export const FrameAndAdjustModal: React.FC = () => {
     },
   ];
 
-  const isOriginalActive = isAdjustmentsNoop(photoAdjustments);
+  const isOriginalActive = isAdjustmentsNoop(photoAdjustments) && !effectiveLutId;
   const isWarmActive =
     photoAdjustments.exposure === 0.3 &&
     photoAdjustments.temperature === 15 &&
@@ -943,11 +989,14 @@ export const FrameAndAdjustModal: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-300">选片快速调光 (GPU 硬件加速)</span>
                     <button
-                      onClick={() => resetPhotoAdjustments(currentPhoto.id)}
+                      onClick={() => {
+                        resetPhotoAdjustments(currentPhoto.id);
+                        if (currentPhoto) clearPhotoLut(currentPhoto.id);
+                      }}
                       className="text-[11px] text-slate-400 hover:text-brand-300 flex items-center gap-1 cursor-pointer"
                     >
                       <RefreshCw className="h-3 w-3" />
-                      <span>复位参数</span>
+                      <span>复位全部调色</span>
                     </button>
                   </div>
 
@@ -961,12 +1010,117 @@ export const FrameAndAdjustModal: React.FC = () => {
                     <span>✨ 算法一键调光 (快捷键 A)</span>
                   </button>
 
+                  {/* 3D 胶片色彩风格 (LUT) 深度整合 */}
+                  <div className="space-y-2 rounded-xl border border-dark-700/80 bg-dark-800/40 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5">
+                        <Film className="h-4 w-4 text-brand-400" />
+                        <span className="text-xs font-bold text-slate-200">3D 胶片色彩风格 (LUT)</span>
+                      </div>
+                      {effectiveLutId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (currentPhoto) clearPhotoLut(currentPhoto.id);
+                          }}
+                          className="text-[11px] text-slate-400 hover:text-amber-300 transition-colors cursor-pointer"
+                        >
+                          清除风格
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentPhoto) clearPhotoLut(currentPhoto.id);
+                        }}
+                        className={clsx(
+                          'flex items-center space-x-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all cursor-pointer text-left',
+                          !effectiveLutId
+                            ? 'bg-brand-500/20 border-brand-400 text-white font-semibold'
+                            : 'bg-dark-800/80 hover:bg-dark-750 border-dark-700 text-slate-300',
+                        )}
+                      >
+                        <span className="truncate">原色直出 (无 LUT)</span>
+                      </button>
+
+                      {BUILTIN_LUTS.map((lut) => {
+                        const isSelected = effectiveLutId === lut.id;
+                        return (
+                          <button
+                            key={lut.id}
+                            type="button"
+                            onClick={() => {
+                              if (currentPhoto) setPhotoLut(currentPhoto.id, lut.id, effectiveLutIntensity);
+                            }}
+                            title={lut.description}
+                            className={clsx(
+                              'flex items-center space-x-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all cursor-pointer text-left',
+                              isSelected
+                                ? 'bg-amber-500/20 border-amber-400 text-amber-100 font-semibold shadow-sm'
+                                : 'bg-dark-800/80 hover:bg-dark-750 border-dark-700 text-slate-300',
+                            )}
+                          >
+                            <span className="truncate">{lut.name}</span>
+                          </button>
+                        );
+                      })}
+
+                      {customLuts.map((lut) => {
+                        const isSelected = effectiveLutId === lut.id;
+                        return (
+                          <button
+                            key={lut.id}
+                            type="button"
+                            onClick={() => {
+                              if (currentPhoto) setPhotoLut(currentPhoto.id, lut.id, effectiveLutIntensity);
+                            }}
+                            className={clsx(
+                              'flex items-center space-x-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all cursor-pointer text-left',
+                              isSelected
+                                ? 'bg-amber-500/20 border-amber-400 text-amber-100 font-semibold shadow-sm'
+                                : 'bg-dark-800/80 hover:bg-dark-750 border-dark-700 text-slate-300',
+                            )}
+                          >
+                            <span className="truncate">{lut.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {effectiveLutId && (
+                      <div className="pt-2 border-t border-dark-750/70">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                          <span>胶片风格强度 (Intensity)</span>
+                          <span className="font-mono text-slate-300">{Math.round(effectiveLutIntensity * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="1.0"
+                          step="0.05"
+                          value={effectiveLutIntensity}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (currentPhoto) setPhotoLut(currentPhoto.id, effectiveLutId, val);
+                          }}
+                          className="w-full h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-brand-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+
                   {/* 一键快捷影调预设 */}
                   <div className="space-y-1.5">
                     <div className="text-[11px] font-medium text-slate-400">一键快捷影调</div>
                     <div className="grid grid-cols-4 gap-1.5 text-[11px]">
                       <button
-                        onClick={() => resetPhotoAdjustments(currentPhoto.id)}
+                        onClick={() => {
+                          resetPhotoAdjustments(currentPhoto.id);
+                          if (currentPhoto) clearPhotoLut(currentPhoto.id);
+                        }}
                         className={clsx(
                           'py-1.5 px-1 rounded-lg border transition-all cursor-pointer text-center',
                           isOriginalActive

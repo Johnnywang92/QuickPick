@@ -3,6 +3,13 @@ import { LocalPhoto } from '../types/photo';
 import { isAdjustmentsNoop } from './adjustEngine';
 import { applyWatermarkToCanvas } from './watermarkRenderer';
 import { get2DContextWithOptions } from './colorSpace';
+import { apply3dLutToImageData, generateBuiltinLutData } from './lutEngine';
+
+export interface FrameLutConfig {
+  lutId: string | null;
+  intensity: number;
+  customData?: { size: number; data: Uint8Array } | null;
+}
 
 /**
  * 相机品牌识别与规范化 (用于元数据合规文本呈现)
@@ -367,6 +374,7 @@ export async function renderFramedPhotoCanvas(
   adjustments: PhotoAdjustments,
   maxEdge = 2560,
   watermarkConfig?: WatermarkConfig,
+  lutConfig?: FrameLutConfig,
 ): Promise<HTMLCanvasElement> {
   // 1. 规范化缩放
   let photoW = sourceWidth;
@@ -398,9 +406,23 @@ export async function renderFramedPhotoCanvas(
   photoCtx.drawImage(sourceImage, -photoW / 2, -photoH / 2, photoW, photoH);
   photoCtx.restore();
 
-  if (config.includeAdjustments && !isAdjustmentsNoop(adjustments)) {
+  const needsAdjust = config.includeAdjustments && !isAdjustmentsNoop(adjustments);
+  const needsLut =
+    config.includeAdjustments &&
+    Boolean(lutConfig?.lutId && (lutConfig.intensity ?? 0) > 0);
+
+  if (needsAdjust || needsLut) {
     const imgData = photoCtx.getImageData(0, 0, adjustedPhotoW, adjustedPhotoH);
-    applyAdjustmentsToImageData(imgData, adjustments);
+    if (needsAdjust) {
+      applyAdjustmentsToImageData(imgData, adjustments);
+    }
+    if (needsLut && lutConfig?.lutId) {
+      const lutSize = lutConfig.customData ? lutConfig.customData.size : 33;
+      const lutRaw = lutConfig.customData
+        ? lutConfig.customData.data
+        : generateBuiltinLutData(lutConfig.lutId, lutSize);
+      apply3dLutToImageData(imgData, lutRaw, lutSize, lutConfig.intensity);
+    }
     photoCtx.putImageData(imgData, 0, 0);
   }
 

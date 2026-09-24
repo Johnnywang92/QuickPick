@@ -237,3 +237,104 @@ export class LutFilter extends Filter {
     (this.resources as any).uLutSampler = textureSource.style;
   }
 }
+
+/**
+ * 软件级 CPU 3D LUT 三线性插值变换（供离屏相框导出与高清 Canvas 渲染使用）
+ */
+export function apply3dLutToImageData(
+  imageData: ImageData,
+  lutData: Uint8Array,
+  lutSize: number,
+  intensity = 1.0,
+): void {
+  if (intensity <= 0 || !lutData || lutData.length === 0 || lutSize < 2) return;
+  const clampedIntensity = Math.max(0, Math.min(1, intensity));
+  const data = imageData.data;
+  const len = data.length;
+  const maxIdx = lutSize - 1;
+  const sizeSq = lutSize * lutSize;
+
+  for (let i = 0; i < len; i += 4) {
+    const a = data[i + 3];
+    if (a === 0) continue;
+
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+
+    const rf = (r / 255) * maxIdx;
+    const gf = (g / 255) * maxIdx;
+    const bf = (b / 255) * maxIdx;
+
+    const r0 = Math.floor(rf);
+    const r1 = Math.min(r0 + 1, maxIdx);
+    const dr = rf - r0;
+
+    const g0 = Math.floor(gf);
+    const g1 = Math.min(g0 + 1, maxIdx);
+    const dg = gf - g0;
+
+    const b0 = Math.floor(bf);
+    const b1 = Math.min(b0 + 1, maxIdx);
+    const db = bf - b0;
+
+    // 8 个相邻顶点的偏移索引: (b * size * size + g * size + r) * 4
+    const i000 = (b0 * sizeSq + g0 * lutSize + r0) * 4;
+    const i100 = (b0 * sizeSq + g0 * lutSize + r1) * 4;
+    const i010 = (b0 * sizeSq + g1 * lutSize + r0) * 4;
+    const i110 = (b0 * sizeSq + g1 * lutSize + r1) * 4;
+
+    const i001 = (b1 * sizeSq + g0 * lutSize + r0) * 4;
+    const i101 = (b1 * sizeSq + g0 * lutSize + r1) * 4;
+    const i011 = (b1 * sizeSq + g1 * lutSize + r0) * 4;
+    const i111 = (b1 * sizeSq + g1 * lutSize + r1) * 4;
+
+    // 沿 R 轴进行双线性插值
+    const rdr0 = 1 - dr;
+    // z = b0 面
+    const c00_r = lutData[i000] * rdr0 + lutData[i100] * dr;
+    const c00_g = lutData[i000 + 1] * rdr0 + lutData[i100 + 1] * dr;
+    const c00_b = lutData[i000 + 2] * rdr0 + lutData[i100 + 2] * dr;
+
+    const c10_r = lutData[i010] * rdr0 + lutData[i110] * dr;
+    const c10_g = lutData[i010 + 1] * rdr0 + lutData[i110 + 1] * dr;
+    const c10_b = lutData[i010 + 2] * rdr0 + lutData[i110 + 2] * dr;
+
+    // z = b1 面
+    const c01_r = lutData[i001] * rdr0 + lutData[i101] * dr;
+    const c01_g = lutData[i001 + 1] * rdr0 + lutData[i101 + 1] * dr;
+    const c01_b = lutData[i001 + 2] * rdr0 + lutData[i101 + 2] * dr;
+
+    const c11_r = lutData[i011] * rdr0 + lutData[i111] * dr;
+    const c11_g = lutData[i011 + 1] * rdr0 + lutData[i111 + 1] * dr;
+    const c11_b = lutData[i011 + 2] * rdr0 + lutData[i111 + 2] * dr;
+
+    // 沿 G 轴插值
+    const rdg0 = 1 - dg;
+    const c0_r = c00_r * rdg0 + c10_r * dg;
+    const c0_g = c00_g * rdg0 + c10_g * dg;
+    const c0_b = c00_b * rdg0 + c10_b * dg;
+
+    const c1_r = c01_r * rdg0 + c11_r * dg;
+    const c1_g = c01_g * rdg0 + c11_g * dg;
+    const c1_b = c01_b * rdg0 + c11_b * dg;
+
+    // 沿 B 轴插值
+    const rdb0 = 1 - db;
+    const targetR = c0_r * rdb0 + c1_r * db;
+    const targetG = c0_g * rdb0 + c1_g * db;
+    const targetB = c0_b * rdb0 + c1_b * db;
+
+    // 混合强度
+    if (clampedIntensity >= 0.999) {
+      data[i] = (targetR + 0.5) | 0;
+      data[i + 1] = (targetG + 0.5) | 0;
+      data[i + 2] = (targetB + 0.5) | 0;
+    } else {
+      const invInt = 1 - clampedIntensity;
+      data[i] = (r * invInt + targetR * clampedIntensity + 0.5) | 0;
+      data[i + 1] = (g * invInt + targetG * clampedIntensity + 0.5) | 0;
+      data[i + 2] = (b * invInt + targetB * clampedIntensity + 0.5) | 0;
+    }
+  }
+}

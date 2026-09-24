@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { useLutStore } from '../../store/lutStore';
 import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
+import { useAdjustStore } from '../../store/adjustStore';
 import { BUILTIN_LUTS } from '../../utils/lutPresets';
 import {
   Film,
@@ -13,6 +14,7 @@ import {
   Check,
   Trash2,
   Layers,
+  Frame,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -412,15 +414,30 @@ export const LutControlBar: React.FC = () => {
             )}
           </div>
 
-          {/* 底部操作与导入 */}
-          <div className="pt-2 border-t border-dark-750 flex items-center justify-between gap-2">
+          {/* 底部操作与联动 */}
+          <div className="pt-2 border-t border-dark-750 space-y-2">
             <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-1 py-1.5 px-2.5 rounded-xl bg-dark-800 hover:bg-dark-750 border border-dark-700 text-slate-300 hover:text-white font-medium text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              onClick={() => {
+                setIsPanelOpen(false);
+                useAdjustStore.getState().setIsModalOpen(true);
+                useAdjustStore.getState().setActiveTab('adjust');
+              }}
+              className="w-full py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-brand-500/20 to-indigo-500/15 hover:from-amber-500/25 hover:to-indigo-500/25 border border-brand-500/30 text-brand-200 hover:text-white font-medium text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-sm"
+              title="进入完整相框工作台进行曝光、白平衡与艺术相框精修 [快捷键 E]"
             >
-              <Upload className="w-3 h-3 text-indigo-400" />
-              <span>导入 .cube 文件</span>
+              <Frame className="w-3.5 h-3.5 text-brand-400" />
+              <span>打开完整相框与微调工作台 (E) ↗</span>
             </button>
+
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-1 py-1.5 px-2.5 rounded-xl bg-dark-800 hover:bg-dark-750 border border-dark-700 text-slate-300 hover:text-white font-medium text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Upload className="w-3 h-3 text-indigo-400" />
+                <span>导入 .cube 文件</span>
+              </button>
+            </div>
           </div>
 
           {/* 快捷键提示条 */}
