@@ -825,7 +825,7 @@ export const FrameAndAdjustModal: React.FC = () => {
               <div className="text-xs text-rose-400">{previewError}</div>
             ) : (
               <div
-                className="relative flex h-full w-full items-center justify-center p-2 select-none overflow-hidden"
+                className="relative flex h-full w-full items-center justify-center pt-10 pb-16 px-4 select-none overflow-hidden"
                 onPointerMove={isDraggingSplit ? handleSplitPointerMove : undefined}
                 onPointerUp={isDraggingSplit ? handleSplitPointerUp : undefined}
                 onPointerCancel={isDraggingSplit ? handleSplitPointerUp : undefined}
@@ -870,18 +870,19 @@ export const FrameAndAdjustModal: React.FC = () => {
               </div>
             )}
 
-            {/* 底部快捷键提示 */}
-            <div className="absolute bottom-4 left-6 text-[11px] text-slate-500 font-mono flex items-center space-x-3">
-              <span>快捷键：按 1~6 换模板</span>
-              <span>•</span>
-              <span>按 A 算法调光</span>
-              <span>•</span>
-              <span>按 Y 分屏对比</span>
-              <span>•</span>
-              <span>按 \ 瞬看原片</span>
-              <span>•</span>
+            {/* 底部快捷键提示胶囊 */}
+            <div className="absolute bottom-3 left-6 z-20 px-3 py-1.5 rounded-xl bg-dark-900/85 backdrop-blur-md border border-dark-750 shadow-xl text-[11px] text-slate-400 font-mono flex items-center space-x-2 select-none pointer-events-none">
+              <span className="text-slate-300 font-medium">快捷键：</span>
+              <span>1~6 模板</span>
+              <span className="text-dark-600">•</span>
+              <span>A 调光</span>
+              <span className="text-dark-600">•</span>
+              <span>Y 分屏</span>
+              <span className="text-dark-600">•</span>
+              <span>\ 瞬看</span>
+              <span className="text-dark-600">•</span>
               <span>Cmd+C 拷图</span>
-              <span>•</span>
+              <span className="text-dark-600">•</span>
               <span>Cmd+Shift+C/V 拷粘调色</span>
             </div>
           </div>
