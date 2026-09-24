@@ -6,6 +6,7 @@ import { useInsightStore } from '../store/insightStore';
 import { useTagStore } from '../store/tagStore';
 import { useLutStore } from '../store/lutStore';
 import { useAdjustStore } from '../store/adjustStore';
+import { useGridStore } from '../store/gridStore';
 
 interface KeyboardShortcutsOptions {
   onToggleRetouch?: () => void;
@@ -134,6 +135,18 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         case '\\': {
           e.preventDefault();
           useLutStore.getState().setIsBypassComparing(true);
+          break;
+        }
+
+        // 经典构图参考线切换 [O] 与 黄金螺旋方向翻转 [Shift + O]
+        case 'o':
+        case 'O': {
+          e.preventDefault();
+          if (e.shiftKey) {
+            useGridStore.getState().cycleSpiralOrientation();
+          } else {
+            useGridStore.getState().cycleGridType();
+          }
           break;
         }
 

@@ -9,6 +9,9 @@ import { useAdjustStore } from '../../store/adjustStore';
 import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
 import { ColorAdjustFilter, isAdjustmentsNoop } from '../../utils/adjustEngine';
 import { LutControlBar } from './LutControlBar';
+import { CompositionGridBar } from './CompositionGridBar';
+import { useGridStore } from '../../store/gridStore';
+import { renderCompositionGrid } from '../../utils/gridRenderer';
 import { VisualPin } from '../../types/photo';
 import clsx from 'clsx';
 
@@ -37,8 +40,16 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const appRef = useRef<Application | null>(null);
   const imageContainerRef = useRef<Container | null>(null);
   const pinsContainerRef = useRef<Container | null>(null);
+  const gridGraphicsRef = useRef<Graphics | null>(null);
   const spriteRef = useRef<Sprite | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const gridType = useGridStore((state) => state.gridType);
+  const spiralOrientation = useGridStore((state) => state.spiralOrientation);
+  const gridColor = useGridStore((state) => state.gridColor);
+  const gridOpacity = useGridStore((state) => state.opacity);
+  const showPowerPoints = useGridStore((state) => state.showPowerPoints);
+  const gridHudMessage = useGridStore((state) => state.hudMessage);
 
   const focusedFace = useInsightStore((state) => state.focusedFace);
   const effectiveTheme = useThemeStore((state) => state.effectiveTheme);
@@ -83,14 +94,36 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const [swipeVisualOffset, setSwipeVisualOffset] = useState<number>(0);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  const updateCompositionGrid = useCallback(() => {
+    if (!gridGraphicsRef.current || !spriteRef.current) return;
+    const sprite = spriteRef.current;
+    const currentScale = imageContainerRef.current?.scale.x || 1.0;
+    renderCompositionGrid(
+      gridGraphicsRef.current,
+      sprite.texture.width,
+      sprite.texture.height,
+      {
+        gridType,
+        spiralOrientation,
+        gridColor,
+        opacity: gridOpacity,
+        showPowerPoints,
+        scale: currentScale,
+      },
+    );
+  }, [gridType, spiralOrientation, gridColor, gridOpacity, showPowerPoints]);
+
   const keepPinMarkersReadable = useCallback(() => {
     const scale = imageContainerRef.current?.scale.x;
-    if (!scale || !pinsContainerRef.current) return;
-    const inverseScale = 1 / Math.max(scale, 0.001);
-    for (const marker of pinsContainerRef.current.children) {
-      marker.scale.set(inverseScale);
+    if (!scale) return;
+    if (pinsContainerRef.current) {
+      const inverseScale = 1 / Math.max(scale, 0.001);
+      for (const marker of pinsContainerRef.current.children) {
+        marker.scale.set(inverseScale);
+      }
     }
-  }, []);
+    updateCompositionGrid();
+  }, [updateCompositionGrid]);
 
   const getFitScale = useCallback(() => {
     if (!appRef.current || !spriteRef.current) return 1.0;
@@ -250,6 +283,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         imageContainerRef.current.removeChildren();
       }
       spriteRef.current = null;
+      gridGraphicsRef.current = null;
       pinsContainerRef.current = null;
       setImageStatus('idle');
       setLoadError(null);
@@ -279,6 +313,10 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
           sprite.anchor.set(0.5);
           container.addChild(sprite);
           spriteRef.current = sprite;
+
+          const gridGraphics = new Graphics();
+          container.addChild(gridGraphics);
+          gridGraphicsRef.current = gridGraphics;
 
           const pinsLayer = new Container();
           container.addChild(pinsLayer);
@@ -416,6 +454,11 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       pinsLayer.addChild(marker);
     }
   }, [pins, imageStatus, textureVersion]);
+
+  // 经典构图参考线渲染与响应
+  useEffect(() => {
+    updateCompositionGrid();
+  }, [updateCompositionGrid, imageStatus, textureVersion, zoomLevel]);
 
   // 当摄影师点击 Face Loupe 人脸特写卡片时，平滑聚焦与居中放大至对应人物
   useEffect(() => {
@@ -777,6 +820,13 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
 
+      {/* 构图参考线快捷键切换微提示 HUD */}
+      {gridHudMessage && (
+        <div className="pointer-events-none absolute top-16 left-1/2 -translate-y-0 -translate-x-1/2 z-30 flex items-center space-x-2 px-4 py-2 rounded-2xl bg-dark-900/90 text-amber-200 font-bold text-xs shadow-2xl backdrop-blur-md border border-amber-500/40 animate-in fade-in slide-in-from-top-2 duration-150">
+          <span>{gridHudMessage}</span>
+        </div>
+      )}
+
       {/* 悬浮控制栏（相框与调色 + 3D LUT 胶片调色 + 缩放控制） */}
       <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
         {/* 相机参数相框与调色 [E] */}
@@ -793,6 +843,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </button>
 
         <LutControlBar />
+        <CompositionGridBar />
 
         {/* 悬浮缩放控制栏 */}
         <div className="flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300 text-xs">
