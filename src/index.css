@@ -73,110 +73,84 @@ html.theme-light .fixed.inset-0.bg-black\/75 {
   background-color: rgb(15 23 42 / 0.45);
 }
 
-/* 废片粉碎动效 (Shredder Funnel Animation) */
-@keyframes shredCardDisintegrate {
+/* 真实物理碎纸机切条动效 (Mechanical Photo Paper Shredder) */
+@keyframes shredPaperStripDrop {
   0% {
-    transform: scale(1) rotate(0deg);
-    filter: brightness(1) contrast(1);
+    transform: translateY(0) rotate(0deg) skewY(0deg);
     opacity: 1;
+    filter: brightness(1) contrast(1);
   }
   15% {
-    transform: scale(1.05) rotate(-3deg) translate(-2px, -3px);
-    filter: brightness(1.7) contrast(1.4) drop-shadow(0 0 20px rgba(244, 63, 94, 0.95));
+    /* 滚刀咬入相纸微震 */
+    transform: translateY(3px) rotate(calc(var(--shred-rot, 3deg) * 0.25)) skewY(0deg);
+    opacity: 1;
+    filter: brightness(1.08) contrast(1.05);
   }
-  30% {
-    transform: scale(0.96) rotate(4deg) translate(3px, 2px);
-    filter: brightness(2) hue-rotate(-25deg);
-  }
-  50% {
-    transform: scale(0.82) rotate(-6deg) translateY(14px);
-    filter: brightness(2.2) contrast(1.6);
-    opacity: 0.9;
+  35% {
+    /* 纵向割开并沿重力下坠、受空气阻力微卷 */
+    transform: translateY(28%) rotate(calc(var(--shred-rot, 3deg) * 0.7)) skewY(var(--shred-skew, 2deg));
+    opacity: 1;
   }
   75% {
-    transform: scale(0.45) rotate(14deg) translateY(45px);
-    opacity: 0.45;
-    filter: blur(3px) grayscale(60%);
+    transform: translateY(115%) rotate(var(--shred-rot, 4deg)) skewY(calc(var(--shred-skew, 2deg) * 1.4));
+    opacity: 0.95;
+    filter: brightness(0.9);
   }
   100% {
-    transform: scale(0.05) rotate(-30deg) translateY(100px);
+    /* 彻底沉入收纳暗盒 */
+    transform: translateY(165%) rotate(calc(var(--shred-rot, 4deg) * 1.8)) skewY(calc(var(--shred-skew, 2deg) * 2));
     opacity: 0;
-    filter: blur(10px) grayscale(100%);
+    filter: brightness(0.35) blur(1px);
   }
 }
 
-@keyframes shredLaserSweep {
+/* 碎纸切刀卡槽机械震感 */
+@keyframes shredCardHaptic {
+  0% { transform: scale(1) translateY(0); }
+  15% { transform: scale(1.015) translateY(-2px); }
+  30% { transform: scale(0.995) translateY(1.5px); }
+  45% { transform: scale(1.005) translateY(-0.5px); }
+  65% { transform: scale(1) translateY(0); }
+  100% { transform: scale(1) translateY(0); }
+}
+
+/* 碎纸切刀微光闪过 */
+@keyframes shredBladeFlash {
+  0% { opacity: 0; transform: scaleX(0.2); }
+  25% { opacity: 1; transform: scaleX(1); }
+  60% { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+
+/* 微细碎纸屑自然飘落翻滚 */
+@keyframes shredChaffDrift {
   0% {
-    top: -5%;
+    transform: translate(0, 0) rotate(0deg) scale(0.8);
     opacity: 0;
   }
-  15% {
-    opacity: 1;
+  20% {
+    opacity: 0.95;
+    transform: translate(calc(var(--chaff-x, 8px) * 0.3), 15px) rotate(45deg) scale(1);
   }
-  85% {
-    opacity: 1;
-  }
-  100% {
-    top: 105%;
-    opacity: 0;
-  }
-}
-
-@keyframes shredStrip1 {
-  0% { transform: translateY(0); }
-  30% { transform: translateY(0); }
-  100% { transform: translateY(140px) rotate(10deg); opacity: 0; }
-}
-
-@keyframes shredStrip2 {
-  0% { transform: translateY(0); }
-  45% { transform: translateY(0); }
-  100% { transform: translateY(170px) rotate(-12deg); opacity: 0; }
-}
-
-@keyframes shredStrip3 {
-  0% { transform: translateY(0); }
-  25% { transform: translateY(0); }
-  100% { transform: translateY(150px) rotate(8deg); opacity: 0; }
-}
-
-@keyframes shredStrip4 {
-  0% { transform: translateY(0); }
-  40% { transform: translateY(0); }
-  100% { transform: translateY(180px) rotate(-14deg); opacity: 0; }
-}
-
-@keyframes shredParticleBurst {
-  0% {
-    transform: translate(0, 0) scale(1) rotate(0deg);
-    opacity: 1;
+  75% {
+    opacity: 0.8;
   }
   100% {
-    transform: translate(var(--tx, 0px), var(--ty, -60px)) scale(0) rotate(var(--rot, 360deg));
+    transform: translate(var(--chaff-x, 15px), 110px) rotate(220deg) scale(0.6);
     opacity: 0;
   }
 }
 
 .animate-shred-card {
-  animation: shredCardDisintegrate 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+  animation: shredCardHaptic 0.65s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
   pointer-events: none !important;
-  z-index: 30 !important;
 }
 
-.animate-shred-laser {
-  animation: shredLaserSweep 0.65s ease-in-out forwards;
+.animate-shred-blade {
+  animation: shredBladeFlash 0.35s ease-out forwards;
 }
 
-.animate-shred-strip-1 {
-  animation: shredStrip1 0.72s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-.animate-shred-strip-2 {
-  animation: shredStrip2 0.72s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-.animate-shred-strip-3 {
-  animation: shredStrip3 0.72s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-.animate-shred-strip-4 {
-  animation: shredStrip4 0.72s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+.animate-shred-chaff {
+  animation: shredChaffDrift 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 

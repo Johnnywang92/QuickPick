@@ -33,20 +33,6 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isShredding, setIsShredding] = useState<boolean>(false);
   const [shreddingIds, setShreddingIds] = useState<Set<string>>(new Set());
-  const [particles, setParticles] = useState<
-    Array<{
-      id: number;
-      x: number;
-      y: number;
-      tx: number;
-      ty: number;
-      size: number;
-      color: string;
-      rot: number;
-      duration: number;
-      delay: number;
-    }>
-  >([]);
 
   // 1. 废片智能判断与特征分类
   const defectItems = useMemo(() => {
@@ -203,35 +189,18 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
     }));
     setSelectionStates(updates, `粉碎 ${updates.length} 张闭眼/模糊废片`);
 
-    // 2. 触发粉碎动效与粒子生成
+    // 2. 触发真实物理切条粉碎动效
     setIsShredding(true);
     setShreddingIds(new Set(targetIds));
-
-    // 生成飞溅粉碎粒子 (48 个高饱和荧光/炽热火星粒子)
-    const particleColors = ['#f43f5e', '#fb7185', '#f97316', '#fb923c', '#eab308', '#ef4444', '#fda4af'];
-    const newParticles = Array.from({ length: 48 }).map((_, i) => ({
-      id: Date.now() + i,
-      x: 30 + Math.random() * 40,
-      y: 35 + Math.random() * 35,
-      tx: (Math.random() - 0.5) * 550,
-      ty: -80 - Math.random() * 300,
-      size: 4 + Math.random() * 8,
-      color: particleColors[Math.floor(Math.random() * particleColors.length)],
-      rot: (Math.random() - 0.5) * 720,
-      duration: 0.55 + Math.random() * 0.3,
-      delay: Math.random() * 0.12,
-    }));
-    setParticles(newParticles);
 
     // 3. 动效完成后重置粉碎状态并提示
     setTimeout(() => {
       setIsShredding(false);
       setShreddingIds(new Set());
       setSelectedIds(new Set());
-      setParticles([]);
-      setToastMessage(`⚡ 💥 已成功粉碎 ${count} 张废片！(已标记为不选 N，可随时按 Cmd+Z 撤销)`);
+      setToastMessage(`⚡ 📄 已成功粉碎 ${count} 张废片！(已标记为不选 N，可随时按 Cmd+Z 撤销)`);
       setTimeout(() => setToastMessage(null), 3500);
-    }, 720);
+    }, 680);
   };
 
   // 跳转到照片主界面
@@ -243,30 +212,6 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-150 select-none">
       <div className="relative flex h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl overflow-hidden">
-        {/* 全局粉碎飞溅粒子层 */}
-        {particles.length > 0 && (
-          <div className="absolute inset-0 pointer-events-none overflow-hidden z-50">
-            {particles.map((p) => (
-              <span
-                key={p.id}
-                className="absolute rounded-full"
-                style={{
-                  left: `${p.x}%`,
-                  top: `${p.y}%`,
-                  width: `${p.size}px`,
-                  height: `${p.size}px`,
-                  backgroundColor: p.color,
-                  boxShadow: `0 0 10px ${p.color}`,
-                  ['--tx' as string]: `${p.tx}px`,
-                  ['--ty' as string]: `${p.ty}px`,
-                  ['--rot' as string]: `${p.rot}deg`,
-                  animation: `shredParticleBurst ${p.duration}s cubic-bezier(0.2, 0.8, 0.2, 1) ${p.delay}s forwards`,
-                } as React.CSSProperties}
-              />
-            ))}
-          </div>
-        )}
-
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between border-b border-dark-750 bg-dark-850 px-5 py-3.5">
           <div className="flex items-center space-x-3">
@@ -400,13 +345,18 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                   >
                     {/* 缩略图区域 */}
                     <div className="relative aspect-4/3 w-full rounded-lg bg-dark-950 overflow-hidden mb-2">
+                      {/* 底层收纳空槽 (纸条下落后显现的暗黑底仓) */}
+                      <div className="absolute inset-0 bg-dark-950 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-[10px] font-mono text-slate-600">已剔除 (N)</span>
+                      </div>
+
                       {thumb ? (
                         <img
                           src={thumb}
                           alt={item.photo.filename}
                           className={clsx(
                             'h-full w-full object-cover transition-transform duration-200',
-                            isItemShredding ? 'scale-110 filter contrast-125' : 'group-hover:scale-105',
+                            isItemShredding ? 'opacity-0' : 'group-hover:scale-105',
                           )}
                         />
                       ) : (
@@ -415,27 +365,72 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                         </div>
                       )}
 
-                      {/* 废片粉碎动效：激光切线、纵向下落碎纸条与粉碎徽标 */}
+                      {/* 真实物理碎纸机切条动效 */}
                       {isItemShredding && (
-                        <>
-                          {/* 激光切割扫描线 */}
-                          <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-rose-300 to-transparent shadow-[0_0_15px_#f43f5e] z-30 animate-shred-laser" />
-
-                          {/* 4 条下落的粉碎切片 */}
-                          <div className="absolute inset-0 z-20 pointer-events-none grid grid-cols-4 gap-[1px] overflow-hidden">
-                            <div className="h-full bg-rose-500/25 border-r border-rose-400/50 backdrop-blur-[0.5px] animate-shred-strip-1" />
-                            <div className="h-full bg-orange-500/25 border-r border-orange-400/50 backdrop-blur-[0.5px] animate-shred-strip-2" />
-                            <div className="h-full bg-amber-500/25 border-r border-amber-400/50 backdrop-blur-[0.5px] animate-shred-strip-3" />
-                            <div className="h-full bg-rose-500/25 backdrop-blur-[0.5px] animate-shred-strip-4" />
+                        <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
+                          {/* 顶部机械齿刀插槽压条 */}
+                          <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-zinc-800 via-zinc-600 to-zinc-800 border-b border-zinc-950 shadow-md z-30 flex items-center justify-around px-0.5">
+                            {Array.from({ length: 8 }).map((_, si) => (
+                              <span key={si} className="w-1 h-0.5 bg-zinc-950/80 rounded-[0.5px]" />
+                            ))}
                           </div>
 
-                          {/* 爆破中心文字徽标 */}
-                          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-                            <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-black text-[10px] shadow-lg animate-ping">
-                              💥 粉碎
-                            </span>
+                          {/* 机械切刀高光瞬间闪过 */}
+                          <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-transparent via-white/40 to-transparent z-40 animate-shred-blade pointer-events-none" />
+
+                          {/* 8 条由真实相片精准裁切的纵向纸条 */}
+                          {Array.from({ length: 8 }).map((_, si) => {
+                            const left = si * 12.5;
+                            const right = (si + 1) * 12.5;
+                            const delay = (Math.abs(si - 3.5) * 0.035 + (si % 2) * 0.02).toFixed(3);
+                            const rot = (si % 2 === 0 ? 1 : -1) * (2.5 + (si % 3) * 1.5);
+                            const skew = (si % 2 === 0 ? 1 : -1) * (1.2 + (si % 2) * 1.2);
+                            const duration = 0.58 + (si % 3) * 0.04;
+
+                            return (
+                              <div
+                                key={si}
+                                className="absolute inset-0 overflow-hidden"
+                                style={{
+                                  clipPath: `polygon(${left}% 0%, ${right}% 0%, ${right}% 100%, ${left}% 100%)`,
+                                  animation: `shredPaperStripDrop ${duration}s cubic-bezier(0.35, 0, 0.25, 1) ${delay}s forwards`,
+                                  ['--shred-rot' as string]: `${rot}deg`,
+                                  ['--shred-skew' as string]: `${skew}deg`,
+                                }}
+                              >
+                                {thumb ? (
+                                  <img
+                                    src={thumb}
+                                    alt=""
+                                    className="h-full w-full object-cover filter contrast-[1.1] brightness-[1.02]"
+                                  />
+                                ) : (
+                                  <div className="h-full w-full bg-dark-800" />
+                                )}
+                                {/* 纸张裁切边界阴影与立体折光 */}
+                                <div className="absolute inset-0 border-r border-black/40 shadow-[inset_1px_0_1.5px_rgba(255,255,255,0.12)]" />
+                              </div>
+                            );
+                          })}
+
+                          {/* 碎纸切口微细碎屑自然下落 */}
+                          <div className="absolute inset-x-0 bottom-0 h-full overflow-hidden pointer-events-none">
+                            {Array.from({ length: 6 }).map((_, ci) => (
+                              <span
+                                key={ci}
+                                className="absolute rounded-[1px] bg-slate-100/90 shadow-xs animate-shred-chaff"
+                                style={{
+                                  left: `${12 + ci * 15}%`,
+                                  top: '40%',
+                                  width: `${2 + (ci % 3)}px`,
+                                  height: `${3 + (ci % 2) * 2}px`,
+                                  animationDelay: `${0.12 + ci * 0.05}s`,
+                                  ['--chaff-x' as string]: `${(ci % 2 === 0 ? 1 : -1) * (10 + ci * 4)}px`,
+                                } as React.CSSProperties}
+                              />
+                            ))}
                           </div>
-                        </>
+                        </div>
                       )}
 
                       {/* 勾选框 / 保护状态标志 */}
