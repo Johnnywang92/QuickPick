@@ -59,3 +59,57 @@ export const DEFAULT_FRAME_CONFIG: FrameConfig = {
   borderScale: 0.1,
   includeAdjustments: true,
 };
+
+export type WatermarkType = 'text' | 'logo';
+
+export type WatermarkPosition =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right'
+  | 'tiled'; // 45° 对角平铺防盗样片
+
+export type WatermarkFontFamily = 'sans' | 'serif' | 'signature' | 'mono';
+
+export interface WatermarkConfig {
+  enabled: boolean;
+  type: WatermarkType;
+
+  // 文字与签名
+  text: string;
+  fontFamily: WatermarkFontFamily;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+
+  // 图片 / Logo
+  logoDataUrl?: string;
+
+  // 排版与质感
+  position: WatermarkPosition;
+  opacity: number;       // 0.1 ~ 1.0 (默认 0.75)
+  scale: number;         // 0.05 ~ 0.4 (默认 0.16，相对于短边尺寸)
+  margin: number;        // 0.01 ~ 0.1 (默认 0.035)
+  hasShadow: boolean;    // 是否开启柔和外发光/投影
+}
+
+export const DEFAULT_WATERMARK_CONFIG: WatermarkConfig = {
+  enabled: false,
+  type: 'text',
+  text: '© 2026 QuickPick Photography',
+  fontFamily: 'sans',
+  color: '#FFFFFF',
+  bold: false,
+  italic: false,
+  position: 'bottom-right',
+  opacity: 0.75,
+  scale: 0.16,
+  margin: 0.035,
+  hasShadow: true,
+};
+

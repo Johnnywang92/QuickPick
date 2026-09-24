@@ -27,6 +27,11 @@ import {
   Eye,
   Sparkles,
   ArrowRightLeft,
+  Stamp,
+  Type,
+  Image as ImageIcon,
+  Trash2,
+  Grid3X3,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { shareCustomImagesViaAirDrop } from '../../services/tauriBridge';
@@ -45,6 +50,9 @@ export const FrameAndAdjustModal: React.FC = () => {
     copyCurrentAdjustments,
     pasteAdjustments,
     copiedAdjustments,
+    watermarkConfig,
+    updateWatermarkConfig,
+    resetWatermarkConfig,
   } = useAdjustStore();
 
   const { photos, currentIndex } = useAlbumStore();
@@ -84,6 +92,26 @@ export const FrameAndAdjustModal: React.FC = () => {
     }, 2400);
   }, []);
 
+  // 处理 Logo 上传
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Logo 图片大小请勿超过 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      if (result) {
+        updateWatermarkConfig({ logoDataUrl: result });
+        showToast('Logo 图片上传成功！');
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   // 渲染相框与调色预览
   useEffect(() => {
     if (!isModalOpen || !currentPhoto || !currentPreviewUrl) return;
@@ -112,6 +140,7 @@ export const FrameAndAdjustModal: React.FC = () => {
           effectiveConfig,
           effectiveAdjustments,
           1600,
+          isComparingBefore ? undefined : watermarkConfig,
         );
 
         if (isCancelled) return;
@@ -138,6 +167,7 @@ export const FrameAndAdjustModal: React.FC = () => {
             { ...frameConfig, includeAdjustments: false },
             { ...DEFAULT_ADJUSTMENTS, rotation: photoAdjustments.rotation },
             1600,
+            undefined,
           );
           if (isCancelled) return;
           const beforeTarget = splitBeforeCanvasRef.current;
@@ -194,6 +224,7 @@ export const FrameAndAdjustModal: React.FC = () => {
     photoAdjustments,
     isComparingBefore,
     isSplitMode,
+    watermarkConfig,
   ]);
 
   // 分屏拖拽交互计算
@@ -242,6 +273,7 @@ export const FrameAndAdjustModal: React.FC = () => {
           frameConfig,
           photoAdjustments,
           maxEdge,
+          watermarkConfig,
         );
       }
       if (currentRenderedCanvasRef.current) {
@@ -249,7 +281,7 @@ export const FrameAndAdjustModal: React.FC = () => {
       }
       throw new Error('相框尚未渲染就绪');
     },
-    [currentPhoto, frameConfig, photoAdjustments],
+    [currentPhoto, frameConfig, photoAdjustments, watermarkConfig],
   );
 
   // 算法一键调光
@@ -614,6 +646,18 @@ export const FrameAndAdjustModal: React.FC = () => {
               <Sliders className="h-3.5 w-3.5" />
               <span>快速调色 (Adjust)</span>
             </button>
+            <button
+              onClick={() => setActiveTab('watermark')}
+              className={clsx(
+                'flex items-center space-x-1.5 rounded-lg px-3.5 py-1 text-xs font-semibold transition-all cursor-pointer',
+                activeTab === 'watermark'
+                  ? 'bg-brand-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200',
+              )}
+            >
+              <Stamp className="h-3.5 w-3.5" />
+              <span>水印与签名 (Watermark)</span>
+            </button>
           </div>
 
           <button
@@ -893,7 +937,7 @@ export const FrameAndAdjustModal: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : activeTab === 'adjust' ? (
                 /* 选片级快速调色面板 */
                 <div className="space-y-5">
                   <div className="flex items-center justify-between">
@@ -1228,6 +1272,370 @@ export const FrameAndAdjustModal: React.FC = () => {
                       </button>
                     </div>
                   )}
+                </div>
+              ) : (
+                /* 水印与摄影师签名面板 */
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300">照片水印与签名设置</span>
+                    <button
+                      onClick={resetWatermarkConfig}
+                      className="text-[11px] text-slate-400 hover:text-brand-300 flex items-center gap-1 cursor-pointer"
+                      title="重置水印为默认状态"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>复位参数</span>
+                    </button>
+                  </div>
+
+                  {/* 总开关 */}
+                  <div className="rounded-xl border border-dark-700/80 bg-dark-800/60 p-3">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-center space-x-2">
+                        <Stamp className="h-4 w-4 text-brand-400" />
+                        <div>
+                          <div className="text-xs font-semibold text-slate-200">启用照片水印 / 签名</div>
+                          <div className="text-[10px] text-slate-400">在照片画面上压印签名、工作室Logo或防盗水印</div>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={watermarkConfig.enabled}
+                        onChange={(e) => updateWatermarkConfig({ enabled: e.target.checked })}
+                        className="rounded bg-dark-900 border-dark-600 text-brand-500 focus:ring-0 cursor-pointer"
+                      />
+                    </label>
+                  </div>
+
+                  {/* 水印类型选择 (文字签名 vs 图像Logo) */}
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-medium text-slate-400">水印形式</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => updateWatermarkConfig({ type: 'text' })}
+                        className={clsx(
+                          'flex items-center justify-center space-x-1.5 py-2 px-3 rounded-lg border text-xs font-medium transition-all cursor-pointer',
+                          watermarkConfig.type === 'text'
+                            ? 'bg-brand-600/20 border-brand-500 text-brand-200 ring-1 ring-brand-500/30 font-semibold'
+                            : 'bg-dark-800 border-dark-700 text-slate-300 hover:bg-dark-750',
+                        )}
+                      >
+                        <Type className="h-3.5 w-3.5" />
+                        <span>文字签名 / 版权</span>
+                      </button>
+                      <button
+                        onClick={() => updateWatermarkConfig({ type: 'logo' })}
+                        className={clsx(
+                          'flex items-center justify-center space-x-1.5 py-2 px-3 rounded-lg border text-xs font-medium transition-all cursor-pointer',
+                          watermarkConfig.type === 'logo'
+                            ? 'bg-brand-600/20 border-brand-500 text-brand-200 ring-1 ring-brand-500/30 font-semibold'
+                            : 'bg-dark-800 border-dark-700 text-slate-300 hover:bg-dark-750',
+                        )}
+                      >
+                        <ImageIcon className="h-3.5 w-3.5" />
+                        <span>工作室 Logo 图标</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 文字签名专属设置 */}
+                  {watermarkConfig.type === 'text' ? (
+                    <div className="space-y-4 rounded-xl border border-dark-700/60 bg-dark-800/40 p-3">
+                      <div>
+                        <div className="text-[11px] text-slate-400 mb-1">签名 / 水印内容</div>
+                        <input
+                          type="text"
+                          value={watermarkConfig.text}
+                          onChange={(e) => updateWatermarkConfig({ text: e.target.value })}
+                          placeholder="例如：© 2026 Johnny Wang"
+                          className="w-full rounded-lg bg-dark-900 border border-dark-700 px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:border-brand-500 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* 快速预设词条 */}
+                      <div>
+                        <div className="text-[10px] text-slate-400 mb-1.5">快速填充常用词条</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            '© 2026 Johnny Wang',
+                            'SHOT ON ALPHA · PHOTO BY JOHNNY',
+                            'PROOF 选片专用样张 · 请勿转载',
+                            'SAMPLE 样片',
+                          ].map((preset) => (
+                            <button
+                              key={preset}
+                              onClick={() => updateWatermarkConfig({ text: preset })}
+                              className="px-2 py-0.5 rounded text-[10px] bg-dark-700 text-slate-300 hover:bg-brand-600 hover:text-white transition-colors cursor-pointer"
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 字体风格选择 */}
+                      <div>
+                        <div className="text-[11px] text-slate-400 mb-1.5">字体风格</div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[
+                            { id: 'sans', label: '现代无衬线 (Sans)' },
+                            { id: 'serif', label: '经典衬线 (Serif)' },
+                            { id: 'signature', label: '优雅手写 (Signature)' },
+                            { id: 'mono', label: '工业等宽 (Mono)' },
+                          ].map((font) => (
+                            <button
+                              key={font.id}
+                              onClick={() => updateWatermarkConfig({ fontFamily: font.id as any })}
+                              className={clsx(
+                                'py-1.5 px-2 rounded-lg border text-[11px] text-left transition-all cursor-pointer',
+                                watermarkConfig.fontFamily === font.id
+                                  ? 'bg-brand-500/20 border-brand-500 text-brand-200 font-semibold'
+                                  : 'bg-dark-900 border-dark-700 text-slate-300 hover:bg-dark-750',
+                              )}
+                            >
+                              {font.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 字重、斜体与颜色 */}
+                      <div className="space-y-2">
+                        <div className="text-[11px] text-slate-400">样式与颜色</div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => updateWatermarkConfig({ bold: !watermarkConfig.bold })}
+                            className={clsx(
+                              'px-2.5 py-1 rounded text-xs border font-bold transition-colors cursor-pointer',
+                              watermarkConfig.bold
+                                ? 'bg-brand-500/20 border-brand-500 text-brand-200'
+                                : 'bg-dark-900 border-dark-700 text-slate-400',
+                            )}
+                            title="加粗"
+                          >
+                            B
+                          </button>
+                          <button
+                            onClick={() => updateWatermarkConfig({ italic: !watermarkConfig.italic })}
+                            className={clsx(
+                              'px-2.5 py-1 rounded text-xs border italic font-serif transition-colors cursor-pointer',
+                              watermarkConfig.italic
+                                ? 'bg-brand-500/20 border-brand-500 text-brand-200'
+                                : 'bg-dark-900 border-dark-700 text-slate-400',
+                            )}
+                            title="斜体"
+                          >
+                            I
+                          </button>
+                          <div className="h-4 w-[1px] bg-dark-700 mx-1" />
+                          <div className="flex items-center space-x-1.5">
+                            {[
+                              { label: '纯白', color: '#FFFFFF' },
+                              { label: '深黑', color: '#0F172A' },
+                              { label: '复古金', color: '#F59E0B' },
+                              { label: '中灰', color: '#94A3B8' },
+                            ].map((c) => (
+                              <button
+                                key={c.color}
+                                onClick={() => updateWatermarkConfig({ color: c.color })}
+                                className={clsx(
+                                  'h-6 w-6 rounded-full border-2 transition-all cursor-pointer',
+                                  watermarkConfig.color.toUpperCase() === c.color.toUpperCase()
+                                    ? 'border-brand-400 scale-110 shadow-sm'
+                                    : 'border-dark-600 hover:scale-105',
+                                )}
+                                style={{ backgroundColor: c.color }}
+                                title={c.label}
+                              />
+                            ))}
+                            <input
+                              type="color"
+                              value={watermarkConfig.color}
+                              onChange={(e) => updateWatermarkConfig({ color: e.target.value })}
+                              className="h-6 w-6 rounded cursor-pointer bg-transparent border-0"
+                              title="自定义取色"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Logo 图像专属上传与预览 */
+                    <div className="space-y-3 rounded-xl border border-dark-700/60 bg-dark-800/40 p-3">
+                      <div className="text-[11px] text-slate-400">工作室 Logo 图片 (推荐透明 PNG)</div>
+                      {watermarkConfig.logoDataUrl ? (
+                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-dark-900 border border-dark-700">
+                          <div className="flex items-center space-x-3">
+                            <div className="h-10 w-10 rounded border border-dark-700 flex items-center justify-center p-1 bg-dark-950">
+                              <img
+                                src={watermarkConfig.logoDataUrl}
+                                alt="Logo Preview"
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+                            <div className="text-[11px] text-emerald-400 font-medium">已加载自定义 Logo</div>
+                          </div>
+                          <button
+                            onClick={() => updateWatermarkConfig({ logoDataUrl: undefined })}
+                            className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                            title="清除 Logo"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="flex flex-col items-center justify-center p-4 border border-dashed border-dark-600 hover:border-brand-500 rounded-xl bg-dark-900/60 hover:bg-dark-900 transition-all cursor-pointer group">
+                            <ImageIcon className="h-6 w-6 text-slate-500 group-hover:text-brand-400 mb-1 transition-colors" />
+                            <span className="text-xs text-slate-300 group-hover:text-white font-medium">
+                              点击上传 Logo 图片
+                            </span>
+                            <span className="text-[10px] text-slate-500 mt-0.5">
+                              支持 PNG (透明底)、JPG、WebP (小于 5MB)
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                              onChange={handleLogoUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 位置与排版 (九宫格 + 全屏平铺) */}
+                  <div className="space-y-2 pt-2 border-t border-dark-750">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium text-slate-400">水印位置与排版</span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {watermarkConfig.position === 'tiled' ? '全屏防盗平铺' : watermarkConfig.position}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-dark-900 border border-dark-750 max-w-[220px] mx-auto">
+                      {(
+                        [
+                          ['top-left', '↖ 左上'],
+                          ['top-center', '↑ 顶部'],
+                          ['top-right', '↗ 右上'],
+                          ['center-left', '← 居左'],
+                          ['center', '· 居中'],
+                          ['center-right', '→ 居右'],
+                          ['bottom-left', '↙ 左下'],
+                          ['bottom-center', '↓ 底部'],
+                          ['bottom-right', '↘ 右下'],
+                        ] as const
+                      ).map(([pos, label]) => {
+                        const isSelected = watermarkConfig.position === pos;
+                        return (
+                          <button
+                            key={pos}
+                            onClick={() => updateWatermarkConfig({ position: pos })}
+                            className={clsx(
+                              'py-2 rounded-lg text-[10px] font-medium transition-all text-center cursor-pointer',
+                              isSelected
+                                ? 'bg-brand-500 text-white font-bold shadow-sm'
+                                : 'bg-dark-800 text-slate-400 hover:bg-dark-700 hover:text-slate-200',
+                            )}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* 全屏对角防盗平铺 */}
+                    <button
+                      onClick={() =>
+                        updateWatermarkConfig({
+                          position: watermarkConfig.position === 'tiled' ? 'bottom-right' : 'tiled',
+                        })
+                      }
+                      className={clsx(
+                        'w-full py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center space-x-2 transition-all cursor-pointer',
+                        watermarkConfig.position === 'tiled'
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-200 ring-1 ring-amber-500/30'
+                          : 'bg-dark-800 border-dark-700 text-slate-300 hover:bg-dark-750',
+                      )}
+                    >
+                      <Grid3X3 className="h-4 w-4 text-amber-400" />
+                      <span>📐 45° 全屏对角防盗平铺 (Proof Mode)</span>
+                    </button>
+                  </div>
+
+                  {/* 细节滑块微调 */}
+                  <div className="space-y-3 pt-2 border-t border-dark-750">
+                    {/* 不透明度 */}
+                    <div>
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span className="font-medium text-slate-300">不透明度 (Opacity)</span>
+                        <span className="font-mono text-slate-400">{Math.round(watermarkConfig.opacity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="1"
+                        step="0.05"
+                        value={watermarkConfig.opacity}
+                        onChange={(e) => updateWatermarkConfig({ opacity: parseFloat(e.target.value) })}
+                        className="w-full accent-brand-500 cursor-pointer rounded-lg h-2 bg-dark-750"
+                      />
+                    </div>
+
+                    {/* 尺寸缩放 */}
+                    <div>
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span className="font-medium text-slate-300">尺寸大小 (Scale)</span>
+                        <span className="font-mono text-slate-400">{Math.round(watermarkConfig.scale * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.05"
+                        max="0.4"
+                        step="0.01"
+                        value={watermarkConfig.scale}
+                        onChange={(e) => updateWatermarkConfig({ scale: parseFloat(e.target.value) })}
+                        className="w-full accent-brand-500 cursor-pointer rounded-lg h-2 bg-dark-750"
+                      />
+                    </div>
+
+                    {/* 边距留白 (仅在非平铺模式下可用) */}
+                    {watermarkConfig.position !== 'tiled' && (
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="font-medium text-slate-300">边缘留白 (Margin)</span>
+                          <span className="font-mono text-slate-400">{Math.round(watermarkConfig.margin * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.01"
+                          max="0.1"
+                          step="0.005"
+                          value={watermarkConfig.margin}
+                          onChange={(e) => updateWatermarkConfig({ margin: parseFloat(e.target.value) })}
+                          className="w-full accent-brand-500 cursor-pointer rounded-lg h-2 bg-dark-750"
+                        />
+                      </div>
+                    )}
+
+                    {/* 阴影效果抗反差开关 */}
+                    <div className="rounded-xl border border-dark-700/80 bg-dark-800/60 p-2.5">
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <div>
+                          <div className="text-xs font-semibold text-slate-200">投影抗反差 (Drop Shadow)</div>
+                          <div className="text-[10px] text-slate-400">避免文字/Logo与背景色彩混淆看不清</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={watermarkConfig.hasShadow}
+                          onChange={(e) => updateWatermarkConfig({ hasShadow: e.target.checked })}
+                          className="rounded bg-dark-900 border-dark-600 text-brand-500 focus:ring-0 cursor-pointer"
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

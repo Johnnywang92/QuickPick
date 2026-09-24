@@ -1,6 +1,7 @@
-import { FrameConfig, PhotoAdjustments } from '../types/adjust';
+import { FrameConfig, PhotoAdjustments, WatermarkConfig } from '../types/adjust';
 import { LocalPhoto } from '../types/photo';
 import { isAdjustmentsNoop } from './adjustEngine';
+import { applyWatermarkToCanvas } from './watermarkRenderer';
 
 /**
  * 相机品牌识别与规范化 (用于元数据合规文本呈现)
@@ -364,6 +365,7 @@ export async function renderFramedPhotoCanvas(
   config: FrameConfig,
   adjustments: PhotoAdjustments,
   maxEdge = 2560,
+  watermarkConfig?: WatermarkConfig,
 ): Promise<HTMLCanvasElement> {
   // 1. 规范化缩放
   let photoW = sourceWidth;
@@ -640,6 +642,11 @@ export async function renderFramedPhotoCanvas(
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(displayParams, pillX + pillPad, pillY + pillH * 0.5);
+  }
+
+  // 4. 水印与个性化签名叠加层
+  if (watermarkConfig && watermarkConfig.enabled) {
+    await applyWatermarkToCanvas(finalCanvas, watermarkConfig);
   }
 
   return finalCanvas;

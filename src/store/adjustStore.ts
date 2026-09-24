@@ -2,22 +2,29 @@ import { create } from 'zustand';
 import {
   DEFAULT_ADJUSTMENTS,
   DEFAULT_FRAME_CONFIG,
+  DEFAULT_WATERMARK_CONFIG,
   FrameConfig,
   PhotoAdjustments,
+  WatermarkConfig,
 } from '../types/adjust';
 
 interface AdjustStoreState {
   // 弹窗工作台状态
   isModalOpen: boolean;
-  activeTab: 'frame' | 'adjust';
+  activeTab: 'frame' | 'adjust' | 'watermark';
   setIsModalOpen: (open: boolean) => void;
   toggleModalOpen: () => void;
-  setActiveTab: (tab: 'frame' | 'adjust') => void;
+  setActiveTab: (tab: 'frame' | 'adjust' | 'watermark') => void;
 
   // 相框全局偏好配置
   frameConfig: FrameConfig;
   updateFrameConfig: (updates: Partial<FrameConfig>) => void;
   resetFrameConfig: () => void;
+
+  // 水印与个性化签名配置
+  watermarkConfig: WatermarkConfig;
+  updateWatermarkConfig: (updates: Partial<WatermarkConfig>) => void;
+  resetWatermarkConfig: () => void;
 
   // 每张照片的微调参数
   photoAdjustments: Record<string, PhotoAdjustments>;
@@ -46,6 +53,13 @@ export const useAdjustStore = create<AdjustStoreState>((set, get) => ({
       frameConfig: { ...state.frameConfig, ...updates },
     })),
   resetFrameConfig: () => set({ frameConfig: { ...DEFAULT_FRAME_CONFIG } }),
+
+  watermarkConfig: { ...DEFAULT_WATERMARK_CONFIG },
+  updateWatermarkConfig: (updates) =>
+    set((state) => ({
+      watermarkConfig: { ...state.watermarkConfig, ...updates },
+    })),
+  resetWatermarkConfig: () => set({ watermarkConfig: { ...DEFAULT_WATERMARK_CONFIG } }),
 
   photoAdjustments: {},
   getPhotoAdjustments: (photoId) => {
