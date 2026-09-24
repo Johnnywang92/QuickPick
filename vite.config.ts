@@ -14,16 +14,16 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes('/node_modules/pixi.js/')) return undefined;
-          if (
-            id.includes('/pixi.js/lib/advanced-blend-modes/') ||
-            id.includes('/pixi.js/lib/compressed-textures/') ||
-            id.includes('/pixi.js/lib/accessibility/')
-          ) {
-            return 'pixi-optional';
+          if (id.includes('/node_modules/pixi.js/')) {
+            return 'vendor-pixi';
+          }
+          if (id.includes('/node_modules/lucide-react/')) {
+            return 'vendor-icons';
           }
           return undefined;
         },
+
+
       },
     },
   },

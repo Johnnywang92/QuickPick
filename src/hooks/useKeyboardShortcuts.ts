@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { useAlbumStore } from '../store/albumStore';
+import { photoMatchesFilter, useAlbumStore } from '../store/albumStore';
+
 import { useSelectionStore } from '../store/selectionStore';
 import { useCompareStore } from '../store/compareStore';
 import { useInsightStore } from '../store/insightStore';
@@ -62,11 +63,14 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         resetFilter,
         jumpToFirstMatching,
         jumpToLastMatching,
+        activeFilter,
+        selectedSceneId,
+        activeTagFilter,
+        scenes,
       } = useAlbumStore.getState();
 
       if (photos.length === 0) return;
 
-      const currentPhoto = photos[currentIndex];
       const {
         toggleSelect,
         setMaybe,
@@ -75,9 +79,38 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         setAnnotation,
         getSelection,
         setSelectionState,
+        selections,
+        viewedPhotoIds,
       } = useSelectionStore.getState();
+      const { insights } = useInsightStore.getState();
+
+      const isFiltered = activeFilter !== 'all' || selectedSceneId !== null || activeTagFilter !== null;
+      const isCurrentVisible =
+        !isFiltered ||
+        (photos[currentIndex] &&
+          photoMatchesFilter(
+            photos[currentIndex],
+            currentIndex,
+            activeFilter,
+            selectedSceneId,
+            scenes,
+            selections,
+            viewedPhotoIds,
+            insights,
+            activeTagFilter,
+          ));
+
+      const currentPhoto = isCurrentVisible ? photos[currentIndex] : null;
 
       switch (e.key) {
+        // 当处于空筛选状态时，回车键快捷返回全部照片
+        case 'Enter':
+          if (isFiltered && !isCurrentVisible) {
+            e.preventDefault();
+            resetFilter();
+          }
+          break;
+
         // 连拍极速对决 [P]
         case 'p':
         case 'P':

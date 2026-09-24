@@ -74,5 +74,38 @@ describe('App with empty skipped filter', () => {
 
     expect(useAlbumStore.getState().activeFilter).toBe('all');
   });
+
+  it('handles other empty filters (已选择, 待考虑, 建议检查, 相似连拍) safely without crash', async () => {
+    render(<App />);
+
+    const tabsToTest = ['已选择', '待考虑', '建议检查', '相似连拍'];
+    for (const tabName of tabsToTest) {
+      const tabBtn = screen.getByText(tabName);
+      act(() => {
+        fireEvent.click(tabBtn);
+      });
+
+      expect(screen.getByText('当前选项暂无匹配照片')).toBeDefined();
+      expect(screen.getByText('当前选项下暂无照片')).toBeDefined();
+    }
+  });
+
+  it('safely handles keyboard shortcuts when active filter is empty', async () => {
+    render(<App />);
+
+    // Switch to empty skipped filter
+    act(() => {
+      useAlbumStore.getState().setActiveFilter('skipped');
+    });
+
+    // Pressing Space should NOT alter any photo state since no photo is visible
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(useSelectionStore.getState().selections['photo-1']).toBeUndefined();
+
+    // Pressing Enter in empty filter returns to all photos
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(useAlbumStore.getState().activeFilter).toBe('all');
+  });
 });
+
 

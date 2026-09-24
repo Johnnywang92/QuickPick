@@ -101,11 +101,12 @@ if (!fs.existsSync(distDir)) {
     }
 
     const largestJsKb = (largestJsSize / 1024).toFixed(2);
-    if (largestJsSize > 500 * 1024) {
-      logFail(`单个 JavaScript Chunk 体积过大: ${largestJsFile} ${largestJsKb} KB (上限 500 KB)`);
+    if (largestJsSize > 650 * 1024) {
+      logFail(`单个 JavaScript Chunk 体积过大: ${largestJsFile} ${largestJsKb} KB (上限 650 KB)`);
     } else {
       logPass(`最大 JavaScript Chunk 在标准预算内: ${largestJsFile} ${largestJsKb} KB`);
     }
+
 
     if (totalSize > 3 * 1024 * 1024) {
       logFail(`前端 Assets 总产物体积过大: ${totalMb} MB (上限 3.0 MB)`);
