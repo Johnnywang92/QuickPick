@@ -700,26 +700,104 @@ export async function renderFramedPhotoCanvas(
     }
   } else if (isPolaroid) {
     const barTop = photoY + adjustedPhotoH;
-    const centerY = barTop + bottomBarH * 0.45;
-    const paddingX = photoX + Math.round(adjustedPhotoW * 0.02);
+    const centerY = barTop + bottomBarH * 0.48;
+    const paddingX = photoX + Math.round(adjustedPhotoW * 0.025);
+    const rightX = photoX + adjustedPhotoW - Math.round(adjustedPhotoW * 0.025);
+    const availableWidth = rightX - paddingX;
 
-    ctx.textAlign = 'left';
-    const mainFontSize = Math.max(14, Math.round(bottomBarH * 0.24));
-    const subFontSize = Math.max(11, Math.round(bottomBarH * 0.16));
+    const badgeType = customTpl ? customTpl.badgeType : 'none';
+    const badgeSize = Math.round(bottomBarH * 0.32);
+    if (badgeType !== 'none') {
+      drawPhotographicBadge(ctx, badgeType, paddingX, centerY - badgeSize * 0.5, badgeSize, isDark);
+    }
+    const textStartX = badgeType === 'none' ? paddingX : paddingX + badgeSize * 1.35;
 
-    // 拍立得复古暖黑衬线字体
-    ctx.fillStyle = isDark ? '#F8FAFC' : '#1E293B';
-    ctx.font = `600 ${mainFontSize}px Georgia, "Times New Roman", serif`;
-    const title = photographerText || cameraTitle;
-    ctx.fillText(title, paddingX, centerY - bottomBarH * 0.05);
+    // 拍立得复古字体与字号自适应计算
+    let mainFontSize = Math.max(13, Math.min(26, Math.round(bottomBarH * 0.22)));
+    let subFontSize = Math.max(10, Math.min(16, Math.round(bottomBarH * 0.15)));
+    let paramsFontSize = Math.max(11, Math.min(18, Math.round(bottomBarH * 0.18)));
 
-    const subDetails = [lensTitle, paramsString, dateString].filter(Boolean).join('   ·   ');
-    if (subDetails) {
+    const polaroidDate = config.showDate && dateString ? dateString : '';
+    // 拍立得参数精简排版 (使用雅致中圆点间隔，避免长竖线过度占用横向空间)
+    let polaroidParams = '';
+    if (config.showParams && paramsString) {
+      polaroidParams = paramsString.replace(/\s{2,}│\s{2,}/g, '  ·  ');
+    }
+
+    // 右侧曝光参数测量与字号自适应（避免极端窄图或长参数溢出）
+    ctx.font = `500 ${paramsFontSize}px "SF Mono", Menlo, Monaco, Consolas, monospace`;
+    let rightParamsWidth = polaroidParams ? ctx.measureText(polaroidParams).width : 0;
+    while (rightParamsWidth > availableWidth * 0.58 && paramsFontSize > 9) {
+      paramsFontSize -= 1;
+      ctx.font = `500 ${paramsFontSize}px "SF Mono", Menlo, Monaco, Consolas, monospace`;
+      rightParamsWidth = ctx.measureText(polaroidParams).width;
+    }
+
+    ctx.font = `normal ${subFontSize}px "SF Mono", Menlo, monospace`;
+    let rightDateWidth = polaroidDate ? ctx.measureText(polaroidDate).width : 0;
+    while (rightDateWidth > availableWidth * 0.45 && subFontSize > 8) {
+      subFontSize -= 1;
+      ctx.font = `normal ${subFontSize}px "SF Mono", Menlo, monospace`;
+      rightDateWidth = ctx.measureText(polaroidDate).width;
+    }
+
+    const maxRightWidth = Math.max(rightParamsWidth, rightDateWidth);
+    const gap = Math.max(12, Math.round(availableWidth * 0.03));
+    const maxLeftWidth = availableWidth - (maxRightWidth > 0 ? maxRightWidth + gap : 0) - (textStartX - paddingX);
+
+    // 左侧第一行：作者或机型 (经典复古衬线体 Georgia)
+    const mainTitle = photographerText || (config.showCameraModel ? cameraTitle : '');
+    if (mainTitle) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = isDark ? '#F8FAFC' : '#1E293B';
+      ctx.font = `600 ${mainFontSize}px Georgia, "Times New Roman", serif`;
+
+      let displayMainTitle = mainTitle;
+      if (ctx.measureText(displayMainTitle).width > maxLeftWidth) {
+        while (displayMainTitle.length > 3 && ctx.measureText(displayMainTitle + '…').width > maxLeftWidth) {
+          displayMainTitle = displayMainTitle.slice(0, -1);
+        }
+        displayMainTitle += '…';
+      }
+      ctx.fillText(displayMainTitle, textStartX, centerY - bottomBarH * 0.08);
+    }
+
+    // 左侧第二行：镜头信息或机型副标题
+    const subLine = [photographerText && config.showCameraModel ? cameraTitle : null, config.showLens ? lensTitle : null]
+      .filter(Boolean)
+      .join('  ·  ');
+    if (subLine) {
+      ctx.textAlign = 'left';
       ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
       ctx.font = `normal ${subFontSize}px "SF Mono", monospace, sans-serif`;
-      ctx.fillText(subDetails, paddingX, centerY + bottomBarH * 0.22);
+
+      let displaySubLine = subLine;
+      if (ctx.measureText(displaySubLine).width > maxLeftWidth) {
+        while (displaySubLine.length > 3 && ctx.measureText(displaySubLine + '…').width > maxLeftWidth) {
+          displaySubLine = displaySubLine.slice(0, -1);
+        }
+        displaySubLine += '…';
+      }
+      ctx.fillText(displaySubLine, textStartX, centerY + bottomBarH * 0.22);
     }
-  } else if (isOverlayBadge) {
+
+    // 右侧第一行：完整曝光参数 (焦距、光圈、快门、ISO，右对齐锚定)
+    if (polaroidParams) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isDark ? '#F1F5F9' : '#1E293B';
+      ctx.font = `500 ${paramsFontSize}px "SF Mono", Menlo, Monaco, Consolas, monospace`;
+      ctx.fillText(polaroidParams, rightX, centerY - bottomBarH * 0.08);
+    }
+
+    // 右侧第二行：完整拍摄日期与时间戳 (右对齐锚定)
+    if (polaroidDate) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isDark ? '#64748B' : '#94A3B8';
+      ctx.font = `normal ${subFontSize}px "SF Mono", Menlo, monospace`;
+      ctx.fillText(polaroidDate, rightX, centerY + bottomBarH * 0.22);
+    }
+  }
+ else if (isOverlayBadge) {
     const badgePadX = Math.round(canvasW * 0.035);
     const badgePadY = Math.round(canvasH * 0.035);
     const pillH = Math.max(38, Math.round(longEdge * 0.038));

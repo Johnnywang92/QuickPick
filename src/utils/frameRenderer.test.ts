@@ -193,4 +193,37 @@ describe('frameRenderer - EXIF formatting & detection', () => {
       drawPhotographicBadge(mockCtx, 'none', 0, 0, 24, false);
     }).not.toThrow();
   });
+
+  it('formats polaroid shooting parameters and date timestamp with full ISO intact', () => {
+    const photo: LocalPhoto = {
+      id: 'polaroid-test',
+      path: '/path/polaroid.jpg',
+      filename: 'polaroid.jpg',
+      fileSize: 2048,
+      format: 'jpeg',
+      isRaw: false,
+      exif: {
+        camera_make: 'LEICA CAMERA AG',
+        camera_model: 'LEICA M11',
+        lens_model: 'Summilux-M 35mm f/1.4 ASPH.',
+        focal_length: 35.0,
+        aperture: 1.4,
+        shutter_speed: '1/1000s',
+        iso: 400,
+        date_time_original: '2026:09:24 15:20:00',
+      },
+    };
+
+    const formatted = formatExifStrings(photo, {
+      ...DEFAULT_FRAME_CONFIG,
+      template: 'retro_polaroid',
+    });
+
+    expect(formatted.paramsString).toContain('ISO 400');
+    expect(formatted.dateString).toBe('2026.09.24 15:20');
+
+    const polaroidParams = formatted.paramsString.replace(/\s{2,}│\s{2,}/g, '  ·  ');
+    expect(polaroidParams).toBe('35mm  ·  f/1.4  ·  1/1000s  ·  ISO 400');
+  });
 });
+
