@@ -82,6 +82,11 @@ const ReviewCenterModal = lazy(() =>
     default: module.ReviewCenterModal,
   })),
 );
+const DefectFunnelModal = lazy(() =>
+  import('./components/modal/DefectFunnelModal').then((module) => ({
+    default: module.DefectFunnelModal,
+  })),
+);
 const TimelineQuotasModal = lazy(() =>
   import('./components/timeline/TimelineQuotasModal').then((module) => ({
     default: module.TimelineQuotasModal,
@@ -168,6 +173,7 @@ export default function App() {
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
   const [isReviewCenterOpen, setIsReviewCenterOpen] = useState<boolean>(false);
+  const [isDefectFunnelOpen, setIsDefectFunnelOpen] = useState<boolean>(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [startupWarning, setStartupWarning] = useState<string | null>(null);
   const [isRetouchOpen, setIsRetouchOpen] = useState<boolean>(false);
@@ -554,7 +560,10 @@ export default function App() {
 
       {/* 视图过滤条 */}
       {photos.length > 0 && (
-        <FilterToolbar onOpenReviewCenter={() => setIsReviewCenterOpen(true)} />
+        <FilterToolbar
+          onOpenReviewCenter={() => setIsReviewCenterOpen(true)}
+          onOpenDefectFunnel={() => setIsDefectFunnelOpen(true)}
+        />
       )}
 
       {/* macOS 访达拖拽打开目录全屏毛玻璃指引遮罩 */}
@@ -823,7 +832,17 @@ export default function App() {
       {/* 集中复核未查看、待考虑、相似连拍与辅助提示 */}
       {isReviewCenterOpen && (
         <Suspense fallback={null}>
-          <ReviewCenterModal onClose={() => setIsReviewCenterOpen(false)} />
+          <ReviewCenterModal
+            onClose={() => setIsReviewCenterOpen(false)}
+            onOpenDefectFunnel={() => setIsDefectFunnelOpen(true)}
+          />
+        </Suspense>
+      )}
+
+      {/* 废片一键粉碎漏斗 */}
+      {isDefectFunnelOpen && (
+        <Suspense fallback={null}>
+          <DefectFunnelModal onClose={() => setIsDefectFunnelOpen(false)} />
         </Suspense>
       )}
 

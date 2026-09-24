@@ -3,6 +3,7 @@ import {
   AlertCircle,
   CheckCircle2,
   EyeOff,
+  Flame,
   HelpCircle,
   Layers,
   ListChecks,
@@ -15,9 +16,13 @@ import { FilterCategory } from '../../types/photo';
 
 interface ReviewCenterModalProps {
   onClose: () => void;
+  onOpenDefectFunnel?: () => void;
 }
 
-export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose }) => {
+export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({
+  onClose,
+  onOpenDefectFunnel,
+}) => {
   const { photos, scenes, setActiveFilter, setSelectedSceneId } = useAlbumStore();
   const { selections, viewedPhotoIds, getStats } = useSelectionStore();
   const { insights } = useInsightStore();
@@ -190,6 +195,27 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({ onClose })
               )}
             </div>
           </div>
+
+          {onOpenDefectFunnel && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-900/50 bg-red-950/20 px-3.5 py-2.5 text-xs text-red-200">
+              <div className="flex items-center gap-2">
+                <Flame className="h-4 w-4 shrink-0 text-red-400" />
+                <span>
+                  <strong>废片粉碎漏斗：</strong>集中筛除闭眼、严重脱焦和连拍低分废片
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenDefectFunnel();
+                }}
+                className="shrink-0 rounded-lg bg-red-600/30 hover:bg-red-600/50 border border-red-500/40 px-2.5 py-1 text-xs font-semibold text-red-100 transition-colors cursor-pointer"
+              >
+                打开漏斗
+              </button>
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             {queues.map((queue) => {

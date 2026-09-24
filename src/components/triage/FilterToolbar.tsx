@@ -17,14 +17,19 @@ import {
   Target,
   ListChecks,
   Tag,
+  Flame,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 interface FilterToolbarProps {
   onOpenReviewCenter: () => void;
+  onOpenDefectFunnel?: () => void;
 }
 
-export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter }) => {
+export const FilterToolbar: React.FC<FilterToolbarProps> = ({
+  onOpenReviewCenter,
+  onOpenDefectFunnel,
+}) => {
   const {
     photos,
     activeFilter,
@@ -83,6 +88,30 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
   const burstCount = React.useMemo(() => {
     return photos.filter((p) => !!p.burstGroupId).length;
   }, [photos]);
+
+  // 统计潜在废片数 (用于废片漏斗徽章显示)
+  const defectCount = React.useMemo(() => {
+    return photos.filter((p) => {
+      // 强保护：已保留选中的照片不计为废片
+      if (selections[p.id]?.state === 'selected') return false;
+      const ins = insights[p.id];
+      const hasFaceBlink = !!(p.faces && p.faces.some((f) => f.eye_open_score < 0.45));
+      const hasInsightBlink = !!(
+        ins &&
+        ((ins.possibleClosedEyes !== undefined && ins.possibleClosedEyes < 0.45) ||
+          ins.reasons.some((r) => r.includes('闭眼') || r.includes('眼睛')))
+      );
+      const isBlink = hasFaceBlink || hasInsightBlink;
+      const isBlur = !!(
+        ins &&
+        (ins.possibleBlur! > 45 ||
+          (p.sharpness !== undefined && p.sharpness < 25) ||
+          ins.reasons.some((r) => r.includes('模糊') || r.includes('脱焦')))
+      );
+      const isBurstLoser = !!p.burstGroupId && ins?.isBestPick === false;
+      return isBlink || isBlur || isBurstLoser;
+    }).length;
+  }, [photos, insights, selections]);
 
   // 筛选匹配计算：仅在 unreviewed 模式下绑定 currentIndex，其它状态下导航 0 计算开销
   const filterCurrentIndex = activeFilter === 'unreviewed' ? currentIndex : undefined;
@@ -244,6 +273,23 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({ onOpenReviewCenter
           <ListChecks className="h-3.5 w-3.5 text-slate-400" />
           <span>复核中心</span>
         </button>
+
+        {onOpenDefectFunnel && (
+          <button
+            type="button"
+            onClick={onOpenDefectFunnel}
+            className="flex items-center space-x-1.5 rounded-lg border border-red-900/40 bg-red-950/20 px-2.5 py-1 font-medium text-red-300 hover:text-red-100 hover:bg-red-950/40 transition-colors cursor-pointer"
+            title="一键粉碎漏斗：集中批量筛除闭眼、脱焦及连拍劣选废片"
+          >
+            <Flame className="h-3.5 w-3.5 text-red-400" />
+            <span>废片漏斗</span>
+            {defectCount > 0 && (
+              <span className="ml-0.5 rounded-full bg-red-500/20 px-1.5 py-0.2 text-[10px] font-bold text-red-300">
+                {defectCount}
+              </span>
+            )}
+          </button>
+        )}
 
         {/* 选片目标提示 */}
         {targetGoal && targetGoal > 0 ? (
