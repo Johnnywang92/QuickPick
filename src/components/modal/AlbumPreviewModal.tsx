@@ -194,7 +194,7 @@ export const AlbumPreviewModal: React.FC<AlbumPreviewModalProps> = ({ isOpen, on
       aria-labelledby="album-simulator-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 md:p-6 backdrop-blur-md select-none animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-6xl bg-dark-950 border border-dark-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] text-slate-200">
+      <div className="w-full max-w-6xl bg-dark-950 border border-dark-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] text-slate-200 animate-modal-sheet">
         {/* 顶部标题与控制栏 */}
         <header className="flex flex-wrap items-center justify-between px-6 py-3 border-b border-dark-750 bg-dark-900/95 shrink-0 gap-3">
           <div className="flex items-center space-x-3">

@@ -73,32 +73,32 @@ html.theme-light .fixed.inset-0.bg-black\/75 {
   background-color: rgb(15 23 42 / 0.45);
 }
 
-/* 真实物理碎纸机切条动效 (Mechanical Photo Paper Shredder) */
+/* 真实物理碎纸机切条动效 (Mechanical Photo Paper Shredder with 3D Curl) */
 @keyframes shredPaperStripDrop {
   0% {
-    transform: translateY(0) rotate(0deg) skewY(0deg);
+    transform: perspective(500px) translateY(0) rotate(0deg) rotateX(0deg) skewY(0deg);
     opacity: 1;
     filter: brightness(1) contrast(1);
   }
   15% {
     /* 滚刀咬入相纸微震 */
-    transform: translateY(3px) rotate(calc(var(--shred-rot, 3deg) * 0.25)) skewY(0deg);
+    transform: perspective(500px) translateY(3px) rotate(calc(var(--shred-rot, 3deg) * 0.25)) rotateX(-4deg) skewY(0deg);
     opacity: 1;
-    filter: brightness(1.08) contrast(1.05);
+    filter: brightness(1.12) contrast(1.06);
   }
   35% {
-    /* 纵向割开并沿重力下坠、受空气阻力微卷 */
-    transform: translateY(28%) rotate(calc(var(--shred-rot, 3deg) * 0.7)) skewY(var(--shred-skew, 2deg));
+    /* 纵向割开并沿重力下坠、受空气阻力 3D 微卷 */
+    transform: perspective(500px) translateY(28%) rotate(calc(var(--shred-rot, 3deg) * 0.7)) rotateX(12deg) skewY(var(--shred-skew, 2deg));
     opacity: 1;
   }
   75% {
-    transform: translateY(115%) rotate(var(--shred-rot, 4deg)) skewY(calc(var(--shred-skew, 2deg) * 1.4));
+    transform: perspective(500px) translateY(115%) rotate(var(--shred-rot, 4deg)) rotateX(22deg) skewY(calc(var(--shred-skew, 2deg) * 1.4));
     opacity: 0.95;
-    filter: brightness(0.9);
+    filter: brightness(0.88);
   }
   100% {
     /* 彻底沉入收纳暗盒 */
-    transform: translateY(165%) rotate(calc(var(--shred-rot, 4deg) * 1.8)) skewY(calc(var(--shred-skew, 2deg) * 2));
+    transform: perspective(500px) translateY(165%) rotate(calc(var(--shred-rot, 4deg) * 1.8)) rotateX(35deg) skewY(calc(var(--shred-skew, 2deg) * 2));
     opacity: 0;
     filter: brightness(0.35) blur(1px);
   }
@@ -232,3 +232,87 @@ html.theme-light .fixed.inset-0.bg-black\/75 {
   animation: triageGlowBloom 450ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
+/* 对比视图主备互换弹性动量 (Compare Swap Impulses & Sync Lock) */
+@keyframes compareSwapLeft {
+  0% { transform: translateX(0) scale(1); }
+  35% { transform: translateX(24px) scale(0.985); }
+  70% { transform: translateX(-4px) scale(1.004); }
+  100% { transform: translateX(0) scale(1); }
+}
+
+@keyframes compareSwapRight {
+  0% { transform: translateX(0) scale(1); }
+  35% { transform: translateX(-24px) scale(0.985); }
+  70% { transform: translateX(4px) scale(1.004); }
+  100% { transform: translateX(0) scale(1); }
+}
+
+@keyframes compareSwapDividerFlash {
+  0% { opacity: 0.3; box-shadow: 0 0 0 rgba(59, 130, 246, 0); }
+  35% { opacity: 1; box-shadow: 0 0 16px 2px rgba(59, 130, 246, 0.7); background-color: rgb(96 165 250); }
+  100% { opacity: 0.3; box-shadow: 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+@keyframes lockSnapIcon {
+  0% { transform: scale(0.75) rotate(-20deg); }
+  55% { transform: scale(1.28) rotate(6deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+.animate-swap-left {
+  animation: compareSwapLeft 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-swap-right {
+  animation: compareSwapRight 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-swap-divider {
+  animation: compareSwapDividerFlash 400ms ease-out both;
+}
+
+.animate-lock-snap {
+  animation: lockSnapIcon 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* macOS 原生弹窗 Spring 弹性出场动效 (Native macOS Sheet Spring Modal) */
+@keyframes modalSheetEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.01) translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-modal-sheet {
+  animation: modalSheetEnter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 自动影调与胶片预设生效流光扫描动效 (Magic Tone Sweep) */
+@keyframes magicLightSweep {
+  0% {
+    transform: translateX(-140%) skewX(-22deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  75% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(340%) skewX(-22deg);
+    opacity: 0;
+  }
+}
+
+.animate-magic-sweep {
+  animation: magicLightSweep 550ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

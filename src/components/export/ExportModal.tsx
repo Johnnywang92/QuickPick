@@ -149,7 +149,7 @@ export const ExportModal: React.FC = () => {
       aria-modal="true"
       aria-labelledby="export-modal-title"
     >
-      <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 font-sans text-slate-200 shadow-2xl sm:max-h-[calc(100vh-3rem)]">
+      <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 font-sans text-slate-200 shadow-2xl sm:max-h-[calc(100vh-3rem)] animate-modal-sheet">
         <header className="shrink-0 border-b border-dark-700/80 bg-dark-900/55 px-5 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">

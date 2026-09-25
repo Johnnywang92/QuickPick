@@ -211,7 +211,7 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-150 select-none">
-      <div className="relative flex h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl overflow-hidden">
+      <div className="relative flex h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-dark-700 bg-dark-900 shadow-2xl overflow-hidden animate-modal-sheet">
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between border-b border-dark-750 bg-dark-850 px-5 py-3.5">
           <div className="flex items-center space-x-3">

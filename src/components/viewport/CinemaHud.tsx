@@ -19,7 +19,7 @@ import clsx from 'clsx';
 
 export const CinemaHud: React.FC = () => {
   const { photos, currentIndex, prevPhoto, nextPhoto } = useAlbumStore();
-  const { selections, toggleSelect, setMaybe, setSkipped } = useSelectionStore();
+  const { selections, lastTriageFeedback, toggleSelect, setMaybe, setSkipped } = useSelectionStore();
   const { isCinemaMode, exitCinemaMode, isNativeFullscreen, toggleNativeFullscreen } = useCinemaStore();
   const { activeLutId, isEnabled: isLutEnabled, toggleEnabled: toggleLutEnabled, customLuts } = useLutStore();
 
@@ -31,6 +31,12 @@ export const CinemaHud: React.FC = () => {
   const currentPhoto = photos[currentIndex];
   const currentSelection = currentPhoto ? selections[currentPhoto.id] : null;
   const selectionState = currentSelection?.state || 'unreviewed';
+  const isRecentlyTriaged = Boolean(
+    currentPhoto &&
+      lastTriageFeedback &&
+      lastTriageFeedback.photoId === currentPhoto.id &&
+      Date.now() - lastTriageFeedback.timestamp < 500,
+  );
 
   // 获取当前生效的 LUT 名称
   const currentBuiltinLut = BUILTIN_LUTS.find((l) => l.id === activeLutId);
@@ -102,10 +108,10 @@ export const CinemaHud: React.FC = () => {
           resetHideTimer();
         }}
         className={clsx(
-          'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ease-in-out select-none',
+          'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none',
           isVisible
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-4 pointer-events-none',
+            ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto'
+            : 'opacity-0 translate-y-4 scale-95 pointer-events-none',
         )}
       >
         <div className="flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-dark-950/80 hover:bg-dark-950/90 border border-white/12 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.8)] text-white text-xs">
@@ -148,12 +154,14 @@ export const CinemaHud: React.FC = () => {
 
             {/* 标记选中 (Pick) */}
             <button
+              key={isRecentlyTriaged && selectionState === 'selected' && lastTriageFeedback ? `pick-${lastTriageFeedback.timestamp}` : 'pick'}
               onClick={() => toggleSelect(currentPhoto.id)}
               className={clsx(
                 'flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer text-xs',
                 selectionState === 'selected'
                   ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 font-semibold'
                   : 'bg-white/5 text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-300',
+                isRecentlyTriaged && selectionState === 'selected' && 'animate-triage-pop',
               )}
               title="标记为精选 (空格键)"
             >
@@ -163,12 +171,14 @@ export const CinemaHud: React.FC = () => {
 
             {/* 标记待定 (Maybe) */}
             <button
+              key={isRecentlyTriaged && selectionState === 'maybe' && lastTriageFeedback ? `maybe-${lastTriageFeedback.timestamp}` : 'maybe'}
               onClick={() => setMaybe(currentPhoto.id)}
               className={clsx(
                 'flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer text-xs',
                 selectionState === 'maybe'
                   ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30 font-semibold'
                   : 'bg-white/5 text-slate-300 hover:bg-amber-500/20 hover:text-amber-300',
+                isRecentlyTriaged && selectionState === 'maybe' && 'animate-triage-pop',
               )}
               title="标记为待定 (M 键)"
             >
@@ -178,12 +188,14 @@ export const CinemaHud: React.FC = () => {
 
             {/* 标记不选 (Discard) */}
             <button
+              key={isRecentlyTriaged && selectionState === 'skipped' && lastTriageFeedback ? `skip-${lastTriageFeedback.timestamp}` : 'skip'}
               onClick={() => setSkipped(currentPhoto.id)}
               className={clsx(
                 'flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer text-xs',
                 selectionState === 'skipped'
                   ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 font-semibold'
                   : 'bg-white/5 text-slate-300 hover:bg-rose-500/20 hover:text-rose-300',
+                isRecentlyTriaged && selectionState === 'skipped' && 'animate-triage-pop',
               )}
               title="标记为淘汰 (N 键)"
             >

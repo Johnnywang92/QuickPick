@@ -70,7 +70,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ onClose }) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl">
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl animate-modal-sheet">
       <div className="flex items-center justify-between border-b border-dark-700/80 bg-dark-900/60 px-5 py-4">
         <div className="flex items-center gap-2.5">
           <Keyboard className="h-5 w-5 text-brand-400" />

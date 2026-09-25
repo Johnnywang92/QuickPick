@@ -13,6 +13,7 @@ interface CompareStore {
   comparePreviewStatus: 'idle' | 'loading' | 'loaded' | 'error';
   comparePreviewError: string | null;
   syncZoomAndPan: boolean;
+  lastSwapTimestamp: number;
 
   // Actions
   toggleCompareMode: () => void;
@@ -56,6 +57,7 @@ export const useCompareStore = create<CompareStore>((set, get) => ({
   comparePreviewStatus: 'idle',
   comparePreviewError: null,
   syncZoomAndPan: true,
+  lastSwapTimestamp: 0,
 
   // 连拍 PK 初始状态
   isPkMode: false,
@@ -241,6 +243,7 @@ export const useCompareStore = create<CompareStore>((set, get) => ({
 
     selectIndex(oldRight);
     get().setCompareTargetIndex(oldLeft);
+    set({ lastSwapTimestamp: Date.now() });
   },
 
   toggleSyncZoomAndPan: () => {

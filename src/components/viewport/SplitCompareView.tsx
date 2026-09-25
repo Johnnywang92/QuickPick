@@ -39,6 +39,7 @@ export const SplitCompareView: React.FC = () => {
     comparePreviewStatus,
     comparePreviewError,
     syncZoomAndPan,
+    lastSwapTimestamp,
     toggleSyncZoomAndPan,
     swapComparePhotos,
     exitCompareMode,
@@ -94,6 +95,7 @@ export const SplitCompareView: React.FC = () => {
   const leftIsPanning = useRef<boolean>(false);
   const rightIsPanning = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isRecentlySwapped = Boolean(lastSwapTimestamp && Date.now() - lastSwapTimestamp < 450);
 
   const leftPhoto = photos[currentIndex];
   const rightPhoto = compareTargetIndex !== null ? photos[compareTargetIndex] : null;
@@ -809,7 +811,9 @@ export const SplitCompareView: React.FC = () => {
                 : 'bg-dark-750 text-slate-400 border-dark-600 hover:text-slate-200'
             }`}
           >
-            {syncZoomAndPan ? <Lock className="w-3 h-3 text-blue-400" /> : <Unlock className="w-3 h-3" />}
+            <span key={String(syncZoomAndPan)} className="inline-flex animate-lock-snap">
+              {syncZoomAndPan ? <Lock className="w-3 h-3 text-blue-400" /> : <Unlock className="w-3 h-3" />}
+            </span>
             <span>同步联动: {syncZoomAndPan ? 'ON' : 'OFF'}</span>
           </button>
 
@@ -838,7 +842,7 @@ export const SplitCompareView: React.FC = () => {
             title="主备底片互换位置 (快捷键 [S])"
             className="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-dark-750 hover:bg-dark-700 text-slate-200 border border-dark-600 transition-colors cursor-pointer"
           >
-            <ArrowRightLeft className="w-3 h-3 text-brand-400" />
+            <ArrowRightLeft className={`w-3 h-3 text-brand-400 transition-transform duration-300 ${isRecentlySwapped ? 'rotate-180 scale-110' : ''}`} />
             <span>主备互换 [S]</span>
           </button>
 
@@ -857,14 +861,15 @@ export const SplitCompareView: React.FC = () => {
       <div className="flex-1 flex w-full h-full relative overflow-hidden">
         {/* 左侧视口: 主选照片 (Anchor) */}
         <div
+          key={lastSwapTimestamp ? `left-${lastSwapTimestamp}` : undefined}
           ref={leftContainerRef}
           onWheel={(e) => handleWheel(e, true)}
           onMouseDown={(e) => handleMouseDown(e, true)}
-          className={`flex-1 h-full relative border-r border-dark-700 bg-dark-900 overflow-hidden ${
+          className={`flex-1 h-full relative border-r border-dark-700/80 bg-dark-900 overflow-hidden ${
             leftZoom > Math.round(getLeftFitScale() * 100) + 1
               ? 'cursor-grab active:cursor-grabbing'
               : 'cursor-default'
-          }`}
+          } ${isRecentlySwapped ? 'animate-swap-left' : ''}`}
         >
           {(previewStatus === 'loading' || leftRenderStatus === 'initializing' || leftRenderStatus === 'loading') && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-dark-900/55">
@@ -957,8 +962,21 @@ export const SplitCompareView: React.FC = () => {
           </div>
         </div>
 
+        {/* 左右分界中线与互换闪光 */}
+        <div
+          key={lastSwapTimestamp ? `divider-${lastSwapTimestamp}` : undefined}
+          className={`absolute inset-y-0 left-1/2 -ml-px w-0.5 z-25 pointer-events-none transition-all duration-300 ${
+            isRecentlySwapped
+              ? 'animate-swap-divider'
+              : syncZoomAndPan
+              ? 'bg-blue-500/60 shadow-[0_0_8px_rgba(59,130,246,0.35)]'
+              : 'bg-dark-700/80'
+          }`}
+        />
+
         {/* 右侧视口: 备选照片 (Candidate) */}
         <div
+          key={lastSwapTimestamp ? `right-${lastSwapTimestamp}` : undefined}
           ref={rightContainerRef}
           onWheel={(e) => handleWheel(e, false)}
           onMouseDown={(e) => handleMouseDown(e, false)}
@@ -966,7 +984,7 @@ export const SplitCompareView: React.FC = () => {
             rightZoom > Math.round(getRightFitScale() * 100) + 1
               ? 'cursor-grab active:cursor-grabbing'
               : 'cursor-default'
-          }`}
+          } ${isRecentlySwapped ? 'animate-swap-right' : ''}`}
         >
           {(comparePreviewStatus === 'loading' || rightRenderStatus === 'initializing' || rightRenderStatus === 'loading') && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-dark-900/55">

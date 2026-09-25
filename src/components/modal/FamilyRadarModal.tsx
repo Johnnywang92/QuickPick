@@ -308,7 +308,7 @@ export const FamilyRadarModal: React.FC<FamilyRadarModalProps> = ({ isOpen, onCl
       aria-labelledby="family-radar-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm select-none animate-in fade-in duration-150 font-sans"
     >
-      <div className="w-full max-w-3xl bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-slate-200">
+      <div className="w-full max-w-3xl bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-slate-200 animate-modal-sheet">
         {/* 顶部标题栏与均衡度评分徽标 */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-dark-750 bg-dark-850/80 shrink-0">
           <div className="flex items-center space-x-2.5">

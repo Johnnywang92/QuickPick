@@ -76,7 +76,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl text-slate-200 flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl text-slate-200 flex flex-col max-h-[90vh] animate-modal-sheet">
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-dark-750 bg-dark-800/80 shrink-0">
           <div className="flex items-center space-x-3">

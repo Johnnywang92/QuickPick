@@ -120,6 +120,7 @@ export const FrameAndAdjustModal: React.FC = () => {
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  const [magicSweepTrigger, setMagicSweepTrigger] = useState<number>(0);
 
   // 自定义相框模板创建与编辑状态
   const [isCreatingCustomTpl, setIsCreatingCustomTpl] = useState(false);
@@ -493,6 +494,7 @@ export const FrameAndAdjustModal: React.FC = () => {
         preserveRotation: photoAdjustments.rotation,
       });
       setPhotoAdjustments(currentPhoto.id, autoAdjustments);
+      setMagicSweepTrigger(Date.now());
       showToast('✨ 算法一键调光已生效！');
     } catch (err) {
       console.error('Failed to calculate auto tone:', err);
@@ -910,7 +912,7 @@ export const FrameAndAdjustModal: React.FC = () => {
         </div>
       )}
 
-      <div className="relative flex h-[94vh] w-[96vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-dark-700/80 bg-dark-900 shadow-2xl">
+      <div className="relative flex h-[94vh] w-[96vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-dark-700/80 bg-dark-900 shadow-2xl animate-modal-sheet">
         {/* 顶部标题栏与 Tab 切换 */}
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-dark-700/80 bg-dark-850 px-6">
           <div className="flex items-center space-x-3">
@@ -1051,6 +1053,16 @@ export const FrameAndAdjustModal: React.FC = () => {
                     ref={previewCanvasRef}
                     className="max-h-full max-w-full rounded-md shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] object-contain ring-1 ring-white/10"
                   />
+
+                  {/* 自动影调流光扫描特效层 */}
+                  {magicSweepTrigger > 0 && Date.now() - magicSweepTrigger < 700 && (
+                    <div
+                      key={`sweep-${magicSweepTrigger}`}
+                      className="pointer-events-none absolute inset-0 z-15 overflow-hidden rounded-md"
+                    >
+                      <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-amber-200/35 to-transparent animate-magic-sweep" />
+                    </div>
+                  )}
 
                   {/* 原片对比层 (顶层，基于 clip-path 裁切，仅在分屏模式下显示) */}
                   {isSplitMode && (

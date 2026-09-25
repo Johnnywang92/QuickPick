@@ -148,7 +148,7 @@ export const ReviewCenterModal: React.FC<ReviewCenterModalProps> = ({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-dark-700 bg-dark-850 shadow-2xl animate-modal-sheet">
         <div className="flex items-center justify-between border-b border-dark-700/80 bg-dark-900/60 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">

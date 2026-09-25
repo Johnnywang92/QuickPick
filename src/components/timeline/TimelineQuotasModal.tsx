@@ -109,7 +109,7 @@ export const TimelineQuotasModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-dark-850 border border-dark-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-200 font-sans">
+      <div className="relative w-full max-w-4xl max-h-[92vh] bg-dark-850 border border-dark-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-200 font-sans animate-modal-sheet">
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-dark-750 bg-dark-800/80 shrink-0">
           <div className="flex items-center space-x-3">
