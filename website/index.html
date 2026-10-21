@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuickPick 极选 — 摄影师本地极速选片与构图调色工作台 | Johnny Boy Studio</title>
+  <meta name="description" content="专为专业摄影师与深度影像爱好者打造的本地极速选片与构图调色工作台。零上传 · 100% 原片只读安全 · 毫秒级原生解码 · 电影级调色与审美相框。">
+  <meta name="keywords" content="QuickPick, 极选, 摄影选片, RAW 解码, 胶片调色, 3D LUT, EXIF 相框, 构图参考线, Johnny Boy Studio">
+  
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="icon.png">
+  
+  <!-- Open Graph / Meta -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://quickpick.johnnyboystudio.com">
+  <meta property="og:title" content="QuickPick 极选 — 本地极速选片与构图调色工作台">
+  <meta property="og:description" content="零上传 · 100% 原片只读安全 · 毫秒级原生解码 · 电影级调色与审美相框">
+  <meta property="og:image" content="https://quickpick.johnnyboystudio.com/icon.png">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Ambient Radial Glow & Grid -->
+  <div class="bg-ambient">
+    <div class="bg-grid"></div>
+    <div class="glow-orb glow-amber"></div>
+    <div class="glow-orb glow-blue"></div>
+    <div class="glow-orb glow-emerald"></div>
+  </div>
+
+  <!-- Top Sticky Navigation -->
+  <header class="nav-header">
+    <div class="nav-container">
+      <a href="https://quickpick.johnnyboystudio.com" class="brand-wrap">
+        <img src="icon.png" alt="QuickPick Logo" class="brand-icon">
+        <div class="brand-title">
+          <span>QuickPick</span>
+          <span style="font-weight: 400; opacity: 0.7;">极选</span>
+          <span class="version-badge">v0.2.0</span>
+        </div>
+      </a>
+
+      <div class="nav-right">
+        <!-- Language Switcher -->
+        <div class="lang-switch" title="Switch Language / 切换语言">
+          <span class="lang-opt active" data-lang="zh">中文</span>
+          <span class="lang-opt" data-lang="en">EN</span>
+        </div>
+
+        <a href="https://johnnyboystudio.com" target="_blank" rel="noopener" class="nav-link" style="display: none; @media(min-width: 768px){display: flex;}">
+          Johnny Boy Studio ↗
+        </a>
+
+        <a href="https://github.com/Johnnywang92/QuickPick" target="_blank" rel="noopener" class="nav-link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          GitHub
+        </a>
+
+        <a href="https://github.com/Johnnywang92/QuickPick/releases/latest" class="btn-primary" style="padding: 0.45rem 0.95rem; font-size: 0.85rem;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span data-i18n="btnDownloadMac">下载 macOS 版</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="eyebrow">
+      <span class="eyebrow-dot"></span>
+      <span data-i18n="heroEyebrow">JOHNNY BOY STUDIO · 专业暗房工作台 v0.2.0</span>
+    </div>
+
+    <h1 class="hero-title">
+      <span data-i18n="heroTitlePrefix">从三千张 RAW 底片到惊艳交付，</span><br>
+      <span class="highlight" data-i18n="heroTitleHighlight">只需一杯咖啡的时间</span>
+    </h1>
+
+    <p class="hero-sub" data-i18n="heroSub">
+      专为专业摄影师与深度影像爱好者打造的本地极速选片与构图调色工作台。零上传 · 100% 原片只读安全 · 毫秒级原生解码 · 电影级调色与审美相框。
+    </p>
+
+    <div class="cta-group">
+      <a href="https://github.com/Johnnywang92/QuickPick/releases/latest" class="btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span data-i18n="btnDownloadMac">免费下载 macOS 客户端 (Apple Silicon)</span>
+      </a>
+
+      <a href="https://github.com/Johnnywang92/QuickPick" target="_blank" rel="noopener" class="btn-secondary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+        </svg>
+        <span data-i18n="btnViewGithub">GitHub 开源仓库</span>
+      </a>
+    </div>
+
+    <!-- macOS Gatekeeper One-liner -->
+    <div class="gatekeeper-bar">
+      <span data-i18n="gatekeeperTip">macOS 首次打开安全放行命令：</span>
+      <code class="gatekeeper-code" id="gatekeeperCmd">xattr -cr /Applications/QuickPick.app</code>
+      <button class="copy-btn" id="copyGatekeeperBtn" title="Copy Command">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        <span data-i18n="copyBtn">复制</span>
+      </button>
+    </div>
+
+    <!-- Trust Strip -->
+    <div class="trust-strip">
+      <div class="trust-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span data-i18n="trustReadOnly">100% 物理只读安全</span>
+      </div>
+      <div class="trust-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span data-i18n="trustLibRaw">毫秒级 LibRaw 原生解码</span>
+      </div>
+      <div class="trust-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span data-i18n="trustPixi">Pixi.js v8 硬件加速</span>
+      </div>
+      <div class="trust-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        <span data-i18n="trustLicense">MIT 开源许可证</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Workbench Showcase -->
+  <section class="showcase-section">
+    <div class="showcase-header">
+      <h2 class="showcase-title">
+        <span>✨</span>
+        <span data-i18n="demoHeader">在线拟真暗房交互体验</span>
+      </h2>
+      <p class="showcase-tip" data-i18n="demoTip">支持在网页中直接按键盘快捷键或鼠标点击体验</p>
+    </div>
+
+    <div class="workbench-window">
+      <!-- Titlebar -->
+      <div class="window-titlebar">
+        <div class="mac-buttons">
+          <span class="mac-dot mac-close"></span>
+          <span class="mac-dot mac-min"></span>
+          <span class="mac-dot mac-max"></span>
+        </div>
+        <div class="window-meta">
+          <span data-i18n="demoWindowFile">DSC06182.ARW · 4000×6000 (24.0MP) · Sony A7M4</span>
+          <span class="window-hud-badge" data-i18n="demoHudFps">120 FPS 硬件加速</span>
+        </div>
+      </div>
+
+      <!-- Controls Toolbar -->
+      <div class="workbench-controls">
+        <!-- Grids -->
+        <div class="control-group">
+          <span class="group-label" data-i18n="groupGrid">构图线 (O)</span>
+          <button class="tool-pill" data-grid="none" data-i18n="gridNone">关闭</button>
+          <button class="tool-pill active" data-grid="thirds" data-i18n="gridThirds">三分法</button>
+          <button class="tool-pill" data-grid="golden_spiral" data-i18n="gridSpiral">黄金螺旋</button>
+          <button class="tool-pill" data-grid="golden_ratio" data-i18n="gridRatio">黄金分割</button>
+          <button class="tool-pill" data-grid="diagonal" data-i18n="gridDiagonal">动态对称</button>
+          <button class="tool-pill" data-grid="crosshair" data-i18n="gridCross">中心地平</button>
+        </div>
+
+        <!-- LUT / Color -->
+        <div class="control-group">
+          <span class="group-label" data-i18n="groupLut">色彩风格 (L/B)</span>
+          <button class="tool-pill" data-lut="raw" data-i18n="lutRaw">RAW直出</button>
+          <button class="tool-pill active" data-lut="portra" data-i18n="lutPortra">Portra 400</button>
+          <button class="tool-pill" data-lut="chrome" data-i18n="lutChrome">Classic Chrome</button>
+          <button class="tool-pill" data-lut="leica-bw" data-i18n="lutLeica">徕卡高反差黑白 (B)</button>
+        </div>
+
+        <!-- Frames -->
+        <div class="control-group">
+          <span class="group-label" data-i18n="groupFrame">参数相框 (E)</span>
+          <button class="tool-pill" data-frame="none" data-i18n="frameNone">无相框</button>
+          <button class="tool-pill active" data-frame="classic-white" data-i18n="frame1">1 经典白</button>
+          <button class="tool-pill" data-frame="obsidian-black" data-i18n="frame2">2 黑曜石</button>
+          <button class="tool-pill" data-frame="amber-minimal" data-i18n="frame3">3 琥珀金</button>
+          <button class="tool-pill" data-frame="cinematic-scope" data-i18n="frame4">4 宽幅</button>
+          <button class="tool-pill" data-frame="retro-polaroid" data-i18n="frame5">5 复古纸</button>
+        </div>
+      </div>
+
+      <!-- Canvas Area -->
+      <div class="workbench-canvas-wrap">
+        <!-- Floating Nav Arrows -->
+        <button class="canvas-nav-btn canvas-nav-prev" id="canvasPrevBtn" title="Previous Photo / 上一张 (← / K)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+
+        <button class="canvas-nav-btn canvas-nav-next" id="canvasNextBtn" title="Next Photo / 下一张 (→ / J)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+
+        <div class="sample-photo-frame frame-classic-white" id="sampleFrameWrap">
+          <div class="sample-img-container">
+            <img src="sample1.jpg" alt="QuickPick Preview" class="sample-photo-img" id="samplePhotoImg">
+            <!-- Composition Grid SVG Overlay -->
+            <svg class="grid-svg-overlay" id="gridSvgOverlay" viewBox="0 0 360 540"></svg>
+            
+            <!-- Triage HUD Badge -->
+            <div class="triage-hud triage-selected" id="triageHudBadge">
+              🛡️ SELECTED (金标保护)
+            </div>
+
+            <!-- Peek Before / After Overlay -->
+            <div class="peek-overlay" id="peekOverlayHud" style="display: none;">
+              RAW ORIGINAL (按住 \ 查看原片)
+            </div>
+          </div>
+
+          <!-- Bottom EXIF Frame Bar -->
+          <div class="frame-exif-bar" id="frameExifBar">
+            <div class="exif-left">
+              <svg class="exif-aperture-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="14.31" y1="8" x2="20.05" y2="17.94"/>
+                <line x1="9.69" y1="8" x2="21.17" y2="8"/>
+                <line x1="7.38" y1="12" x2="13.12" y2="2.06"/>
+                <line x1="9.69" y1="16" x2="3.95" y2="6.06"/>
+                <line x1="14.31" y1="16" x2="2.83" y2="16"/>
+                <line x1="16.62" y1="12" x2="10.88" y2="21.94"/>
+              </svg>
+              <span class="exif-camera-name" id="exifCameraName">SONY ILCE-7M4</span>
+              <span class="exif-lens-spec" id="exifLensSpec">FE 50mm F1.2 GM</span>
+            </div>
+            <div class="exif-right" id="exifParams">
+              <span>50mm</span>
+              <span>f/1.4</span>
+              <span>1/250s</span>
+              <span>ISO 400</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Filmstrip Bar -->
+      <div class="workbench-filmstrip">
+        <div class="filmstrip-left">
+          <div class="filmstrip-counter" id="filmstripCounter">1 / 3</div>
+          <div class="filmstrip-thumbs">
+            <div class="thumb-item active" data-photo-idx="0" title="DSC06182.ARW">
+              <img src="sample1.jpg" alt="Photo 1" class="thumb-img">
+              <span class="thumb-badge">🛡️</span>
+            </div>
+            <div class="thumb-item" data-photo-idx="1" title="DSC06183.ARW">
+              <img src="sample2.jpg" alt="Photo 2" class="thumb-img">
+              <span class="thumb-badge">🛡️</span>
+            </div>
+            <div class="thumb-item" data-photo-idx="2" title="DSC06190.ARW">
+              <img src="sample3.jpg" alt="Photo 3" class="thumb-img">
+              <span class="thumb-badge">⭐</span>
+            </div>
+          </div>
+        </div>
+        <div class="filmstrip-shortcuts-hint">
+          <span>切片快捷键：</span>
+          <span class="key-hint">← / K</span>
+          <span class="key-hint">→ / J</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bento Grid Core Features -->
+  <section class="features-section">
+    <div class="section-head">
+      <div class="section-tag" data-i18n="bentoTag">核心特性</div>
+      <h2 class="section-title" data-i18n="bentoTitle">为极速而生，为审美与安全而设计</h2>
+    </div>
+
+    <div class="bento-grid">
+      <!-- 1. Funnel -->
+      <div class="bento-card col-8">
+        <div class="card-icon-wrap icon-amber">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+        </div>
+        <h3 class="card-title" data-i18n="bento1Title">⚡ 废片一键粉碎漏斗 (Blink & Blur)</h3>
+        <p class="card-desc" data-i18n="bento1Desc">
+          AI 智能筛查闭眼缺陷（双眼睁开度算法）、严重脱焦/模糊（拉普拉斯锐度方差）与连拍冗余次选。独创「金标强锁定保护」，已被保留的照片严禁批量误剔除，支持 Cmd+Z 原子撤销。
+        </p>
+        <span class="card-badge badge-pro" data-i18n="bento1Badge">AI 缺陷筛查 · 强保护</span>
+      </div>
+
+      <!-- 2. Composition Grids -->
+      <div class="bento-card col-4">
+        <div class="card-icon-wrap icon-blue">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+        </div>
+        <h3 class="card-title" data-i18n="bento2Title">📐 5 大摄影经典构图参考线</h3>
+        <p class="card-desc" data-i18n="bento2Desc">
+          3×3黄金三分法、斐波那契黄金螺旋（Shift+O 4象限旋转）、黄金分割比例（1:0.618:1）、动态对称网格与高精度地平线校准。Pixi.js v8 逆缩放保证 1.25px 物理像素极锐显示。
+        </p>
+        <span class="card-badge badge-fast" data-i18n="bento2Badge">Pixi.js 硬件加速</span>
+      </div>
+
+      <!-- 3. EXIF Frames -->
+      <div class="bento-card col-4">
+        <div class="card-icon-wrap icon-amber">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h10v10H7z"/></svg>
+        </div>
+        <h3 class="card-title" data-i18n="bento3Title">🎨 EXIF 摄影参数相框与调色台</h3>
+        <p class="card-desc" data-i18n="bento3Desc">
+          快捷键 E 瞬时呼出。提供 6 大合规艺术相框模板与原创几何光圈徽标。智能调光 (Auto Tone Engine)，一键 Cmd+C 复制带框高清图到剪贴板，支持 AirDrop 隔空投送。
+        </p>
+        <span class="card-badge badge-pro" data-i18n="bento3Badge">100% 商用合规 · 免版权风险</span>
+      </div>
+
+      <!-- 4. 3D LUT -->
+      <div class="bento-card col-4">
+        <div class="card-icon-wrap icon-red">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+        </div>
+        <h3 class="card-title" data-i18n="bento4Title">🎞️ 3D LUT 电影级胶片调色</h3>
+        <p class="card-desc" data-i18n="bento4Desc">
+          内置 Kodak Portra、Fuji Classic Chrome 与徕卡高反差黑白影调。支持导入自定义 .cube 3D LUT 文件，Rust 多线程与 WebGPU 实时 60~120fps 超高速映射。
+        </p>
+        <span class="card-badge badge-fast" data-i18n="bento4Badge">实时 120 FPS 映射</span>
+      </div>
+
+      <!-- 5. Storyline & Radar -->
+      <div class="bento-card col-4">
+        <div class="card-icon-wrap icon-blue">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <h3 class="card-title" data-i18n="bento5Title">👥 故事线与至亲人物出场记分板</h3>
+        <p class="card-desc" data-i18n="bento5Desc">
+          婚礼/大型活动摄影必备。剧本式故事线场景分段配额、人像聚类核心人物防漏片雷达、连拍两两对决 (P) 与人物面部 100% 特写抽屉 (F)。
+        </p>
+        <span class="card-badge badge-pro" data-i18n="bento5Badge">活动/婚礼摄影利器</span>
+      </div>
+
+      <!-- 6. Physical Read-Only Safety -->
+      <div class="bento-card col-12">
+        <div class="card-icon-wrap icon-emerald">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3 class="card-title" data-i18n="bento6Title">🔒 物理级源文件只读安全红线</h3>
+        <p class="card-desc" data-i18n="bento6Desc">
+          全生命周期对源照片目录保持物理只读，绝不修改、覆盖或写入任何隐藏缓存。导出强制校验 SHA-256 哈希，杜绝向源目录写出冲突。
+        </p>
+        <span class="card-badge badge-safe" data-i18n="bento6Badge">绝对数据安全</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Keyboard Matrix -->
+  <section class="keyboard-section">
+    <div class="section-tag" data-i18n="keysTag">键盘流神操作</div>
+    <h2 class="section-title" data-i18n="keysTitle">双手不离键盘，盲打即完成挑片与调色</h2>
+    <p style="color: var(--text-muted); margin-top: 0.5rem;" data-i18n="keysTip">点击或直接按下物理键盘体验触发：</p>
+
+    <div class="keys-container">
+      <div class="keycap" data-key="ArrowLeft">
+        <span class="key-char">←</span>
+        <span class="key-fn">上一张 (K)</span>
+      </div>
+      <div class="keycap" data-key="ArrowRight">
+        <span class="key-char">→</span>
+        <span class="key-fn">下一张 (J)</span>
+      </div>
+      <div class="keycap" data-key="Space">
+        <span class="key-char">Space</span>
+        <span class="key-fn">选片 / 取消</span>
+      </div>
+      <div class="keycap" data-key="M">
+        <span class="key-char">M</span>
+        <span class="key-fn">待考虑</span>
+      </div>
+      <div class="keycap" data-key="N">
+        <span class="key-char">N</span>
+        <span class="key-fn">不选 / 排除</span>
+      </div>
+      <div class="keycap" data-key="O">
+        <span class="key-char">O</span>
+        <span class="key-fn">切换构图线</span>
+      </div>
+      <div class="keycap" data-key="E">
+        <span class="key-char">E</span>
+        <span class="key-fn">相框调色台</span>
+      </div>
+      <div class="keycap" data-key="L">
+        <span class="key-char">L</span>
+        <span class="key-fn">3D LUT 胶片</span>
+      </div>
+      <div class="keycap" data-key="B">
+        <span class="key-char">B</span>
+        <span class="key-fn">徕卡黑白</span>
+      </div>
+      <div class="keycap" data-key="\">
+        <span class="key-char">\</span>
+        <span class="key-fn">按住对比原片</span>
+      </div>
+      <div class="keycap" data-key="P">
+        <span class="key-char">P</span>
+        <span class="key-fn">两两 PK 对决</span>
+      </div>
+      <div class="keycap" data-key="F">
+        <span class="key-char">F</span>
+        <span class="key-fn">人脸特写抽屉</span>
+      </div>
+      <div class="keycap" data-key="Z">
+        <span class="key-char">Z</span>
+        <span class="key-fn">100% 真实像素查焦</span>
+      </div>
+    </div>
+
+    <div class="key-action-display" id="keyActionDisplay">
+      <span class="accent">⚡ Action:</span> 准备就绪，按下键盘或点击按键体验盲打响应
+    </div>
+  </section>
+
+  <!-- Inviolable Safety Redlines Banner -->
+  <section class="security-banner">
+    <div class="security-content">
+      <div class="security-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span data-i18n="secBadge">数据资产至高无上</span>
+      </div>
+      <h2 class="security-title" data-i18n="secTitle">不可逾越的 4 道数据安全红线</h2>
+      
+      <div class="security-points">
+        <div class="sec-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span data-i18n="sec1">源照片物理只读：绝不修改、重命名或向源目录写入元数据</span>
+        </div>
+        <div class="sec-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span data-i18n="sec2">导出防覆盖隔离：严格禁止导出至源目录，遇重名智能重命名</span>
+        </div>
+        <div class="sec-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span data-i18n="sec3">SHA-256 完整性校验：导出文件经过多重哈希校验确保不掉帧</span>
+        </div>
+        <div class="sec-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span data-i18n="sec4">纯本地离线隐私：不依赖任何云端，零上传，100% 本地运行</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- macOS Gatekeeper Guide -->
+  <section class="gatekeeper-section">
+    <div class="faq-box">
+      <h3 class="faq-title">
+        <span>🍎</span>
+        <span data-i18n="faqTitle">macOS 首次安装提示解决指南</span>
+      </h3>
+      <div style="margin-top: 1rem;">
+        <strong style="color: #fbbf24; font-size: 0.92rem;" data-i18n="faq1Q">为什么首次打开提示「无法验证开发者」或「已移入废纸篓」？</strong>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0.4rem 0 1rem;" data-i18n="faq1A">
+          由于 QuickPick 为独立开源项目，未向苹果支付商业证书年费，属于 macOS Gatekeeper 正常拦截。只需打开系统终端，运行上方提供的放行命令：xattr -cr /Applications/QuickPick.app 即可秒级开启。
+        </p>
+
+        <strong style="color: #fbbf24; font-size: 0.92rem;" data-i18n="faq2Q">支持 Windows 和 Intel Mac 吗？</strong>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0.4rem 0 0;" data-i18n="faq2A">
+          目前 GitHub Releases 提供编译好的 macOS Apple Silicon (M1/M2/M3/M4) DMG 安装包。Windows 与 Intel Mac 正在适配准备中，开发者也可通过 README 指引本地编译体验。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="footer-container">
+      <div class="footer-left">
+        <div class="brand-wrap">
+          <img src="icon.png" alt="QuickPick Logo" class="brand-icon">
+          <div class="brand-title">QuickPick 极选</div>
+        </div>
+        <p class="footer-desc" data-i18n="footerDesc">
+          专为摄影师与修图师打造的本地极速选片与美学工作台。极致安全，极致顺手。
+        </p>
+      </div>
+
+      <div class="footer-right">
+        <div>
+          <div class="footer-col-title" data-i18n="footerCol1">产品</div>
+          <ul class="footer-links">
+            <li><a href="https://github.com/Johnnywang92/QuickPick/releases/latest" data-i18n="footerRelease">最新版本下载</a></li>
+            <li><a href="#sampleFrameWrap" data-i18n="demoHeader">在线交互体验</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title" data-i18n="footerCol2">资源</div>
+          <ul class="footer-links">
+            <li><a href="https://github.com/Johnnywang92/QuickPick" target="_blank" rel="noopener">GitHub 仓库</a></li>
+            <li><a href="https://github.com/Johnnywang92/QuickPick/blob/main/docs/PERFORMANCE_BASELINES.md" target="_blank" rel="noopener" data-i18n="footerDoc">性能基准与架构</a></li>
+            <li><a href="https://github.com/Johnnywang92/QuickPick/issues" target="_blank" rel="noopener" data-i18n="footerIssues">反馈 Bug / 建议</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="footer-col-title" data-i18n="footerCol3">关于</div>
+          <ul class="footer-links">
+            <li><a href="https://johnnyboystudio.com" target="_blank" rel="noopener" data-i18n="footerHome">Johnny Boy Studio 主站</a></li>
+            <li><a href="https://github.com/Johnnywang92/QuickPick/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div>© 2026 Johnny Boy Studio. <span data-i18n="footerRights">保留所有权利。</span></div>
+      <div>Designed with Precision & Craft for Photographers.</div>
+    </div>
+  </footer>
+
+  <!-- Toast Alert -->
+  <div class="toast-msg" id="toast">已复制到剪贴板！</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
