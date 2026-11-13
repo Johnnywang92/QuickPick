@@ -132,11 +132,15 @@ fn analyze_photo_details_blocking(
     );
 
     // 闭眼缺陷及合影睁闭眼分歧判定
-    if let Some(blink_tag) = quickpick_lib::rules::face::evaluate_group_eyes_with_scene(&faces, workflow_scene) {
+    if let Some(blink_tag) =
+        quickpick_lib::rules::face::evaluate_group_eyes_with_scene(&faces, workflow_scene)
+    {
         defect_tags.push(blink_tag);
         status = AnalysisStatus::NeedsCheck;
     }
-    if let Some(conflict_tag) = quickpick_lib::rules::face::evaluate_group_eye_conflict_with_scene(&faces, workflow_scene) {
+    if let Some(conflict_tag) =
+        quickpick_lib::rules::face::evaluate_group_eye_conflict_with_scene(&faces, workflow_scene)
+    {
         defect_tags.push(conflict_tag);
         status = AnalysisStatus::NeedsCheck;
     }
@@ -431,7 +435,14 @@ async fn share_photos_via_air_drop(
         .map_err(|error| format!("创建 AirDrop 临时目录失败: {error}"))?;
     let cache_root = app_data_dir.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        render_shareable_jpegs(&cache_root, &photos, &share_dir, 2560, 90, lut_tables.as_ref())
+        render_shareable_jpegs(
+            &cache_root,
+            &photos,
+            &share_dir,
+            2560,
+            90,
+            lut_tables.as_ref(),
+        )
     })
     .await
     .map_err(|error| format!("准备 AirDrop 照片异常结束: {error}"))??;
@@ -502,7 +513,10 @@ async fn share_custom_images_via_air_drop(
     }
 
     if files.is_empty() {
-        return Err(format!("没有成功生成可供 AirDrop 的 JPEG: {}", errors.join("; ")));
+        return Err(format!(
+            "没有成功生成可供 AirDrop 的 JPEG: {}",
+            errors.join("; ")
+        ));
     }
 
     let files_to_share = files.clone();

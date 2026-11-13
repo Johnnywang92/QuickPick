@@ -145,7 +145,7 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           e.preventDefault();
           const { activeLutId, setActiveLutId, toggleEnabled } = useLutStore.getState();
           if (!activeLutId) {
-            setActiveLutId('kodak_portra_400');
+            setActiveLutId('warm_portrait');
           } else {
             toggleEnabled();
           }
@@ -157,10 +157,10 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         case 'B': {
           e.preventDefault();
           const { activeLutId, isEnabled, setActiveLutId, toggleEnabled } = useLutStore.getState();
-          if (activeLutId === 'leica_monochrome' && isEnabled) {
+          if (activeLutId === 'deep_monochrome' && isEnabled) {
             toggleEnabled();
           } else {
-            setActiveLutId('leica_monochrome');
+            setActiveLutId('deep_monochrome');
           }
           break;
         }

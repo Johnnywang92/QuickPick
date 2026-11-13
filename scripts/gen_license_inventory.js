@@ -101,3 +101,4 @@ ${table(rust)}
 `;
 fs.writeFileSync(path.join(root, 'docs/THIRD_PARTY_LICENSES.md'), out);
 console.log(`npm: ${npm.size}, rust: ${rust.length}, flagged: ${flagged.length}`);
+

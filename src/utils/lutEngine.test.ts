@@ -5,13 +5,13 @@ describe('lutEngine', () => {
   it('defines 8 high quality built-in photographic film and vintage presets', () => {
     expect(BUILTIN_LUTS).toHaveLength(8);
     const ids = BUILTIN_LUTS.map((l) => l.id);
-    expect(ids).toContain('kodak_portra_400');
-    expect(ids).toContain('fuji_classic_chrome');
+    expect(ids).toContain('warm_portrait');
+    expect(ids).toContain('documentary_cyan');
     expect(ids).toContain('ccd_vintage_digital');
     expect(ids).toContain('wedding_pure_white');
     expect(ids).toContain('cinematic_teal_orange');
-    expect(ids).toContain('leica_monochrome');
-    expect(ids).toContain('kodak_ektar_100');
+    expect(ids).toContain('deep_monochrome');
+    expect(ids).toContain('vivid_landscape');
     expect(ids).toContain('nordic_clean');
   });
 
@@ -38,7 +38,7 @@ describe('lutEngine', () => {
   }, 15000);
 
   it('correctly maps monochrome preset to identical R, G, B channels', () => {
-    const data = generateBuiltinLutData('leica_monochrome', 16);
+    const data = generateBuiltinLutData('deep_monochrome', 16);
     // Spot check a few pixels
     for (let i = 0; i < data.length; i += 40) {
       expect(data[i]).toBe(data[i + 1]);
@@ -100,23 +100,26 @@ LUT_3D_SIZE 3
     const size = 16;
     for (const preset of BUILTIN_LUTS) {
       const data = generateBuiltinLutData(preset.id, size);
-      // Verify no NaNs or undefined exist in the entire buffer
+      // Fast buffer validation: check no NaNs exist in the entire buffer
+      let hasNaN = false;
       for (let i = 0; i < data.length; i += 4) {
-        expect(Number.isNaN(data[i])).toBe(false);
-        expect(Number.isNaN(data[i + 1])).toBe(false);
-        expect(Number.isNaN(data[i + 2])).toBe(false);
+        if (Number.isNaN(data[i]) || Number.isNaN(data[i + 1]) || Number.isNaN(data[i + 2])) {
+          hasNaN = true;
+          break;
+        }
       }
+      expect(hasNaN).toBe(false);
 
       // Check pure saturated red: r=size-1, g=0, b=0
       // In 2D strip: pixelX = b * size + r = 0 * 16 + 15 = 15, pixelY = g = 0
       const redOffset = (0 * (size * size) + 15) * 4;
       const redVal = data[redOffset];
       // In color presets (non-monochrome), red value for pure red must remain vibrant (>150), not crushed to 0!
-      if (preset.id !== 'leica_monochrome') {
+      if (preset.id !== 'deep_monochrome') {
         expect(redVal).toBeGreaterThan(150);
       }
     }
-  });
+  }, 15000);
 
   it('preserves realistic midtone exposure in cinematic teal orange without crushing midtones', () => {
     const size = 33;

@@ -465,7 +465,7 @@ export async function renderFramedPhotoCanvas(
   let bgColor = '#FFFFFF';
 
   // 规范化别名
-  const isClassicWhite = template === 'classic_white' || template === 'leica_white';
+  const isClassicWhite = template === 'classic_white';
   const isPolaroid =
     template === 'retro_polaroid' ||
     template === 'polaroid' ||

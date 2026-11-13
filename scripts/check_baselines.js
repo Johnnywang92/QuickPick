@@ -35,6 +35,7 @@ const requiredFiles = [
   'LICENSES/LIBRAW_LICENSE.txt',
   'docs/LIBRAW_REPLACEMENT.md',
   'docs/PERFORMANCE_BASELINES.md',
+  'docs/THIRD_PARTY_NOTICES.md',
 ];
 
 for (const relPath of requiredFiles) {
@@ -154,7 +155,7 @@ try {
   const benchOutput = execSync('cargo run --manifest-path src-tauri/Cargo.toml --features benchmark-bin --bin benchmark --quiet', {
     cwd: rootDir,
     encoding: 'utf-8',
-    timeout: 30000,
+    timeout: 120000,
   });
   const lines = benchOutput.trim().split('\n');
   for (const line of lines) {

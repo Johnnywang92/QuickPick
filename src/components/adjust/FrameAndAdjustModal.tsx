@@ -1130,7 +1130,6 @@ export const FrameAndAdjustModal: React.FC = () => {
                       {templates.map((t) => {
                         const isSelected =
                           frameConfig.template === t.id ||
-                          (t.id === 'classic_white' && frameConfig.template === 'leica_white') ||
                           (t.id === 'retro_polaroid' && frameConfig.template === 'polaroid');
 
                         return (

@@ -72,7 +72,7 @@ describe('exportStore manifest domain', () => {
 
     useLutStore.setState({
       photoLuts: {
-        first: { lutId: 'kodak_portra_400', intensity: 0.9 },
+        first: { lutId: 'warm_portrait', intensity: 0.9 },
         // second has no LUT
       },
     });
@@ -91,20 +91,20 @@ describe('exportStore manifest domain', () => {
     expect(maxDim).toBe(2048);
     expect(quality).toBe(88);
 
-    // First photo has Portra 400
+    // First photo has warm portrait
     expect(items[0].id).toBe('first');
-    expect(items[0].lutId).toBe('kodak_portra_400');
+    expect(items[0].lutId).toBe('warm_portrait');
     expect(items[0].lutIntensity).toBe(0.9);
 
     // Second photo has no LUT
     expect(items[1].id).toBe('second');
     expect(items[1].lutId).toBeNull();
 
-    // lutTables contains the kodak_portra_400 3D table
+    // lutTables contains the warm_portrait 3D table
     expect(lutTables).toBeDefined();
-    expect(lutTables['kodak_portra_400']).toBeDefined();
-    expect(lutTables['kodak_portra_400'].size).toBe(33);
-    expect(typeof lutTables['kodak_portra_400'].data_base64).toBe('string');
+    expect(lutTables['warm_portrait']).toBeDefined();
+    expect(lutTables['warm_portrait'].size).toBe(33);
+    expect(typeof lutTables['warm_portrait'].data_base64).toBe('string');
   });
 
   it('omits LUT configs when bakeLutEffect is false', async () => {
@@ -116,7 +116,7 @@ describe('exportStore manifest domain', () => {
 
     useLutStore.setState({
       photoLuts: {
-        first: { lutId: 'kodak_portra_400', intensity: 0.9 },
+        first: { lutId: 'warm_portrait', intensity: 0.9 },
       },
     });
 

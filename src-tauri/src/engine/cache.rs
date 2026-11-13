@@ -169,7 +169,10 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
 
             let mut jpeg_buf = Vec::new();
             let mut cursor = std::io::Cursor::new(&mut jpeg_buf);
-            if final_img.write_to(&mut cursor, image::ImageFormat::Jpeg).is_ok() {
+            if final_img
+                .write_to(&mut cursor, image::ImageFormat::Jpeg)
+                .is_ok()
+            {
                 (jpeg_buf, "image/jpeg".to_string())
             } else {
                 (bytes, mime)
@@ -337,7 +340,8 @@ pub fn generate_proxy_for_photo<C: AsRef<Path>, P: AsRef<Path>>(
 
     // 1. 抽取原图内嵌高画质图像 (绕过已有代理，直读源底片避免读旧写旧)
     let (img_bytes, _) = crate::engine::load_source_photo_preview(p)?;
-    let mut img = image::load_from_memory(&img_bytes).map_err(|e| format!("解码图片失败: {}", e))?;
+    let mut img =
+        image::load_from_memory(&img_bytes).map_err(|e| format!("解码图片失败: {}", e))?;
 
     let orientation = crate::engine::exif::extract_orientation(&img_bytes)
         .or_else(|| crate::engine::exif::extract_orientation_from_file(p))

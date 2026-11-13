@@ -46,3 +46,4 @@ johnny.boy.1km@gmail.com（请确认是否继续作为官方联系邮箱）
 
 # English Summary
 QuickPick runs entirely on your device. It has no accounts, telemetry, crash reporting or cloud upload. Photos are accessed read-only; selections, EXIF-derived data and face-region analysis results are stored in a local database and cache. Face analysis is not used for identification. If you process other people's photos, you are responsible for obtaining required consents under applicable law (e.g. GDPR, PIPL). Contact: johnny.boy.1km@gmail.com.
+

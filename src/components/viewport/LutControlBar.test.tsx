@@ -28,9 +28,9 @@ describe('LutControlBar', () => {
 
     fireEvent.click(trigger);
     expect(screen.getByText('3D LUT 胶片色彩预览')).toBeInTheDocument();
-    expect(screen.getByText('Kodak Portra 400')).toBeInTheDocument();
-    expect(screen.getByText('Fuji Classic Chrome')).toBeInTheDocument();
-    expect(screen.getByText('CCD Vintage Digicam')).toBeInTheDocument();
+    expect(screen.getByText('暖金人像')).toBeInTheDocument();
+    expect(screen.getByText('纪实青调')).toBeInTheDocument();
+    expect(screen.getByText('千禧复古 CCD')).toBeInTheDocument();
   });
 
   it('selects a preset from the popover', () => {
@@ -38,17 +38,17 @@ describe('LutControlBar', () => {
     // Open
     fireEvent.click(screen.getByText('3D LUT 胶片预览'));
 
-    // Select Kodak Portra 400
-    fireEvent.click(screen.getByText('Kodak Portra 400'));
-    expect(useLutStore.getState().activeLutId).toBe('kodak_portra_400');
+    // Select 暖金人像
+    fireEvent.click(screen.getByText('暖金人像'));
+    expect(useLutStore.getState().activeLutId).toBe('warm_portrait');
     expect(useLutStore.getState().isEnabled).toBe(true);
 
     // Header now reflects selected LUT
-    expect(screen.getByText(/Kodak Portra 400 \(85%\)/)).toBeInTheDocument();
+    expect(screen.getByText(/暖金人像 \(85%\)/)).toBeInTheDocument();
   });
 
   it('adjusts intensity slider', () => {
-    useLutStore.setState({ activeLutId: 'kodak_portra_400', isPanelOpen: true });
+    useLutStore.setState({ activeLutId: 'warm_portrait', isPanelOpen: true });
     render(<LutControlBar />);
 
     const slider = screen.getByRole('slider');
@@ -57,7 +57,7 @@ describe('LutControlBar', () => {
   });
 
   it('triggers bypass comparison on mouse down and up', () => {
-    useLutStore.setState({ activeLutId: 'kodak_portra_400' });
+    useLutStore.setState({ activeLutId: 'warm_portrait' });
     render(<LutControlBar />);
 
     const compareBtn = screen.getByText('按住对比');
@@ -69,7 +69,7 @@ describe('LutControlBar', () => {
   });
 
   it('toggles enabled state', () => {
-    useLutStore.setState({ activeLutId: 'kodak_portra_400', isEnabled: true });
+    useLutStore.setState({ activeLutId: 'warm_portrait', isEnabled: true });
     render(<LutControlBar />);
 
     const toggleBtn = screen.getByText('开');
@@ -84,10 +84,10 @@ describe('LutControlBar', () => {
 
     const { rerender } = render(<LutControlBar />);
     fireEvent.click(screen.getByText('3D LUT 胶片预览'));
-    fireEvent.click(screen.getByText('Kodak Portra 400'));
+    fireEvent.click(screen.getByText('暖金人像'));
 
     expect(useLutStore.getState().photoLuts['p1']).toEqual({
-      lutId: 'kodak_portra_400',
+      lutId: 'warm_portrait',
       intensity: 0.85,
     });
     expect(useLutStore.getState().photoLuts['p2']).toBeUndefined();
@@ -113,18 +113,18 @@ describe('LutControlBar', () => {
 
     render(<LutControlBar />);
     fireEvent.click(screen.getByText('3D LUT 胶片预览'));
-    fireEvent.click(screen.getByText('Kodak Portra 400'));
+    fireEvent.click(screen.getByText('暖金人像'));
 
     // Click batch apply to selected (2 photos)
     const applySelectedBtn = screen.getByText(/应用到已选 \(2\)/);
     fireEvent.click(applySelectedBtn);
 
     expect(useLutStore.getState().photoLuts['p2']).toEqual({
-      lutId: 'kodak_portra_400',
+      lutId: 'warm_portrait',
       intensity: 0.85,
     });
     expect(useLutStore.getState().photoLuts['p3']).toEqual({
-      lutId: 'kodak_portra_400',
+      lutId: 'warm_portrait',
       intensity: 0.85,
     });
 
@@ -138,13 +138,13 @@ describe('LutControlBar', () => {
     render(<LutControlBar />);
     fireEvent.click(screen.getByText('3D LUT 胶片预览'));
 
-    const fujiPreset = screen.getByText('Fuji Classic Chrome');
-    fireEvent.mouseEnter(fujiPreset);
+    const docPreset = screen.getByText('纪实青调');
+    fireEvent.mouseEnter(docPreset);
 
-    expect(useLutStore.getState().hoverLutId).toBe('fuji_classic_chrome');
-    expect(screen.getByText(/Fuji Classic Chrome \(预览中\)/)).toBeInTheDocument();
+    expect(useLutStore.getState().hoverLutId).toBe('documentary_cyan');
+    expect(screen.getByText(/纪实青调 \(预览中\)/)).toBeInTheDocument();
 
-    fireEvent.mouseLeave(fujiPreset);
+    fireEvent.mouseLeave(docPreset);
     expect(useLutStore.getState().hoverLutId).toBeNull();
     expect(screen.queryByText(/预览中/)).not.toBeInTheDocument();
 

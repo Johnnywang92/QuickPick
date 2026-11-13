@@ -62,18 +62,17 @@ fn sample_lut_offset(data: &[u8], offset: usize) -> (f32, f32, f32) {
     }
 }
 
-pub fn apply_3d_lut_rgb(
-    rgb: &mut [u8],
-    lut_data: &[u8],
-    size: usize,
-    intensity: f32,
-) {
+pub fn apply_3d_lut_rgb(rgb: &mut [u8], lut_data: &[u8], size: usize, intensity: f32) {
     if size < 2 || lut_data.len() < size * size * size * 4 || intensity <= 0.001 {
         return;
     }
 
     let max_idx = (size - 1) as f32;
-    let mut axis_table = [AxisCoord { i0: 0, i1: 0, frac: 0.0 }; 256];
+    let mut axis_table = [AxisCoord {
+        i0: 0,
+        i1: 0,
+        frac: 0.0,
+    }; 256];
     for (v, item) in axis_table.iter_mut().enumerate() {
         let x = (v as f32 / 255.0) * max_idx;
         let i0 = x.floor() as usize;

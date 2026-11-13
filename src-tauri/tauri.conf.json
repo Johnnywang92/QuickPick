@@ -43,7 +43,8 @@
     "resources": {
       "../LICENSE": "LICENSE",
       "../LICENSES/*": "LICENSES/",
-      "../docs/LIBRAW_REPLACEMENT.md": "docs/LIBRAW_REPLACEMENT.md"
+      "../docs/LIBRAW_REPLACEMENT.md": "docs/LIBRAW_REPLACEMENT.md",
+      "../docs/THIRD_PARTY_NOTICES.md": "docs/THIRD_PARTY_NOTICES.md"
     },
     "macOS": {
       "frameworks": [

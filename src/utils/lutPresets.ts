@@ -8,59 +8,59 @@ export interface LutPreset {
 
 export const BUILTIN_LUTS: LutPreset[] = [
   {
-    id: 'kodak_portra_400',
-    name: 'Kodak Portra 400',
-    tag: '经典胶片人像',
-    description: '暖金高光、柔和低反差与微青暗部，自然通透肤色',
+    id: 'warm_portrait',
+    name: '暖金人像',
+    tag: 'Warm Portrait',
+    description: '暖金高光、柔和低反差与微青暗部，自然通透肤色，呈现温润电影人像感',
     size: 33,
   },
   {
-    id: 'fuji_classic_chrome',
-    name: 'Fuji Classic Chrome',
-    tag: '富士纪实色彩',
-    description: '低饱和度、硬朗阴影、典雅青绿天空，纪实人文氛围',
+    id: 'documentary_cyan',
+    name: '纪实青调',
+    tag: 'Documentary Cyan',
+    description: '低饱和度、硬朗阴影与典雅青绿天空，突出街头纪实与人文故事感',
     size: 33,
   },
   {
     id: 'ccd_vintage_digital',
-    name: 'CCD Vintage Digicam',
-    tag: '千禧复古 CCD',
-    description: '浓郁原色饱和度、暖白高光溢出与复古油画质感，还原千禧年经典卡片机氛围',
+    name: '千禧复古 CCD',
+    tag: 'Vintage CCD',
+    description: '浓郁原色饱和度、暖白高光溢出与复古油画质感，还原经典卡片机氛围',
     size: 33,
   },
   {
     id: 'wedding_pure_white',
-    name: 'Pure White Bridal',
-    tag: '日系通透纯白',
-    description: '高调柔光曲线、婚纱纯净透亮不泛黄、粉嫩元气肤质',
+    name: '通透纯白',
+    tag: 'Pure White',
+    description: '高调柔光曲线、纯净透亮不泛黄、粉嫩元气肤质，适合婚礼人像与日系日常',
     size: 33,
   },
   {
     id: 'cinematic_teal_orange',
-    name: 'Teal & Orange',
-    tag: '电影冷暖对冲',
-    description: '深邃青蓝暗部对比暖金琥珀高光，强烈视觉冲击力',
+    name: '电影青橙',
+    tag: 'Teal & Orange',
+    description: '深邃青蓝暗部对比暖金琥珀高光，强烈视觉冲击力与现代院线质感',
     size: 33,
   },
   {
-    id: 'leica_monochrome',
-    name: 'Leica M Monochrome',
-    tag: '莱卡高反差黑白',
-    description: '经典全色阶明度权重、深邃黑阶、极度利落的光影轮廓',
+    id: 'deep_monochrome',
+    name: '极致黑白',
+    tag: 'Deep Monochrome',
+    description: '经典全色阶明度权重、深邃黑阶与利落光影轮廓，强化结构与微反差',
     size: 33,
   },
   {
-    id: 'kodak_ektar_100',
-    name: 'Kodak Ektar 100',
-    tag: '风光浓郁胶片',
-    description: '高饱和度、浓郁晚霞红与透亮蓝天，风光大片首选',
+    id: 'vivid_landscape',
+    name: '浓郁风光',
+    tag: 'Vivid Landscape',
+    description: '高饱和度、浓郁晚霞红与透亮纯净蓝天，风光与自然大片首选',
     size: 33,
   },
   {
     id: 'nordic_clean',
-    name: 'Nordic Minimalist',
-    tag: '北欧清冷淡雅',
-    description: '冷白高光、克制低饱和、现代纯净极简美学',
+    name: '清冷极简',
+    tag: 'Nordic Minimal',
+    description: '冷白高光、克制低饱和度与现代纯净灰度层次，北欧极简美学',
     size: 33,
   },
 ];
@@ -159,8 +159,8 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
 
         // 根据胶片预设施加专业摄影级色彩与反差映射
         switch (presetId) {
-          case 'kodak_portra_400': {
-            // Kodak Portra 400: 经典人像胶片，通透健康肤色，温暖高光，柔和暗部
+          case 'warm_portrait': {
+            // 暖金人像: 经典通透肤色，温暖琥珀高光，柔和微反差
             const lum = getLuminance(r, g, b);
             const [satR, satG, satB] = adjustSaturation(r, g, b, 1.05);
 
@@ -181,8 +181,8 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
             break;
           }
 
-          case 'fuji_classic_chrome': {
-            // Fuji Classic Chrome: 纪实人文，低饱和度，坚实阴影，典雅青绿天际
+          case 'documentary_cyan': {
+            // 纪实青调: 纪实人文，克制低饱和度，坚实阴影，典雅青绿天际
             const lum = getLuminance(r, g, b);
             const [satR, satG, satB] = adjustSaturation(r, g, b, 0.86);
 
@@ -190,7 +190,7 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
             const cg = filmCurve(satG, 1.20, 0.005, 0.995);
             const cb = filmCurve(satB, 1.18, 0.008, 0.995);
 
-            // 富士特有经典暗部青碧与高光微温
+            // 暗部青碧与高光微温
             const [tr, tg, tb] = applySplitToning(
               cr, cg, cb, lum,
               [-0.015, 0.018, 0.028],
@@ -268,8 +268,8 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
             break;
           }
 
-          case 'leica_monochrome': {
-            // 莱卡高反差黑白: 全色阶加权与橙镜质感，深邃黑位，利落光影轮廓
+          case 'deep_monochrome': {
+            // 极致黑白: 全色阶加权明度映射，深邃黑位，利落光影轮廓与高反差焦点
             const gray = 0.26 * r + 0.64 * g + 0.10 * b;
             const mono = filmCurve(gray, 1.30, 0.002, 0.998);
             outR = mono;
@@ -278,8 +278,8 @@ export function generateBuiltinLutData(presetId: string, size = 33): Uint8Array 
             break;
           }
 
-          case 'kodak_ektar_100': {
-            // Kodak Ektar 100: 风光大片浓郁色彩，高饱和，高透亮蓝天与落日红霞
+          case 'vivid_landscape': {
+            // 浓郁风光: 风光大片浓郁色彩，高饱和，高透亮蓝天与落日红霞
             const lum = getLuminance(r, g, b);
             const [satR, satG, satB] = adjustSaturation(r, g, b, 1.20);
 

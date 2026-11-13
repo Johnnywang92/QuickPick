@@ -105,18 +105,18 @@ describe('useKeyboardShortcuts', () => {
 
     renderHook(() => useKeyboardShortcuts());
 
-    // Press L -> activates default Portra 400
+    // Press L -> activates default warm portrait
     fireEvent.keyDown(window, { key: 'l' });
-    expect(useLutStore.getState().activeLutId).toBe('kodak_portra_400');
+    expect(useLutStore.getState().activeLutId).toBe('warm_portrait');
     expect(useLutStore.getState().isEnabled).toBe(true);
 
     // Press L again -> toggles off
     fireEvent.keyDown(window, { key: 'l' });
     expect(useLutStore.getState().isEnabled).toBe(false);
 
-    // Press B -> activates Leica monochrome
+    // Press B -> activates deep monochrome
     fireEvent.keyDown(window, { key: 'b' });
-    expect(useLutStore.getState().activeLutId).toBe('leica_monochrome');
+    expect(useLutStore.getState().activeLutId).toBe('deep_monochrome');
     expect(useLutStore.getState().isEnabled).toBe(true);
 
     // Hold \ -> bypass comparing

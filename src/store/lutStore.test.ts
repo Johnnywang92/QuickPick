@@ -23,16 +23,16 @@ describe('lutStore', () => {
 
   it('updates active LUT and calculates effective intensity', () => {
     const { setActiveLutId, setIntensity } = useLutStore.getState();
-    setActiveLutId('kodak_portra_400');
+    setActiveLutId('warm_portrait');
     setIntensity(0.75);
 
-    expect(useLutStore.getState().activeLutId).toBe('kodak_portra_400');
+    expect(useLutStore.getState().activeLutId).toBe('warm_portrait');
     expect(useLutStore.getState().getEffectiveIntensity()).toBe(0.75);
   });
 
   it('returns 0 effective intensity when bypassed or disabled', () => {
     const { setActiveLutId, toggleEnabled, setIsBypassComparing } = useLutStore.getState();
-    setActiveLutId('kodak_portra_400');
+    setActiveLutId('warm_portrait');
 
     // Bypass compare
     setIsBypassComparing(true);
@@ -89,14 +89,14 @@ LUT_3D_SIZE 2
   it('handles hoverLutId state transitions', () => {
     expect(useLutStore.getState().hoverLutId).toBeNull();
 
-    useLutStore.getState().setHoverLutId('kodak_portra_400');
-    expect(useLutStore.getState().hoverLutId).toBe('kodak_portra_400');
+    useLutStore.getState().setHoverLutId('warm_portrait');
+    expect(useLutStore.getState().hoverLutId).toBe('warm_portrait');
 
     useLutStore.getState().setHoverLutId('__bypass__');
     expect(useLutStore.getState().hoverLutId).toBe('__bypass__');
 
     // Selecting a LUT clears hover
-    useLutStore.getState().setActiveLutId('fuji_classic_chrome');
+    useLutStore.getState().setActiveLutId('documentary_cyan');
     expect(useLutStore.getState().hoverLutId).toBeNull();
   });
 });

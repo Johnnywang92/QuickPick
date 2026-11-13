@@ -2,7 +2,6 @@ export type WorkbenchTab = 'adjust' | 'lut' | 'frame' | 'watermark';
 
 export type BuiltinFrameTemplate =
   | 'classic_white'
-  | 'leica_white'
   | 'obsidian_black'
   | 'amber_minimal'
   | 'cinematic_scope'

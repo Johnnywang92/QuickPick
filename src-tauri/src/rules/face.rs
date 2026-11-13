@@ -211,13 +211,7 @@ pub fn evaluate_group_eye_conflict(all_faces: &[FaceInfo]) -> Option<DefectTag> 
 /// 轻量化人脸特征区域提取（基于 YCbCr 肤色聚类与眼部高反差区域）
 /// 无需外部庞大网络权重，100% 离线、跨平台且毫秒级响应
 /// 精准计算眼部局部区域的开合度指标 (0.0 完全闭眼 ~ 1.0 充分睁眼)
-fn analyze_eye_region(
-    gray: &image::GrayImage,
-    x0: u32,
-    x1: u32,
-    y0: u32,
-    y1: u32,
-) -> f32 {
+fn analyze_eye_region(gray: &image::GrayImage, x0: u32, x1: u32, y0: u32, y1: u32) -> f32 {
     let w = gray.width();
     let h = gray.height();
     let x_start = x0.min(w.saturating_sub(1));
@@ -361,8 +355,10 @@ pub fn detect_faces_heuristic(img: &DynamicImage) -> Vec<FaceInfo> {
         let right_eye_x0 = x0 + (w * 56) / 100;
         let right_eye_x1 = x0 + (w * 82) / 100;
 
-        let left_score = analyze_eye_region(&gray, left_eye_x0, left_eye_x1, eye_y_start, eye_y_end);
-        let right_score = analyze_eye_region(&gray, right_eye_x0, right_eye_x1, eye_y_start, eye_y_end);
+        let left_score =
+            analyze_eye_region(&gray, left_eye_x0, left_eye_x1, eye_y_start, eye_y_end);
+        let right_score =
+            analyze_eye_region(&gray, right_eye_x0, right_eye_x1, eye_y_start, eye_y_end);
         // 单眼闭眼即视为闭眼
         let eye_open_score = left_score.min(right_score);
 

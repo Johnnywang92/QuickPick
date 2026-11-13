@@ -133,7 +133,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                 <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-1 pl-1">
                   <li>以独立的动态链接库形式加载 LibRaw，保持清晰的模块架构边界；</li>
                   <li>支持用户根据自身需求定制、重新编译或升级替换底层 <code className="text-amber-700 dark:text-amber-300 font-mono">libraw.dylib</code> / <code className="text-amber-700 dark:text-amber-300 font-mono">libraw.dll</code>；</li>
-                  <li>随安装包附带了完整的 MIT 协议、LGPL 2.1 协议全文及动态库替换操作指引文件。</li>
+                  <li>间接依赖 Little-CMS 2 (MIT)、libjpeg-turbo (BSD/IJG) 与 libomp (Apache 2.0) 均为商业友好开源库；</li>
+                  <li>应用严格调用系统本地字体，不打包或分发任何商业字体文件；所有相机品牌参数呈现遵循指示性合理使用 (Nominative Fair Use) 原则；</li>
+                  <li>随安装包附带了完整的 MIT 协议、LGPL 2.1 协议全文、第三方依赖声明 (docs/THIRD_PARTY_NOTICES.md) 及动态库替换指引。</li>
                 </ul>
               </div>
 
