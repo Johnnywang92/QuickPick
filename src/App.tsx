@@ -39,6 +39,7 @@ import {
   Moon,
   Filter,
   Film,
+  CircleHelp,
 } from 'lucide-react';
 import { useThemeStore } from './store/themeStore';
 import { useAdjustStore } from './store/adjustStore';
@@ -74,6 +75,9 @@ const ExportModal = lazy(() =>
 );
 const AboutModal = lazy(() =>
   import('./components/modal/AboutModal').then((module) => ({ default: module.AboutModal })),
+);
+const HelpModal = lazy(() =>
+  import('./components/modal/HelpModal').then((module) => ({ default: module.HelpModal })),
 );
 const ShortcutsModal = lazy(() =>
   import('./components/modal/ShortcutsModal').then((module) => ({
@@ -176,6 +180,7 @@ export default function App() {
   const [engineVersion, setEngineVersion] = useState<string>('');
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
+  const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const [isReviewCenterOpen, setIsReviewCenterOpen] = useState<boolean>(false);
   const [isDefectFunnelOpen, setIsDefectFunnelOpen] = useState<boolean>(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
@@ -548,6 +553,15 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => setIsHelpOpen(true)}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
+            title="帮助中心：常见问题与检索"
+            aria-label="帮助中心"
+          >
+            <CircleHelp className="h-4 w-4" />
+          </button>
+
+          <button
             onClick={() => setSettingsOpen(true)}
             className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
             title="偏好设置与外观主题"
@@ -852,6 +866,13 @@ export default function App() {
             onClose={() => setIsAboutOpen(false)}
             librawVersion={engineVersion}
           />
+        </Suspense>
+      )}
+
+      {/* 帮助中心（可检索的常见问题） */}
+      {isHelpOpen && (
+        <Suspense fallback={null}>
+          <HelpModal onClose={() => setIsHelpOpen(false)} />
         </Suspense>
       )}
 
