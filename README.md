@@ -2,7 +2,8 @@
 
 <p align="center">
   <strong>专为专业摄影师与深度影像爱好者打造的本地极速选片与构图调色工作台</strong><br>
-  零上传 · 100% 原片只读安全 · 毫秒级原生解码 · 电影级调色与审美相框
+  零上传 · 100% 原片只读安全 · 毫秒级原生解码 · 电影级调色与审美相框<br><br>
+  🌐 <a href="https://quickpick.johnnyboystudio.com" target="_blank"><strong>QuickPick 官网 & 在线体验</strong></a> &nbsp;｜&nbsp; 🏛️ <a href="https://johnnyboystudio.com/" target="_blank"><strong>Johnny Boy Studio 官方主页 (https://johnnyboystudio.com/)</strong></a>
 </p>
 
 ---
@@ -31,16 +32,16 @@ QuickPick 是面向摄影师、修图师与普通用户的本地选片与交付�
 - **全能交互**：快捷键 **`O`** 循环盲打秒切，右上角悬浮控制栏提供 4 色高对比切换（暖金/亮白/科技青/深黑）与 20%~100% 透明度调节。
 
 ### 3. 🎨 相机 EXIF 参数相框与选片快速调色工作台 (Frame & Adjust)
-- **快捷键 `E` 瞬时呼出**，提供高审美摄影质感与 100% IP 知识产权合规设计：
+- **快捷键 `E` 瞬时呼出**，提供高审美摄影质感的相框设计：
   - 🖼️ **6 大合规艺术相框模板**（经典白底、暗夜黑曜、琥珀极简、电影宽幅 2.39:1、复古相纸、极简角标），按数字键 `1 ~ 6` 盲打秒切；
-  - 🖋️ **原创高精几何摄影徽标**：多边形光圈叶片、精密对焦刻度、35mm 胶卷孔与极简旁轴，杜绝商业商标侵权；
+  - 🖋️ **原创高精几何摄影徽标**：多边形光圈叶片、精密对焦刻度、35mm 胶卷孔与极简旁轴，不使用任何相机厂商的图形商标；
   - ✨ **算法一键智能调光 (Auto Tone Engine)**：Rec.709/sRGB 色彩空间自适应映射，直方图均衡与白平衡色温色调一键校正；
   - 🎚️ **彩色物理渐变滑槽与微交互**：冷暖/色调物理渐变槽、双击标签瞬时归零、长按 **`\`** 键瞬时原片对比 (Before/After)；
   - 📋 **`Cmd + C` 一键复制带框高清图到剪贴板**：直接去微信、飞书、小红书网页端粘贴发送，支持 AirDrop 隔空投送。
 
-### 4. 🎞️ 3D LUT 胶片电影级调色与莱卡高反差黑白影调
-- 内置经典胶片色调（柯达 Portra 400、富士 Classic Chrome、Pro Neg Hi、莱卡高反差黑白等）。
-- **`L` 键**开关 3D LUT 胶片调色，**`B` 键**一键切入莱卡高反差黑白检查画面明暗层次与微反差焦点。
+### 4. 🎞️ 3D LUT 电影级胶片调色与高反差黑白影调
+- 内置经典影调模拟（暖金人像、纪实青调、千禧复古 CCD、通透纯白、电影青橙、极致黑白、浓郁风光、清冷极简等）。
+- **`L` 键**开关 3D LUT 胶片调色，**`B` 键**一键切入高反差极致黑白影调检查画面明暗层次与微反差焦点。
 - 支持导入自定义 `.cube` 3D LUT 查找表文件，基于 Rust 多线程与 WebGPU/WebGL 实时 60-120fps 映射渲染。
 
 ### 5. 👥 智能故事线、人物记分板与离线协同
@@ -65,7 +66,7 @@ QuickPick 是面向摄影师、修图师与普通用户的本地选片与交付�
 | **`Shift + O`** | 顺时针旋转黄金螺旋朝向（四象限轮换） |
 | **`E`** | 打开 / 关闭 相机参数相框与选片快速调色工作台 |
 | **`L`** | 打开 / 关闭 3D LUT 胶片电影级调色 |
-| **`B`** | 一键切换莱卡高反差黑白影调检查 |
+| **`B`** | 一键切换极简高反差黑白影调检查 |
 | **`\`（按住）** | 按住瞬时查看未调色原片 (Before/After 对比) |
 | **`P`** | 连拍极速对决（两两 PK 淘汰） |
 | **`F`** | 打开 / 关闭 人脸特写抽屉 |
@@ -95,7 +96,7 @@ QuickPick 是面向摄影师、修图师与普通用户的本地选片与交付�
 
 ## 📥 下载与安装
 
-前往 [GitHub Releases](https://github.com/Johnnywang92/QuickPick/releases) 下载最新发行版：
+前往 [GitHub Releases](https://github.com/Johnnywang92/QuickPick/releases) 或 [QuickPick 官网](https://quickpick.johnnyboystudio.com) 下载最新发行版，更多工作室作品详见 [Johnny Boy Studio](https://johnnyboystudio.com/)：
 
 - **macOS (Apple Silicon M1/M2/M3/M4 系列)**：
   1. 下载 `QuickPick_0.2.0_aarch64.dmg` 安装镜像；
@@ -162,6 +163,6 @@ bash scripts/build_dmg.sh
 
 ## 📄 开源许可证
 
-本项目基于 [MIT License](LICENSE) 开源，著作权归属于 Johnny Boy Studio (Copyright (c) 2026)。
+本项目基于 [MIT License](LICENSE) 开源，著作权归属于 [Johnny Boy Studio](https://johnnyboystudio.com/) (Copyright (c) 2026)。
 
 底层 RAW 图像解码组件（LibRaw）采用独立动态链接库形式加载，遵循 GNU LGPL v2.1 / CDDL 1.0 开源许可协议，详细替换与合规说明参见 [docs/LIBRAW_REPLACEMENT.md](docs/LIBRAW_REPLACEMENT.md) 及 [LICENSES/](LICENSES/) 目录。

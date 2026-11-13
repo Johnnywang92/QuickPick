@@ -37,9 +37,9 @@ const I18N = {
     
     groupLut: "色彩风格 (L/B)",
     lutRaw: "RAW直出",
-    lutPortra: "Portra 400",
-    lutChrome: "Classic Chrome",
-    lutLeica: "徕卡高反差黑白 (B)",
+    lutWarm: "暖金人像",
+    lutDoc: "纪实青调",
+    lutMono: "极致黑白 (B)",
     
     groupFrame: "参数相框 (E)",
     frameNone: "无相框",
@@ -61,11 +61,11 @@ const I18N = {
     bento2Badge: "Pixi.js 硬件加速",
 
     bento3Title: "🎨 EXIF 摄影参数相框与调色台",
-    bento3Desc: "快捷键 E 瞬时呼出。提供 6 大合规艺术相框模板与原创几何光圈徽标。智能调光 (Auto Tone Engine)，一键 Cmd+C 复制带框高清图到剪贴板，支持 AirDrop 隔空投送。",
-    bento3Badge: "100% 商用合规 · 免版权风险",
+    bento3Desc: "快捷键 E 瞬时呼出。提供 6 大艺术相框模板与原创几何光圈徽标。智能调光 (Auto Tone Engine)，一键 Cmd+C 复制带框高清图到剪贴板，支持 AirDrop 隔空投送。",
+    bento3Badge: "原创图形 · 不含厂商 Logo",
 
     bento4Title: "🎞️ 3D LUT 电影级胶片调色",
-    bento4Desc: "内置 Kodak Portra、Fuji Classic Chrome 与徕卡高反差黑白影调。支持导入自定义 .cube 3D LUT 文件，Rust 多线程与 WebGPU 实时 60~120fps 超高速映射。",
+    bento4Desc: "内置暖金人像、纪实青调、电影青橙与极致黑白等经典电影级影调。支持导入自定义 .cube 3D LUT 文件，Rust 多线程与 WebGPU 实时 60~120fps 超高速映射。",
     bento4Badge: "实时 120 FPS 映射",
 
     bento5Title: "👥 故事线与至亲人物出场记分板",
@@ -137,9 +137,9 @@ const I18N = {
 
     groupLut: "Color Style (L/B)",
     lutRaw: "RAW Straight",
-    lutPortra: "Portra 400",
-    lutChrome: "Classic Chrome",
-    lutLeica: "Leica High Contrast B&W (B)",
+    lutWarm: "Warm Portrait",
+    lutDoc: "Documentary Cyan",
+    lutMono: "Deep Monochrome (B)",
 
     groupFrame: "EXIF Frames (E)",
     frameNone: "None",
@@ -161,11 +161,11 @@ const I18N = {
     bento2Badge: "Pixi.js Accelerated",
 
     bento3Title: "🎨 EXIF Parameter Frames & Workbench",
-    bento3Desc: "Instant hotkey E. 6 IP-compliant fine art frames with geometric aperture insignias. Auto Tone Engine for Rec.709/sRGB mapping, plus Cmd+C to copy high-res framed photos directly to clipboard or AirDrop.",
-    bento3Badge: "100% Commercial IP Compliant",
+    bento3Desc: "Instant hotkey E. 6 fine art frames with geometric aperture insignias. Auto Tone Engine for Rec.709/sRGB mapping, plus Cmd+C to copy high-res framed photos directly to clipboard or AirDrop.",
+    bento3Badge: "Original graphics · No brand logos",
 
     bento4Title: "🎞️ 3D LUT Film Emulation",
-    bento4Desc: "Built-in Kodak Portra, Fuji Classic Chrome, and Leica High-Contrast B&W. Import custom .cube files with multi-threaded Rust and WebGPU rendering at ultra-fluid 60–120 FPS.",
+    bento4Desc: "Built-in Warm Portrait, Documentary Cyan, Teal & Orange, and Deep Monochrome cinema emulations. Import custom .cube files with multi-threaded Rust and WebGPU rendering at ultra-fluid 60–120 FPS.",
     bento4Badge: "Fluid 120 FPS LUTs",
 
     bento5Title: "👥 Storyline & Family Radar",
@@ -210,7 +210,7 @@ const I18N = {
 let currentLang = 'zh';
 let currentGrid = 'thirds';
 let spiralRotation = 0; // 0, 90, 180, 270
-let currentLut = 'portra';
+let currentLut = 'warm-portrait';
 let currentFrame = 'classic-white';
 let currentTriage = 'selected'; // 'none', 'selected', 'maybe', 'rejected'
 let isPeeking = false;
@@ -395,14 +395,14 @@ function updateLut(lut) {
   
   if (lut === 'raw') {
     elements.sampleImg.style.filter = 'contrast(0.92) saturate(0.9)';
-  } else if (lut === 'portra') {
-    // Warm, highlight rolled off, saturated skin tones
+  } else if (lut === 'warm-portrait') {
+    // Warm tone, rolled-off highlights, natural skin tones
     elements.sampleImg.style.filter = 'contrast(1.06) brightness(1.03) saturate(1.15) sepia(0.08) hue-rotate(-3deg)';
-  } else if (lut === 'chrome') {
-    // Fuji Classic Chrome: hard contrast, muted blues/greens, calm tones
+  } else if (lut === 'doc-cyan') {
+    // Documentary Cyan: calm documentary tones, hard contrast, muted blues/greens
     elements.sampleImg.style.filter = 'contrast(1.18) saturate(0.85) brightness(0.98)';
-  } else if (lut === 'leica-bw') {
-    // Leica High Contrast B&W
+  } else if (lut === 'deep-monochrome') {
+    // Deep High Contrast Monochrome
     elements.sampleImg.style.filter = 'grayscale(100%) contrast(1.45) brightness(0.95)';
   }
 }
@@ -638,9 +638,9 @@ function initEvents() {
       highlightKeycap('L');
     } else if (key === 'B') {
       e.preventDefault();
-      updateLut('leica-bw');
+      updateLut('deep-monochrome');
       highlightKeycap('B');
-      showKeyAction('B: Leica High Contrast B&W (徕卡黑白)');
+      showKeyAction('B: Deep Monochrome (极致黑白)');
     } else if (key === '\\') {
       e.preventDefault();
       isPeeking = true;
@@ -695,7 +695,7 @@ function cycleGrid() {
 }
 
 function cycleLut() {
-  const luts = ['raw', 'portra', 'chrome', 'leica-bw'];
+  const luts = ['raw', 'warm-portrait', 'doc-cyan', 'deep-monochrome'];
   const nextIdx = (luts.indexOf(currentLut) + 1) % luts.length;
   updateLut(luts[nextIdx]);
   showKeyAction(`L: Film LUT -> ${luts[nextIdx].toUpperCase()}`);
@@ -713,8 +713,8 @@ function simulateKey(key) {
   } else if (key === 'L') {
     cycleLut();
   } else if (key === 'B') {
-    updateLut('leica-bw');
-    showKeyAction('B: Leica High Contrast B&W (徕卡黑白)');
+    updateLut('deep-monochrome');
+    showKeyAction('B: Deep Monochrome (极致黑白)');
   } else if (key === 'Space') {
     updateTriage(currentTriage === 'selected' ? 'none' : 'selected');
     showKeyAction('Space: Toggle Pick (选择/取消选择)');
