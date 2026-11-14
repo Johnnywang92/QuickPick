@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Application, Sprite, Container, Graphics, Text, Texture, ImageSource } from 'pixi.js';
+import { Application, Sprite, Container, Graphics, Text, Texture, Assets } from 'pixi.js';
 import {
   AlertTriangle,
   Loader2,
@@ -110,8 +110,6 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const transitionRafRef = useRef<number | null>(null);
   const lastIndexRef = useRef<number>(currentIndex);
   const navDirectionRef = useRef<number>(0);
-  // 保持当前视口最近使用的 8 帧 GPU 纹理缓存，避免切图来回往复时重复解码与显存抖动
-  const loadedTextureCacheRef = useRef<Map<string, Texture>>(new Map());
 
   // 视口右键上下文菜单与操作反馈状态
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -321,12 +319,6 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         cancelAnimationFrame(transitionRafRef.current);
         transitionRafRef.current = null;
       }
-      for (const tex of loadedTextureCacheRef.current.values()) {
-        try {
-          if (!tex.destroyed) tex.destroy(true);
-        } catch {}
-      }
-      loadedTextureCacheRef.current.clear();
       if (appRef.current) {
         try {
           appRef.current.destroy(true, { children: true, texture: false });
@@ -404,30 +396,17 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
     const loadTexture = async () => {
       try {
-        let texture = loadedTextureCacheRef.current.get(imageUrl);
-        if (!texture || texture.destroyed) {
-          const img = new Image();
-          img.src = imageUrl;
-          await img.decode();
-          if (!isCurrent || !imageContainerRef.current || !appRef.current) return;
-
-          const source = new ImageSource({ resource: img });
-          texture = new Texture({ source });
-
-          const cache = loadedTextureCacheRef.current;
-          cache.set(imageUrl, texture);
-          // 保持轻量 LRU 纹理池 (最多保留最近 8 张大图纹理，其余彻底销毁归还显存)
-          while (cache.size > 8) {
-            const oldestKey = cache.keys().next().value;
-            if (!oldestKey) break;
-            const oldestTex = cache.get(oldestKey);
-            cache.delete(oldestKey);
-            if (oldestTex && oldestTex !== texture && !oldestTex.destroyed) {
-              try {
-                oldestTex.destroy(true);
-              } catch {}
-            }
+        let texture: Texture;
+        if (Assets.cache.has(imageUrl)) {
+          const cached = Assets.cache.get(imageUrl) as Texture;
+          if (cached && !cached.destroyed && cached.width > 0) {
+            texture = cached;
+          } else {
+            Assets.cache.remove(imageUrl);
+            texture = await Assets.load(imageUrl);
           }
+        } else {
+          texture = await Assets.load(imageUrl);
         }
         if (!isCurrent || !imageContainerRef.current || !appRef.current) return;
 
@@ -1010,13 +989,10 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const handleReloadCurrent = () => {
     setContextMenuPos(null);
     if (imageUrl) {
-      const tex = loadedTextureCacheRef.current.get(imageUrl);
-      if (tex && !tex.destroyed) {
-        try {
-          tex.destroy(true);
-        } catch {}
+      if (Assets.cache.has(imageUrl)) {
+        Assets.cache.remove(imageUrl);
       }
-      loadedTextureCacheRef.current.delete(imageUrl);
+      void Assets.unload(imageUrl).catch(() => {});
     }
     if (onRetryPreview) {
       onRetryPreview();

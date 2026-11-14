@@ -23,7 +23,7 @@ import {
   PhotoItem,
 } from '../services/tauriBridge';
 import { useSelectionStore } from './selectionStore';
-import { useInsightStore } from './insightStore';
+import { useInsightStore, notifyUserActive } from './insightStore';
 import { usePreviewStore } from './previewStore';
 import { arePhotosBurstConsecutive } from '../utils/phashUtils';
 import { parseAnnotation } from '../utils/annotationUtils';
@@ -632,6 +632,7 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
   },
 
   selectIndex: (index: number) => {
+    notifyUserActive();
     const { photos, currentIndex } = get();
     if (index < 0 || index >= photos.length || index === currentIndex) return;
 

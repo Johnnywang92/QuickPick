@@ -167,7 +167,24 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
         for (const idx of prefetchIndices) {
           const p = photos[idx];
           if (p && !get().previewCache.has(p.path)) {
-            void get().getPreview(p).catch(() => undefined);
+            void get().getPreview(p).then((url) => {
+              if (url) {
+                void import('pixi.js').then(({ Assets }) => {
+                  if (!Assets.cache.has(url)) {
+                    void Assets.load(url).catch(() => {});
+                  }
+                }).catch(() => {});
+              }
+            }).catch(() => undefined);
+          } else if (p && get().previewCache.has(p.path)) {
+            const url = get().previewCache.get(p.path);
+            if (url) {
+              void import('pixi.js').then(({ Assets }) => {
+                if (!Assets.cache.has(url)) {
+                  void Assets.load(url).catch(() => {});
+                }
+              }).catch(() => {});
+            }
           }
         }
       }

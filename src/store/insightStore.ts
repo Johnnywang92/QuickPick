@@ -7,15 +7,32 @@ import {
   detectPhotoFaces,
 } from '../services/tauriBridge';
 import { useAlbumStore, withUpdatedBurstGroups } from './albumStore';
+import { usePreviewStore } from './previewStore';
 import { findBestPicksByBurstGroup } from '../utils/phashUtils';
 
 export type FaceReviewPreset = 'group' | 'candid' | 'portrait';
 
-const ANALYSIS_CONCURRENCY =
-  typeof navigator !== 'undefined' && typeof navigator.hardwareConcurrency === 'number'
-    ? Math.min(3, Math.max(2, Math.floor(navigator.hardwareConcurrency / 3)))
-    : 2;
+const ANALYSIS_CONCURRENCY = 2;
 let analysisGeneration = 0;
+let lastUserInteractionTime = 0;
+
+/** 标记用户正在交互（切图/滚轮/滑动胶片栏），后台图片质量分析将主动挂起让路 */
+export function notifyUserActive(): void {
+  lastUserInteractionTime = Date.now();
+}
+
+/** 检查当前是否应让路给用户交互与主视口大图预览 */
+const waitForInteractiveIdle = async (generation: number): Promise<void> => {
+  while (generation === analysisGeneration) {
+    const previewLoading = usePreviewStore.getState().previewStatus === 'loading';
+    const isInteracting = Date.now() - lastUserInteractionTime < 900;
+    if (!previewLoading && !isInteracting) {
+      break;
+    }
+    // 当视口正在载入预览或用户正在滑动翻页时，深度分析让出 100% 网络带宽与 CPU 周期
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+};
 
 function insightFromAnalysis(
   photoId: string,
@@ -296,7 +313,7 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
 
       applyAnalysisBatch(batch);
       sinceLastBurstRefresh += batch.length;
-      if (sinceLastBurstRefresh >= 32) {
+      if (sinceLastBurstRefresh >= 64) {
         sinceLastBurstRefresh = 0;
         refreshBurstGroups();
       }
@@ -308,19 +325,28 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     };
 
     const scheduleFlush = () => {
-      if (pendingBatch.length >= 12) {
+      if (pendingBatch.length >= 24) {
         flushBatch();
       } else if (!flushTimer) {
-        flushTimer = setTimeout(flushBatch, 120);
+        flushTimer = setTimeout(flushBatch, 350);
       }
     };
 
     const worker = async () => {
       while (generation === analysisGeneration) {
+        // 1. 用户交互与预览优先：若用户正在切图或大图正在载入，分析彻底挂起避让
+        await waitForInteractiveIdle(generation);
+        if (generation !== analysisGeneration) return;
+
         const jobIndex = cursor;
         cursor += 1;
         const job = jobs[jobIndex];
         if (!job) return;
+
+        // 再次检查交互状态
+        await waitForInteractiveIdle(generation);
+        if (generation !== analysisGeneration) return;
+
         try {
           const result = await analyzePhotoDetails(job.photo.path, job.index, job.photo.id);
           if (generation !== analysisGeneration) return;
@@ -344,10 +370,13 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
           });
           scheduleFlush();
         }
+
+        // 2. 两次分析之间微休止 50ms，避免并发暴击 SMB 网络盘，保持系统与视口零抖动
+        await new Promise((r) => setTimeout(r, 50));
       }
     };
 
-    // 适度错峰 500ms 启动后台深度分析，确保首张照片预览和视口首帧渲染享有 100% 网络带宽与线程独占
+    // 延迟 1200ms 启动后台分析，确保刚进入工作台或切换相册时，首张大图与首屏缩略图享有 100% 网络带宽与线程独占
     setTimeout(() => {
       if (generation !== analysisGeneration) return;
       const workers = Array.from(
@@ -358,7 +387,7 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
         flushBatch();
         finalizeBurstGroups(generation);
       });
-    }, 500);
+    }, 1200);
   },
 
   cancelBackgroundAnalysis: () => {

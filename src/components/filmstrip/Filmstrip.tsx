@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { photoMatchesFilter, useAlbumStore } from '../../store/albumStore';
 import { useCompareStore } from '../../store/compareStore';
-import { useInsightStore } from '../../store/insightStore';
+import { useInsightStore, notifyUserActive } from '../../store/insightStore';
 import { usePreviewStore } from '../../store/previewStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { useLutStore } from '../../store/lutStore';
@@ -96,6 +96,7 @@ export const Filmstrip: React.FC = () => {
   }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    notifyUserActive();
     const targetScrollLeft = e.currentTarget.scrollLeft;
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
@@ -108,6 +109,7 @@ export const Filmstrip: React.FC = () => {
 
   // 实体鼠标滚轮横向映射：当使用普通鼠标垂直滚轮时，自动转化为胶片栏横向滚动
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    notifyUserActive();
     if (Math.abs(e.deltaY) > 0 && Math.abs(e.deltaX) === 0 && containerRef.current) {
       containerRef.current.scrollLeft += e.deltaY;
     }
