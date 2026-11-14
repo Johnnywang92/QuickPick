@@ -33,10 +33,9 @@ function pumpPrefetchQueue(storeGet: () => PreviewStore) {
   }
 }
 
-function releasePreviewTexture(url: string): void {
-  void import('pixi.js')
-    .then(({ Assets }) => Assets.unload(url))
-    .catch(() => undefined);
+function releasePreviewTexture(_url: string): void {
+  // PixiCanvas 内部通过独立 ImageSource 与 8 帧 LRU 闭环管理 GPU 纹理显存，
+  // 此处不再向 Pixi 全局 Assets 发起不可控的异步卸载，彻底消除切图过程中的纹理黑屏冲突。
 }
 
 interface PreviewStore {
@@ -111,8 +110,8 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
   },
 
   loadPreviewForCurrent: async (photo: LocalPhoto, photos?: LocalPhoto[], photoIndex?: number) => {
-    const { currentPhotoPath } = get();
-    if (currentPhotoPath === photo.path && get().previewStatus === 'loaded') {
+    const { currentPhotoPath, currentPreviewUrl, previewStatus } = get();
+    if (currentPhotoPath === photo.path && currentPreviewUrl && previewStatus === 'loaded') {
       return;
     }
 

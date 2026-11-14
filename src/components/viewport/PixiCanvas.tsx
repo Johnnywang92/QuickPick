@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js';
+import { Application, Sprite, Container, Graphics, Text, Texture, ImageSource } from 'pixi.js';
 import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
 import { useAlbumStore } from '../../store/albumStore';
@@ -97,6 +97,8 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const transitionRafRef = useRef<number | null>(null);
   const lastIndexRef = useRef<number>(currentIndex);
   const navDirectionRef = useRef<number>(0);
+  // 保持当前视口最近使用的 8 帧 GPU 纹理缓存，避免切图来回往复时重复解码与显存抖动
+  const loadedTextureCacheRef = useRef<Map<string, Texture>>(new Map());
 
   useEffect(() => {
     if (currentIndex > lastIndexRef.current) {
@@ -144,9 +146,15 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
     if (!appRef.current || !spriteRef.current) return 1.0;
     const app = appRef.current;
     const sprite = spriteRef.current;
-    const scaleX = (app.screen.width * 0.92) / sprite.texture.width;
-    const scaleY = (app.screen.height * 0.92) / sprite.texture.height;
-    return Math.min(scaleX, scaleY, 1.0);
+    const texW = sprite.texture?.width || 0;
+    const texH = sprite.texture?.height || 0;
+    if (texW <= 0 || texH <= 0 || app.screen.width <= 0 || app.screen.height <= 0) {
+      return 1.0;
+    }
+    const scaleX = (app.screen.width * 0.92) / texW;
+    const scaleY = (app.screen.height * 0.92) / texH;
+    const scale = Math.min(scaleX, scaleY, 1.0);
+    return Number.isFinite(scale) && scale > 0 ? scale : 1.0;
   }, []);
 
   const fitImageToViewport = useCallback(() => {
@@ -169,14 +177,17 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       const app = appRef.current;
       const sprite = spriteRef.current;
       const fitScale = getFitScale();
+      const texW = sprite.texture?.width || 0;
+      const texH = sprite.texture?.height || 0;
+      if (texW <= 0 || texH <= 0) return { x, y };
 
       // 当图片在适配全屏比例（或以下）时，强制锚定屏幕绝对中心，杜绝任何偏斜
       if (scale <= fitScale + 0.005) {
         return { x: app.screen.width / 2, y: app.screen.height / 2 };
       }
 
-      const imgW = sprite.texture.width * scale;
-      const imgH = sprite.texture.height * scale;
+      const imgW = texW * scale;
+      const imgH = texH * scale;
       const W = app.screen.width;
       const H = app.screen.height;
 
@@ -242,6 +253,15 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       appRef.current = app;
       parent.appendChild(app.canvas);
 
+      app.canvas.addEventListener('webglcontextlost', (event: Event) => {
+        event.preventDefault();
+        console.warn('PixiCanvas: WebGL context lost, attempting automatic recovery');
+        if (isMounted) {
+          setPixiStatus('initializing');
+          setInitAttempt((attempt) => attempt + 1);
+        }
+      });
+
       const stageContainer = new Container();
       app.stage.addChild(stageContainer);
       imageContainerRef.current = stageContainer;
@@ -256,6 +276,12 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         cancelAnimationFrame(transitionRafRef.current);
         transitionRafRef.current = null;
       }
+      for (const tex of loadedTextureCacheRef.current.values()) {
+        try {
+          if (!tex.destroyed) tex.destroy(true);
+        } catch {}
+      }
+      loadedTextureCacheRef.current.clear();
       if (appRef.current) {
         try {
           appRef.current.destroy(true, { children: true, texture: false });
@@ -333,7 +359,31 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
     const loadTexture = async () => {
       try {
-        const texture = await Assets.load(imageUrl);
+        let texture = loadedTextureCacheRef.current.get(imageUrl);
+        if (!texture || texture.destroyed) {
+          const img = new Image();
+          img.src = imageUrl;
+          await img.decode();
+          if (!isCurrent || !imageContainerRef.current || !appRef.current) return;
+
+          const source = new ImageSource({ resource: img });
+          texture = new Texture({ source });
+
+          const cache = loadedTextureCacheRef.current;
+          cache.set(imageUrl, texture);
+          // 保持轻量 LRU 纹理池 (最多保留最近 8 张大图纹理，其余彻底销毁归还显存)
+          while (cache.size > 8) {
+            const oldestKey = cache.keys().next().value;
+            if (!oldestKey) break;
+            const oldestTex = cache.get(oldestKey);
+            cache.delete(oldestKey);
+            if (oldestTex && oldestTex !== texture && !oldestTex.destroyed) {
+              try {
+                oldestTex.destroy(true);
+              } catch {}
+            }
+          }
+        }
         if (!isCurrent || !imageContainerRef.current || !appRef.current) return;
 
         const container = imageContainerRef.current;
@@ -343,6 +393,15 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         if (transitionRafRef.current) {
           cancelAnimationFrame(transitionRafRef.current);
           transitionRafRef.current = null;
+          if (spriteRef.current) {
+            spriteRef.current.alpha = 1.0;
+            spriteRef.current.x = 0;
+          }
+          if (prevSpriteRef.current) {
+            prevSpriteRef.current.visible = false;
+            prevSpriteRef.current.alpha = 0;
+            prevSpriteRef.current.texture = Texture.EMPTY;
+          }
         }
 
         const shouldAnimate = Boolean(
@@ -350,12 +409,13 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
           prevSpriteRef.current &&
           oldTexture &&
           oldTexture !== texture &&
+          !oldTexture.destroyed &&
           oldTexture.width > 0 &&
           texture.width > 0
         );
 
         if (spriteRef.current) {
-          if (shouldAnimate && prevSpriteRef.current && oldTexture) {
+          if (shouldAnimate && prevSpriteRef.current && oldTexture && !oldTexture.destroyed) {
             const prevSprite = prevSpriteRef.current;
             prevSprite.texture = oldTexture;
             prevSprite.visible = true;
@@ -366,7 +426,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
           spriteRef.current.texture = texture;
         } else {
           // 初次挂载生成底层过渡精灵、主精灵与图钉层
-          const prevSprite = new Sprite();
+          const prevSprite = new Sprite(Texture.EMPTY);
           prevSprite.anchor.set(0.5);
           prevSprite.visible = false;
           container.addChild(prevSprite);
@@ -440,6 +500,7 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
                 prevSpriteRef.current.visible = false;
                 prevSpriteRef.current.alpha = 0;
                 prevSpriteRef.current.filters = null;
+                prevSpriteRef.current.texture = Texture.EMPTY;
               }
               if (spriteRef.current) {
                 spriteRef.current.alpha = 1.0;
@@ -453,6 +514,11 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         } else if (spriteRef.current) {
           spriteRef.current.alpha = 1.0;
           spriteRef.current.x = 0;
+          if (prevSpriteRef.current) {
+            prevSpriteRef.current.visible = false;
+            prevSpriteRef.current.alpha = 0;
+            prevSpriteRef.current.texture = Texture.EMPTY;
+          }
         }
       } catch (e) {
         console.error('Failed to render Pixi texture', e);
@@ -467,6 +533,19 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
 
     return () => {
       isCurrent = false;
+      if (transitionRafRef.current) {
+        cancelAnimationFrame(transitionRafRef.current);
+        transitionRafRef.current = null;
+        if (spriteRef.current) {
+          spriteRef.current.alpha = 1.0;
+          spriteRef.current.x = 0;
+        }
+        if (prevSpriteRef.current) {
+          prevSpriteRef.current.visible = false;
+          prevSpriteRef.current.alpha = 0;
+          prevSpriteRef.current.texture = Texture.EMPTY;
+        }
+      }
     };
   }, [fitImageToViewport, imageUrl, pixiStatus, loadAttempt]);
 
