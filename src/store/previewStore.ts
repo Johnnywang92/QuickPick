@@ -197,7 +197,12 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
     const previousUrl = nextCache.get(currentPhoto.path);
     nextCache.delete(currentPhoto.path);
     if (previousUrl) releasePreviewTexture(previousUrl);
-    set({ previewCache: nextCache });
+    set({
+      currentPreviewUrl: null,
+      previewStatus: 'loading',
+      previewError: null,
+      previewCache: nextCache,
+    });
     await get().loadPreviewForCurrent(currentPhoto);
   },
 

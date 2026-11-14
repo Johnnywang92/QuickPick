@@ -602,7 +602,14 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         usePreviewStore.getState().loadPreviewForCurrent(currentPhoto, localPhotos);
         useInsightStore.getState().startBackgroundAnalysis(localPhotos);
       }
+
+      try {
+        localStorage.setItem('quickpick_active_folder', path);
+      } catch {}
     } catch (e) {
+      try {
+        localStorage.removeItem('quickpick_active_folder');
+      } catch {}
       console.error('Failed to scan folder:', e);
       useInsightStore.getState().cancelBackgroundAnalysis();
       useSelectionStore

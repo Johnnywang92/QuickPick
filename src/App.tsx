@@ -310,6 +310,33 @@ export default function App() {
         }
       })
       .catch((error) => setStartupWarning(`启动安全检查失败：${String(error)}`));
+
+    // 自动恢复刷新前的活动工作目录，避免 Webview 刷新导致被重置回欢迎页
+    try {
+      const activeFolder = localStorage.getItem('quickpick_active_folder');
+      if (activeFolder) {
+        void openFolder(activeFolder);
+      }
+    } catch {}
+  }, [openFolder]);
+
+  // 全局拦截非输入控件的浏览器原生右键菜单（消除原生 Reload / Back / Forward 误触）
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('[data-allow-context-menu]'))
+      ) {
+        return;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('contextmenu', handleContextMenu);
   }, []);
 
   const handleSelectFolder = async () => {

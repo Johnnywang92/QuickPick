@@ -1,8 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Application, Sprite, Container, Graphics, Text, Texture, ImageSource } from 'pixi.js';
-import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  AlertTriangle,
+  Loader2,
+  Maximize2,
+  RefreshCw,
+  ZoomIn,
+  ZoomOut,
+  Sliders,
+  Copy,
+  Check,
+  HelpCircle,
+  XCircle,
+} from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
 import { useAlbumStore } from '../../store/albumStore';
+import { useSelectionStore } from '../../store/selectionStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useLutStore } from '../../store/lutStore';
 import { useAdjustStore } from '../../store/adjustStore';
@@ -99,6 +112,38 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const navDirectionRef = useRef<number>(0);
   // 保持当前视口最近使用的 8 帧 GPU 纹理缓存，避免切图来回往复时重复解码与显存抖动
   const loadedTextureCacheRef = useRef<Map<string, Texture>>(new Map());
+
+  // 视口右键上下文菜单与操作反馈状态
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 1800);
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenuPos) return;
+    const handleClose = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenuPos(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenuPos(null);
+    };
+    window.addEventListener('mousedown', handleClose);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleClose);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenuPos]);
 
   useEffect(() => {
     if (currentIndex > lastIndexRef.current) {
@@ -961,6 +1006,61 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const fitZoom = Math.round(getFitScale() * 100);
   const isZoomed = zoomLevel > fitZoom + 1;
 
+  // 右键菜单操作处理
+  const handleReloadCurrent = () => {
+    setContextMenuPos(null);
+    if (imageUrl) {
+      const tex = loadedTextureCacheRef.current.get(imageUrl);
+      if (tex && !tex.destroyed) {
+        try {
+          tex.destroy(true);
+        } catch {}
+      }
+      loadedTextureCacheRef.current.delete(imageUrl);
+    }
+    if (onRetryPreview) {
+      onRetryPreview();
+    }
+    setLoadAttempt((a) => a + 1);
+    showToast('已重新载入当前大图');
+  };
+
+  const handleToggleZoom = () => {
+    setContextMenuPos(null);
+    toggleZoom100();
+  };
+
+  const handleOpenAdjust = () => {
+    setContextMenuPos(null);
+    useAdjustStore.getState().openModal();
+  };
+
+  const handleCopyPath = () => {
+    setContextMenuPos(null);
+    const { photos, currentIndex: curIdx } = useAlbumStore.getState();
+    const photo = photos[curIdx];
+    if (photo?.path) {
+      void navigator.clipboard.writeText(photo.path);
+      showToast('已复制照片文件路径');
+    }
+  };
+
+  const handleSetStatus = (status: 'selected' | 'maybe' | 'skipped') => {
+    setContextMenuPos(null);
+    const { photos, currentIndex: curIdx } = useAlbumStore.getState();
+    const photo = photos[curIdx];
+    if (photo) {
+      useSelectionStore.getState().setSelectionState(photo.id, status);
+      showToast(
+        status === 'selected'
+          ? '已标记为「已选」'
+          : status === 'maybe'
+          ? '已标记为「待考虑」'
+          : '已标记为「不选」',
+      );
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -970,6 +1070,11 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenuPos({ x: e.clientX, y: e.clientY });
+      }}
       className={clsx(
         'relative w-full h-full overflow-hidden bg-dark-900 select-none',
         isAddingPin
@@ -1100,6 +1205,95 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
+        </div>
+      )}
+
+      {/* 视口右键上下文快捷菜单（杜绝原生浏览器 Reload / Back 误触） */}
+      {contextMenuPos && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[190px] rounded-xl border border-dark-600 bg-dark-850/95 p-1.5 text-xs text-slate-200 shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-100"
+          style={{
+            left: Math.min(contextMenuPos.x, window.innerWidth - 210),
+            top: Math.min(contextMenuPos.y, window.innerHeight - 290),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={handleReloadCurrent}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-slate-200 hover:bg-brand-600/20 hover:text-brand-300 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="h-3.5 w-3.5 text-brand-400" />
+            <span>重新载入当前大图</span>
+            <span className="ml-auto text-[10px] text-slate-500 font-mono">R</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleZoom}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-slate-200 hover:bg-dark-700 hover:text-white transition-colors cursor-pointer"
+          >
+            {isZoomed ? (
+              <ZoomOut className="h-3.5 w-3.5 text-sky-400" />
+            ) : (
+              <ZoomIn className="h-3.5 w-3.5 text-sky-400" />
+            )}
+            <span>{isZoomed ? '适应屏幕大小' : '1:1 像素细节查焦'}</span>
+            <span className="ml-auto text-[10px] text-slate-500 font-mono">Z</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenAdjust}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-slate-200 hover:bg-dark-700 hover:text-white transition-colors cursor-pointer"
+          >
+            <Sliders className="h-3.5 w-3.5 text-amber-400" />
+            <span>快速调色工作台</span>
+            <span className="ml-auto text-[10px] text-slate-500 font-mono">E</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyPath}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-slate-200 hover:bg-dark-700 hover:text-white transition-colors cursor-pointer"
+          >
+            <Copy className="h-3.5 w-3.5 text-slate-400" />
+            <span>复制照片文件路径</span>
+          </button>
+          <div className="my-1 h-[1px] bg-dark-700" />
+          <button
+            type="button"
+            onClick={() => handleSetStatus('selected')}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-slate-200 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors cursor-pointer"
+          >
+            <Check className="h-3.5 w-3.5 text-emerald-400" />
+            <span>设为已选</span>
+            <span className="ml-auto text-[10px] text-slate-500 font-mono">Space</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSetStatus('maybe')}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-slate-200 hover:bg-amber-500/20 hover:text-amber-300 transition-colors cursor-pointer"
+          >
+            <HelpCircle className="h-3.5 w-3.5 text-amber-400" />
+            <span>设为待考虑</span>
+            <span className="ml-auto text-[10px] text-slate-500 font-mono">M</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSetStatus('skipped')}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-slate-200 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer"
+          >
+            <XCircle className="h-3.5 w-3.5 text-rose-400" />
+            <span>设为不选</span>
+            <span className="ml-auto text-[10px] text-slate-500 font-mono">N</span>
+          </button>
+        </div>
+      )}
+
+      {/* 视口轻提示 HUD */}
+      {toastMessage && (
+        <div className="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full border border-dark-600 bg-dark-850/95 px-4 py-1.5 text-xs font-medium text-slate-100 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150">
+          <span className="h-2 w-2 rounded-full bg-brand-400" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>

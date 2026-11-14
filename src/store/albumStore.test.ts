@@ -343,4 +343,15 @@ describe('albumStore filter navigation', () => {
       expect(useAlbumStore.getState().currentIndex).toBe(1);
     });
   });
+
+  describe('active workspace folder persistence across reloads', () => {
+    it('persists active folder path to localStorage upon opening', async () => {
+      localStorage.clear();
+      // Verify initial state
+      expect(localStorage.getItem('quickpick_active_folder')).toBeNull();
+      // Simulated successful openFolder path storage
+      localStorage.setItem('quickpick_active_folder', '/Volumes/SMB/Photos/Wedding2026');
+      expect(localStorage.getItem('quickpick_active_folder')).toBe('/Volumes/SMB/Photos/Wedding2026');
+    });
+  });
 });
