@@ -11,8 +11,11 @@ import {
   Square,
   Lock,
   Sparkles,
-  ArrowRight,
   ShieldCheck,
+  ZoomIn,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -33,6 +36,22 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isShredding, setIsShredding] = useState<boolean>(false);
   const [shreddingIds, setShreddingIds] = useState<Set<string>>(new Set());
+  const [inspectingPhotoId, setInspectingPhotoId] = useState<string | null>(null);
+
+  // 统计各连拍组的规模与组内最高锐度，用于精准判定连拍劣选
+  const burstGroupStats = useMemo(() => {
+    const stats = new Map<string, { count: number; maxSharpness: number }>();
+    for (const p of photos) {
+      if (!p.burstGroupId) continue;
+      const cur = stats.get(p.burstGroupId) || { count: 0, maxSharpness: 0 };
+      cur.count += 1;
+      if ((p.sharpness ?? 0) > cur.maxSharpness) {
+        cur.maxSharpness = p.sharpness ?? 0;
+      }
+      stats.set(p.burstGroupId, cur);
+    }
+    return stats;
+  }, [photos]);
 
   // 1. 废片智能判断与特征分类
   const defectItems = useMemo(() => {
@@ -42,29 +61,59 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
       const isProtected = selection?.state === 'selected';
       const isAlreadySkipped = selection?.state === 'skipped';
 
-      // 闭眼判定 (eye_open_score < 0.45 或 闭眼标签)
-      const hasFaceBlink = !!(photo.faces && photo.faces.some((f) => f.eye_open_score < 0.45));
-      const hasInsightBlink = !!(
-        insight &&
-        ((insight.possibleClosedEyes !== undefined && insight.possibleClosedEyes < 0.45) ||
-          insight.reasons.some((r) => r.includes('闭眼') || r.includes('眼睛')))
+      // 若照片已完成人脸检测且明确无人脸 (faces 长度为 0)，绝不判定为闭眼
+      const hasNoHumanFaces = Array.isArray(photo.faces) && photo.faces.length === 0;
+
+      // 闭眼判定：必须存在检测到的人脸（或未显式返回空人脸数组），且眼部开合度 < 0.40 或存在闭眼诊断
+      const hasFaceBlink = !!(
+        photo.faces &&
+        photo.faces.length > 0 &&
+        photo.faces.some((f) => f.eye_open_score < 0.40)
       );
+      const hasInsightBlink =
+        !hasNoHumanFaces &&
+        !!(
+          insight &&
+          ((insight.possibleClosedEyes !== undefined && insight.possibleClosedEyes < 0.40) ||
+            insight.reasons.some((r) => r.includes('闭眼') || r.includes('眼睛')))
+        );
       const isBlink = hasFaceBlink || hasInsightBlink;
 
-      // 严重脱焦与模糊判定 (possibleBlur > 45 或 sharpness < 25 或 模糊标签)
-      const isBlur = !!(
-        insight &&
-        (insight.possibleBlur! > 45 ||
+      // 严重脱焦与模糊判定：仅拦截真正的严重脱焦/手抖模糊，排除“焦点微软”与高锐度正常照片
+      const isSharpEnough = photo.sharpness !== undefined && photo.sharpness >= 35;
+      const isBlur =
+        !isSharpEnough &&
+        !!(
           (photo.sharpness !== undefined && photo.sharpness < 25) ||
-          insight.reasons.some((r) => r.includes('模糊') || r.includes('脱焦')))
-      );
+          (insight &&
+            ((insight.possibleBlur !== undefined && insight.possibleBlur > 50) ||
+              insight.reasons.some(
+                (r) => r.includes('脱焦') || (r.includes('模糊') && !r.includes('微软')),
+              )))
+        );
 
-      // 连拍冗余劣片判定 (非最佳推荐，且有一定缺陷)
+      // 连拍冗余劣片判定：属于有效连拍组(>=2张)、非组内最佳，且存在闭眼/模糊或锐度明显低于组内最佳帧
+      const groupStat = photo.burstGroupId ? burstGroupStats.get(photo.burstGroupId) : undefined;
+      const isNoticeablySofterInBurst = !!(
+        groupStat &&
+        groupStat.count >= 2 &&
+        photo.sharpness !== undefined &&
+        groupStat.maxSharpness > 0 &&
+        photo.sharpness < groupStat.maxSharpness * 0.85
+      );
+      const hasSoftFocusInBurst = !!(
+        groupStat &&
+        groupStat.count >= 2 &&
+        insight &&
+        insight.reasons.some((r) => r.includes('临界合焦') || r.includes('焦点微软'))
+      );
       const isBurstSuboptimal = !!(
         photo.burstGroupId &&
+        groupStat &&
+        groupStat.count >= 2 &&
         insight &&
         !insight.isBestPick &&
-        (isBlink || isBlur || insight.analysisStatus === 'needs_check')
+        (isBlink || isBlur || isNoticeablySofterInBurst || hasSoftFocusInBurst)
       );
 
       const isDefect = isBlink || isBlur || isBurstSuboptimal;
@@ -94,7 +143,7 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
         isAlreadySkipped,
       };
     });
-  }, [photos, insights, selections]);
+  }, [photos, insights, selections, burstGroupStats]);
 
   // 统计各分类待处理废片（排除摄影师已选保护的照片）
   const categoryCounts = useMemo(() => {
@@ -135,21 +184,50 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
     });
     setSelectedIds(autoCullIds);
 
-    // 预热预览图
-    prefetchPhotos(displayedItems.slice(0, 30).map((i) => i.photo));
+    // 预热当前列表所有照片预览图，确保无需悬停即可立即显示
+    prefetchPhotos(displayedItems.map((i) => i.photo));
   }, [displayedItems, prefetchPhotos]);
 
-  // ESC 快捷键关闭
+  // 当前正在全片放大检视的条目及索引
+  const inspectingIndex = useMemo(() => {
+    if (!inspectingPhotoId) return -1;
+    return displayedItems.findIndex((item) => item.photo.id === inspectingPhotoId);
+  }, [displayedItems, inspectingPhotoId]);
+
+  const inspectingItem = inspectingIndex >= 0 ? displayedItems[inspectingIndex] : null;
+
+  useEffect(() => {
+    if (inspectingItem && !previewCache.has(inspectingItem.photo.path)) {
+      prefetchPhotos([inspectingItem.photo]);
+    }
+  }, [inspectingItem, previewCache, prefetchPhotos]);
+
+  // ESC 与左右方向键快捷键：全片检视打开时优先控制全片预览，否则关闭弹窗
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        if (inspectingPhotoId) {
+          setInspectingPhotoId(null);
+        } else {
+          onClose();
+        }
+      } else if (inspectingPhotoId && displayedItems.length > 1) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const prevIdx =
+            (inspectingIndex - 1 + displayedItems.length) % displayedItems.length;
+          setInspectingPhotoId(displayedItems[prevIdx].photo.id);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          const nextIdx = (inspectingIndex + 1) % displayedItems.length;
+          setInspectingPhotoId(displayedItems[nextIdx].photo.id);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, inspectingPhotoId, inspectingIndex, displayedItems]);
 
   // 勾选/取消单张照片
   const togglePhoto = (id: string, isProtected: boolean) => {
@@ -330,7 +408,7 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                   <div
                     key={item.photo.id}
                     onClick={() => {
-                      if (!isShredding) togglePhoto(item.photo.id, item.isProtected);
+                      if (!isShredding) setInspectingPhotoId(item.photo.id);
                     }}
                     className={clsx(
                       'group relative flex flex-col rounded-xl border p-2 transition-all overflow-hidden',
@@ -343,10 +421,13 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                         : 'border-dark-750 bg-dark-800/60 hover:border-dark-600 cursor-pointer',
                     )}
                   >
-                    {/* 缩略图区域 */}
-                    <div className="relative aspect-4/3 w-full rounded-lg bg-dark-950 overflow-hidden mb-2">
-                      {/* 底层收纳空槽 (纸条下落后显现的暗黑底仓) */}
-                      <div className="absolute inset-0 bg-dark-950 flex flex-col items-center justify-center pointer-events-none">
+                    {/* 缩略图区域：统一 4:3 画框尺寸，解决横竖画幅高低不一问题，并修复图层遮挡导致需悬停才显示照片的问题 */}
+                    <div
+                      data-testid={`funnel-thumb-${item.photo.id}`}
+                      className="relative aspect-[4/3] w-full rounded-lg bg-dark-950 overflow-hidden mb-2"
+                    >
+                      {/* 底层收纳空槽 (纸条下落后显现的暗黑底仓，置于 z-0 避免遮挡正常预览图) */}
+                      <div className="absolute inset-0 z-0 bg-dark-950 flex flex-col items-center justify-center pointer-events-none">
                         <span className="text-[10px] font-mono text-slate-600">已剔除 (N)</span>
                       </div>
 
@@ -355,12 +436,12 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                           src={thumb}
                           alt={item.photo.filename}
                           className={clsx(
-                            'h-full w-full object-cover transition-transform duration-200',
+                            'relative z-10 h-full w-full object-cover transition-transform duration-200',
                             isItemShredding ? 'opacity-0' : 'group-hover:scale-105',
                           )}
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center text-slate-600 text-xs font-mono">
+                        <div className="relative z-10 flex h-full w-full items-center justify-center bg-dark-900 text-slate-500 text-xs font-mono">
                           载入中...
                         </div>
                       )}
@@ -434,7 +515,13 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                       )}
 
                       {/* 勾选框 / 保护状态标志 */}
-                      <div className="absolute top-1.5 left-1.5 z-10">
+                      <div
+                        className="absolute top-1.5 left-1.5 z-20"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isShredding) togglePhoto(item.photo.id, item.isProtected);
+                        }}
+                      >
                         {item.isProtected ? (
                           <div
                             className="flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-emerald-600/90 text-white text-[9px] font-bold shadow-md"
@@ -448,42 +535,46 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
                             已是不选
                           </div>
                         ) : (
-                          <div
+                          <button
+                            type="button"
+                            aria-label={`勾选 ${item.photo.filename}`}
+                            title={isChecked ? '点击取消粉碎勾选' : '点击加入粉碎列表'}
                             className={clsx(
-                              'flex h-5 w-5 items-center justify-center rounded border transition-colors',
+                              'flex h-5 w-5 items-center justify-center rounded border transition-colors cursor-pointer',
                               isChecked
                                 ? 'bg-rose-600 border-rose-500 text-white'
-                                : 'bg-dark-900/80 border-dark-600 text-transparent group-hover:border-slate-400',
+                                : 'bg-dark-900/80 border-dark-600 text-transparent hover:border-slate-300 group-hover:border-slate-400',
                             )}
                           >
                             <CheckSquare className="h-3.5 w-3.5 stroke-[3]" />
-                          </div>
+                          </button>
                         )}
                       </div>
 
                       {/* 缺陷诊断胶囊 */}
-                      <div className="absolute bottom-1.5 inset-x-1.5 z-10">
+                      <div className="absolute bottom-1.5 inset-x-1.5 z-20 pointer-events-none">
                         <span className="block truncate rounded bg-black/75 px-1.5 py-0.5 text-center text-[10px] font-semibold text-rose-300 border border-rose-500/30 backdrop-blur-sm">
                           {item.defectLabel}
                         </span>
                       </div>
                     </div>
 
-                    {/* 照片信息与跳转 */}
+                    {/* 照片信息与全片检视 */}
                     <div className="flex items-center justify-between text-[11px]">
                       <span className="truncate text-slate-300 font-mono text-[10px] max-w-[100px]">
                         {item.photo.filename}
                       </span>
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleJumpToPhoto(item.originalIndex);
+                          setInspectingPhotoId(item.photo.id);
                         }}
-                        className="text-[10px] text-slate-400 hover:text-brand-300 flex items-center space-x-0.5 cursor-pointer"
-                        title="跳转并在主工作区查看"
+                        className="text-[10px] text-slate-300 hover:text-brand-300 flex items-center space-x-1 cursor-pointer"
+                        title="在当前窗口放大检视全片"
                       >
+                        <ZoomIn className="h-3 w-3" />
                         <span>检视</span>
-                        <ArrowRight className="h-2.5 w-2.5" />
                       </button>
                     </div>
                   </div>
@@ -492,6 +583,136 @@ export const DefectFunnelModal: React.FC<DefectFunnelModalProps> = ({ onClose })
             </div>
           )}
         </div>
+
+        {/* 弹窗内直接放大检视全片覆盖层 (Lightbox) */}
+        {inspectingItem && (
+          <div
+            data-testid="funnel-full-preview"
+            onClick={() => setInspectingPhotoId(null)}
+            className="absolute inset-0 z-40 flex flex-col bg-black/92 backdrop-blur-md animate-in fade-in duration-150"
+          >
+            {/* 全片检视顶部操作栏 */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-between border-b border-dark-750 bg-dark-900/90 px-5 py-3"
+            >
+              <div className="flex items-center space-x-3">
+                <span className="font-mono text-xs font-bold text-white">
+                  {inspectingItem.photo.filename}
+                </span>
+                <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[11px] font-semibold text-rose-300 border border-rose-500/30">
+                  {inspectingItem.defectLabel}
+                </span>
+                {inspectingItem.photo.sharpness !== undefined && (
+                  <span className="font-mono text-[11px] text-slate-400">
+                    锐度: {Math.round(inspectingItem.photo.sharpness)}
+                  </span>
+                )}
+                <span className="font-mono text-[11px] text-slate-500">
+                  ({inspectingIndex + 1} / {displayedItems.length})
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-2.5">
+                {!inspectingItem.isProtected && !inspectingItem.isAlreadySkipped && (
+                  <button
+                    type="button"
+                    onClick={() => togglePhoto(inspectingItem.photo.id, inspectingItem.isProtected)}
+                    className={clsx(
+                      'flex items-center space-x-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors cursor-pointer',
+                      selectedIds.has(inspectingItem.photo.id)
+                        ? 'bg-rose-600/90 border-rose-500 text-white hover:bg-rose-500'
+                        : 'bg-dark-800 border-dark-600 text-slate-200 hover:bg-dark-750',
+                    )}
+                  >
+                    {selectedIds.has(inspectingItem.photo.id) ? (
+                      <>
+                        <CheckSquare className="h-3.5 w-3.5" />
+                        <span>已勾选待粉碎 (点击保留)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Square className="h-3.5 w-3.5" />
+                        <span>已保留 (点击加入粉碎)</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleJumpToPhoto(inspectingItem.originalIndex)}
+                  className="flex items-center space-x-1 rounded-lg border border-dark-700 bg-dark-800 px-3 py-1.5 text-xs text-slate-300 hover:bg-dark-750 hover:text-white transition-colors cursor-pointer"
+                  title="关闭漏斗并在主工作区打开此照片"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>在主工作区定位</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectingPhotoId(null)}
+                  className="flex items-center space-x-1 rounded-lg bg-dark-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-dark-700 transition-colors cursor-pointer"
+                  title="返回废片列表 [Esc]"
+                >
+                  <X className="h-4 w-4" />
+                  <span>关闭全片</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 全片完整画幅显示区 (object-contain 保证横竖构图均完整显示全片) */}
+            <div className="relative flex-1 flex items-center justify-center p-6 overflow-hidden">
+              {displayedItems.length > 1 && (
+                <button
+                  type="button"
+                  aria-label="上一张废片"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const prevIdx =
+                      (inspectingIndex - 1 + displayedItems.length) % displayedItems.length;
+                    setInspectingPhotoId(displayedItems[prevIdx].photo.id);
+                  }}
+                  className="absolute left-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-dark-850/80 text-slate-200 border border-dark-700 hover:bg-dark-750 hover:text-white transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+              )}
+
+              {previewCache.get(inspectingItem.photo.path) ? (
+                <img
+                  src={previewCache.get(inspectingItem.photo.path)}
+                  alt={inspectingItem.photo.filename}
+                  onClick={(e) => e.stopPropagation()}
+                  className="max-h-full max-w-full object-contain rounded-lg shadow-2xl border border-dark-750 select-none"
+                />
+              ) : (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex flex-col items-center justify-center space-y-2 rounded-xl border border-dark-750 bg-dark-900 px-10 py-8 text-slate-300"
+                >
+                  <span className="font-mono text-sm">{inspectingItem.photo.filename}</span>
+                  <span className="text-xs text-slate-400">正在加载高清全片预览...</span>
+                </div>
+              )}
+
+              {displayedItems.length > 1 && (
+                <button
+                  type="button"
+                  aria-label="下一张废片"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const nextIdx = (inspectingIndex + 1) % displayedItems.length;
+                    setInspectingPhotoId(displayedItems[nextIdx].photo.id);
+                  }}
+                  className="absolute right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-dark-850/80 text-slate-200 border border-dark-700 hover:bg-dark-750 hover:text-white transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 底部操作与粉碎栏 */}
         <div className="flex items-center justify-between border-t border-dark-750 bg-dark-850 px-5 py-3">

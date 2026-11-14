@@ -6,7 +6,11 @@ import { useExportStore } from '../../store/exportStore';
 import { Tag, Plus, Check, X, Trash2, Pencil, GripVertical } from 'lucide-react';
 import clsx from 'clsx';
 
-export const QuickTagBar: React.FC = () => {
+interface QuickTagBarProps {
+  compact?: boolean;
+}
+
+export const QuickTagBar: React.FC<QuickTagBarProps> = ({ compact = false }) => {
   const { photos, currentIndex } = useAlbumStore();
   const { getAnnotation, setAnnotation, getSelection, setSelectionState, replaceTagAcrossSelections } = useSelectionStore();
   const { availableTags, addCustomTag, renameTag, removeTag, reorderTag } = useTagStore();
@@ -104,6 +108,174 @@ export const QuickTagBar: React.FC = () => {
   const quickDisplayTags = availableTags.slice(0, 5);
   const hasMoreTags = availableTags.length > 5;
 
+  const popoverPanel = isPopoverOpen && (
+    <div
+      className={clsx(
+        'absolute bottom-full mb-2 w-72 bg-dark-850 border border-dark-700 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150',
+        compact ? 'left-0' : 'left-1/2 -translate-x-1/2',
+      )}
+    >
+      <div className="flex items-center justify-between pb-2 mb-2 border-b border-dark-750">
+        <span className="text-[11px] font-bold text-slate-200">快捷标签 (数字键 1~5)</span>
+        <button
+          onClick={() => setIsPopoverOpen(false)}
+          className="p-0.5 text-slate-400 hover:text-slate-200 rounded"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* 新建标签表单 */}
+      <form onSubmit={handleAddNewTag} className="flex items-center gap-1.5 mb-2.5">
+        <input
+          type="text"
+          value={newTagInput}
+          onChange={(e) => setNewTagInput(e.target.value)}
+          placeholder="输入新标签名，如: 封面备选"
+          maxLength={20}
+          className="flex-1 px-2.5 py-1 bg-dark-900 border border-dark-700 rounded-lg text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500"
+          autoFocus
+        />
+        <button
+          type="submit"
+          disabled={!newTagInput.trim()}
+          className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-30 text-white rounded-lg text-xs font-semibold cursor-pointer"
+        >
+          添加
+        </button>
+      </form>
+
+      {/* 全部标签清单 */}
+      <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
+        <div className="text-[10px] text-slate-500 mb-1.5">拖动排序；前 5 个支持数字键 1~5 盲打：</div>
+        <div className="space-y-1">
+          {availableTags.map((tag, idx) => {
+            const isActive = activeTags.includes(tag);
+
+            return (
+              <div
+                key={tag}
+                draggable={editingTag !== tag}
+                onDragStart={(e) => {
+                  setDraggedTag(tag);
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', tag);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const sourceTag = draggedTag || e.dataTransfer.getData('text/plain');
+                  if (sourceTag) reorderTag(sourceTag, tag);
+                  setDraggedTag(null);
+                }}
+                onDragEnd={() => setDraggedTag(null)}
+                className={clsx(
+                  'group flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium border transition-all',
+                  isActive
+                    ? 'bg-brand-600/30 border-brand-500 text-brand-200'
+                    : 'bg-dark-800 border-dark-700 text-slate-300 hover:border-slate-600',
+                  draggedTag === tag && 'opacity-40 border-dashed',
+                )}
+              >
+                <GripVertical className="w-3.5 h-3.5 shrink-0 text-slate-500 cursor-grab active:cursor-grabbing" aria-hidden="true" />
+                {idx < 5 && (
+                  <span className="text-[9px] font-mono font-bold px-1 rounded bg-dark-750 text-slate-400 shrink-0">
+                    {idx + 1}
+                  </span>
+                )}
+                {editingTag === tag ? (
+                  <>
+                    <input
+                      value={editTagInput}
+                      onChange={(e) => setEditTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleRenameTag(tag);
+                        if (e.key === 'Escape') setEditingTag(null);
+                      }}
+                      maxLength={20}
+                      className="min-w-0 flex-1 rounded border border-brand-500 bg-dark-900 px-1.5 py-0.5 text-[11px] text-slate-100 outline-none"
+                      aria-label={`修改标签 ${tag}`}
+                      autoFocus
+                    />
+                    <button type="button" onClick={() => handleRenameTag(tag)} className="p-1 text-emerald-400 hover:text-emerald-300" title="保存修改">
+                      <Check className="w-3 h-3" />
+                    </button>
+                    <button type="button" onClick={() => setEditingTag(null)} className="p-1 text-slate-500 hover:text-slate-300" title="取消修改">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => handleToggleTag(tag)} className="min-w-0 flex-1 truncate text-left cursor-pointer" title={tag}>
+                      {tag}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTag(tag);
+                        setEditTagInput(tag);
+                        setManagementError('');
+                      }}
+                      className="opacity-60 group-hover:opacity-100 p-1 text-slate-400 hover:text-brand-300 rounded cursor-pointer transition-opacity"
+                      title="修改标签名"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tag)}
+                      className="opacity-60 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 rounded cursor-pointer transition-opacity"
+                      title="删除标签"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {availableTags.length === 0 && (
+          <div className="py-3 text-center text-[10px] text-slate-500">暂无标签，可在上方新建</div>
+        )}
+      </div>
+      {managementError && <p className="mt-2 text-[10px] text-rose-400">{managementError}</p>}
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <div className="relative select-none" ref={popoverRef}>
+        <button
+          type="button"
+          onClick={() => setIsPopoverOpen(!isPopoverOpen)}
+          title="为当前照片打标签（支持直接按数字键 1~5 盲打）"
+          className={clsx(
+            'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap',
+            activeTags.length > 0
+              ? 'bg-brand-600/20 border-brand-500/50 text-brand-200'
+              : isPopoverOpen
+              ? 'bg-dark-700 border-dark-600 text-slate-100'
+              : 'bg-dark-800 hover:bg-dark-750 border-dark-700 text-slate-300',
+          )}
+        >
+          <Tag className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {activeTags.length === 0
+              ? '标签 (1~5)'
+              : activeTags.length === 1
+              ? activeTags[0]
+              : `标签 (${activeTags.length})`}
+          </span>
+        </button>
+        {popoverPanel}
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-dark-850/90 backdrop-blur-md border border-dark-700/80 shadow-lg text-xs select-none">
       <div className="flex items-center space-x-1 text-slate-400 font-medium text-[11px] pr-1 border-r border-dark-750">
@@ -169,133 +341,7 @@ export const QuickTagBar: React.FC = () => {
           <span>{hasMoreTags ? '更多/新建' : '新建'}</span>
         </button>
 
-        {isPopoverOpen && (
-          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-dark-850 border border-dark-700 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-dark-750">
-              <span className="text-[11px] font-bold text-slate-200">自定义与管理标签</span>
-              <button
-                onClick={() => setIsPopoverOpen(false)}
-                className="p-0.5 text-slate-400 hover:text-slate-200 rounded"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* 新建标签表单 */}
-            <form onSubmit={handleAddNewTag} className="flex items-center gap-1.5 mb-2.5">
-              <input
-                type="text"
-                value={newTagInput}
-                onChange={(e) => setNewTagInput(e.target.value)}
-                placeholder="输入新标签名，如: 封面备选"
-                maxLength={20}
-                className="flex-1 px-2.5 py-1 bg-dark-900 border border-dark-700 rounded-lg text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500"
-                autoFocus
-              />
-              <button
-                type="submit"
-                disabled={!newTagInput.trim()}
-                className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-30 text-white rounded-lg text-xs font-semibold cursor-pointer"
-              >
-                添加
-              </button>
-            </form>
-
-            {/* 全部标签清单 */}
-            <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
-              <div className="text-[10px] text-slate-500 mb-1.5">拖动排序；点击标签可切换当前照片：</div>
-              <div className="space-y-1">
-                {availableTags.map((tag) => {
-                  const isActive = activeTags.includes(tag);
-
-                  return (
-                    <div
-                      key={tag}
-                      draggable={editingTag !== tag}
-                      onDragStart={(e) => {
-                        setDraggedTag(tag);
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', tag);
-                      }}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const sourceTag = draggedTag || e.dataTransfer.getData('text/plain');
-                        if (sourceTag) reorderTag(sourceTag, tag);
-                        setDraggedTag(null);
-                      }}
-                      onDragEnd={() => setDraggedTag(null)}
-                      className={clsx(
-                        'group flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium border transition-all',
-                        isActive
-                          ? 'bg-brand-600/30 border-brand-500 text-brand-200'
-                          : 'bg-dark-800 border-dark-700 text-slate-300 hover:border-slate-600',
-                        draggedTag === tag && 'opacity-40 border-dashed',
-                      )}
-                    >
-                      <GripVertical className="w-3.5 h-3.5 shrink-0 text-slate-500 cursor-grab active:cursor-grabbing" aria-hidden="true" />
-                      {editingTag === tag ? (
-                        <>
-                          <input
-                            value={editTagInput}
-                            onChange={(e) => setEditTagInput(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleRenameTag(tag);
-                              if (e.key === 'Escape') setEditingTag(null);
-                            }}
-                            maxLength={20}
-                            className="min-w-0 flex-1 rounded border border-brand-500 bg-dark-900 px-1.5 py-0.5 text-[11px] text-slate-100 outline-none"
-                            aria-label={`修改标签 ${tag}`}
-                            autoFocus
-                          />
-                          <button type="button" onClick={() => handleRenameTag(tag)} className="p-1 text-emerald-400 hover:text-emerald-300" title="保存修改">
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button type="button" onClick={() => setEditingTag(null)} className="p-1 text-slate-500 hover:text-slate-300" title="取消修改">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button type="button" onClick={() => handleToggleTag(tag)} className="min-w-0 flex-1 truncate text-left cursor-pointer" title={tag}>
-                            {tag}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingTag(tag);
-                              setEditTagInput(tag);
-                              setManagementError('');
-                            }}
-                            className="opacity-60 group-hover:opacity-100 p-1 text-slate-400 hover:text-brand-300 rounded cursor-pointer transition-opacity"
-                            title="修改标签名"
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveTag(tag)}
-                            className="opacity-60 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 rounded cursor-pointer transition-opacity"
-                            title="删除标签"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {availableTags.length === 0 && (
-                <div className="py-3 text-center text-[10px] text-slate-500">暂无标签，可在上方新建</div>
-              )}
-            </div>
-            {managementError && <p className="mt-2 text-[10px] text-rose-400">{managementError}</p>}
-          </div>
-        )}
+        {popoverPanel}
       </div>
     </div>
   );

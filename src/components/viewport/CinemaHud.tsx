@@ -189,7 +189,10 @@ export const CinemaHud: React.FC = () => {
             {/* 标记不选 (Discard) */}
             <button
               key={isRecentlyTriaged && selectionState === 'skipped' && lastTriageFeedback ? `skip-${lastTriageFeedback.timestamp}` : 'skip'}
-              onClick={() => setSkipped(currentPhoto.id)}
+              onClick={() => {
+                setSkipped(currentPhoto.id);
+                nextPhoto();
+              }}
               className={clsx(
                 'flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer text-xs',
                 selectionState === 'skipped'
@@ -197,7 +200,7 @@ export const CinemaHud: React.FC = () => {
                   : 'bg-white/5 text-slate-300 hover:bg-rose-500/20 hover:text-rose-300',
                 isRecentlyTriaged && selectionState === 'skipped' && 'animate-triage-pop',
               )}
-              title="标记为淘汰 (N 键)"
+              title="标记为淘汰并跳到下一张 (N 键)"
             >
               <X className="w-3.5 h-3.5" />
               <span>淘汰</span>

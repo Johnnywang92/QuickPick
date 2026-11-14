@@ -26,10 +26,30 @@ pub fn analyze_image_bytes(bytes: &[u8]) -> Result<ImageMetrics, String> {
     }
 }
 
-/// 快速从已解码的图像对象中计算基本光学指标（避免重复内存解码）
+#[inline]
+fn sample_luma(img: &image::DynamicImage, x: u32, y: u32) -> u8 {
+    use image::GenericImageView;
+    match img {
+        image::DynamicImage::ImageLuma8(buf) => buf.get_pixel(x, y)[0],
+        image::DynamicImage::ImageRgb8(buf) => {
+            let p = buf.get_pixel(x, y).0;
+            ((77u32 * p[0] as u32 + 150u32 * p[1] as u32 + 29u32 * p[2] as u32) >> 8) as u8
+        }
+        image::DynamicImage::ImageRgba8(buf) => {
+            let p = buf.get_pixel(x, y).0;
+            ((77u32 * p[0] as u32 + 150u32 * p[1] as u32 + 29u32 * p[2] as u32) >> 8) as u8
+        }
+        _ => {
+            let p = img.get_pixel(x, y).0;
+            ((77u32 * p[0] as u32 + 150u32 * p[1] as u32 + 29u32 * p[2] as u32) >> 8) as u8
+        }
+    }
+}
+
+/// 快速从已解码的图像对象中计算基本光学指标（零全图内存分配、按步长直接采样亮度与拉普拉斯梯度）
 pub fn analyze_image(img: &image::DynamicImage) -> Result<ImageMetrics, String> {
-    let gray = img.to_luma8();
-    let (width, height) = gray.dimensions();
+    use image::GenericImageView;
+    let (width, height) = img.dimensions();
     if width == 0 || height == 0 {
         return Err("图像尺寸为零，无法分析".to_string());
     }
@@ -44,7 +64,7 @@ pub fn analyze_image(img: &image::DynamicImage) -> Result<ImageMetrics, String> 
 
     for y in (0..height).step_by(step) {
         for x in (0..width).step_by(step) {
-            let p = gray.get_pixel(x, y)[0];
+            let p = sample_luma(img, x, y);
             sum_lum += p as u64;
             if p >= 250 {
                 highlight_count += 1;
@@ -73,7 +93,7 @@ pub fn analyze_image(img: &image::DynamicImage) -> Result<ImageMetrics, String> 
         0.0
     };
 
-    // 计算中心 50% 核心区域拉普拉斯算子方差 (合焦清晰度)
+    // 计算中心核心区域与 4x4 局部网格的拉普拉斯算子方差 (兼顾整体清晰度与大光圈浅景深局部焦点)
     let cx_start = width / 4;
     let cx_end = (width * 3) / 4;
     let cy_start = height / 4;
@@ -83,28 +103,67 @@ pub fn analyze_image(img: &image::DynamicImage) -> Result<ImageMetrics, String> 
     let mut lap_sq_sum: f64 = 0.0;
     let mut lap_count: u64 = 0;
 
-    for y in (cy_start + 1..cy_end - 1).step_by(step) {
-        for x in (cx_start + 1..cx_end - 1).step_by(step) {
-            let c = gray.get_pixel(x, y)[0] as f64;
-            let up = gray.get_pixel(x, y - 1)[0] as f64;
-            let down = gray.get_pixel(x, y + 1)[0] as f64;
-            let left = gray.get_pixel(x - 1, y)[0] as f64;
-            let right = gray.get_pixel(x + 1, y)[0] as f64;
+    let grid_x_start = width / 6;
+    let grid_x_end = (width * 5) / 6;
+    let grid_y_start = height / 6;
+    let grid_y_end = (height * 5) / 6;
+    let grid_w = (grid_x_end.saturating_sub(grid_x_start)).max(4);
+    let grid_h = (grid_y_end.saturating_sub(grid_y_start)).max(4);
+    let mut block_sum = [0.0f64; 16];
+    let mut block_sq_sum = [0.0f64; 16];
+    let mut block_count = [0u64; 16];
+
+    for y in (grid_y_start.max(1)..grid_y_end.min(height.saturating_sub(1))).step_by(step) {
+        let by = (((y - grid_y_start) * 4) / grid_h).min(3) as usize;
+        let in_center_y = y > cy_start && y + 1 < cy_end;
+        for x in (grid_x_start.max(1)..grid_x_end.min(width.saturating_sub(1))).step_by(step) {
+            let c = sample_luma(img, x, y) as f64;
+            let up = sample_luma(img, x, y - 1) as f64;
+            let down = sample_luma(img, x, y + 1) as f64;
+            let left = sample_luma(img, x - 1, y) as f64;
+            let right = sample_luma(img, x + 1, y) as f64;
 
             let lap = (4.0 * c - up - down - left - right).abs();
-            lap_sum += lap;
-            lap_sq_sum += lap * lap;
-            lap_count += 1;
+
+            if in_center_y && x > cx_start && x + 1 < cx_end {
+                lap_sum += lap;
+                lap_sq_sum += lap * lap;
+                lap_count += 1;
+            }
+
+            let bx = (((x - grid_x_start) * 4) / grid_w).min(3) as usize;
+            let b_idx = by * 4 + bx;
+            block_sum[b_idx] += lap;
+            block_sq_sum[b_idx] += lap * lap;
+            block_count[b_idx] += 1;
         }
     }
 
-    let sharpness = if lap_count > 0 {
+    let center_sharpness = if lap_count > 0 {
         let mean = lap_sum / (lap_count as f64);
         let variance = (lap_sq_sum / (lap_count as f64)) - (mean * mean);
         variance.max(0.0) as f32
     } else {
         100.0
     };
+
+    let mut block_vars: Vec<f32> = Vec::with_capacity(16);
+    for i in 0..16 {
+        if block_count[i] >= 16 {
+            let m = block_sum[i] / (block_count[i] as f64);
+            let v = (block_sq_sum[i] / (block_count[i] as f64)) - (m * m);
+            block_vars.push(v.max(0.0) as f32);
+        }
+    }
+    block_vars.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    let focal_plane_sharpness = if block_vars.len() >= 4 {
+        let top_mean = (block_vars[0] + block_vars[1] + block_vars[2] + block_vars[3]) * 0.25;
+        top_mean * 0.72
+    } else {
+        center_sharpness
+    };
+
+    let sharpness = center_sharpness.max(focal_plane_sharpness);
 
     Ok(ImageMetrics {
         sharpness,

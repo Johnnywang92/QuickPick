@@ -43,7 +43,7 @@ fn scan_folder(path: String) -> Result<Vec<PhotoItem>, String> {
     scan_directory_fast(&path)
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct PhotoAnalysisResult {
     exif: Option<ExifMetadata>,
     analysis_status: String,
@@ -55,6 +55,29 @@ struct PhotoAnalysisResult {
     sharpness: Option<f32>,
 }
 
+static ANALYSIS_MEM_CACHE: std::sync::OnceLock<Mutex<HashMap<String, PhotoAnalysisResult>>> =
+    std::sync::OnceLock::new();
+
+fn analysis_cache_key(photo_id: &str, path: &std::path::Path, scene_key: &str) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let raw_key = format!(
+        "analysis-v3:{}:{}:{}:{}:{}",
+        photo_id,
+        path.to_string_lossy(),
+        meta.len(),
+        mtime,
+        scene_key
+    );
+    Some(format!("{:x}", Sha256::digest(raw_key.as_bytes())))
+}
+
 fn analyze_photo_details_blocking(
     app_data_dir: &std::path::Path,
     photo_id: &str,
@@ -63,6 +86,35 @@ fn analyze_photo_details_blocking(
     scene: Option<&str>,
 ) -> PhotoAnalysisResult {
     let source_path = std::path::Path::new(path);
+    let scene_str = scene.unwrap_or("general");
+    let cache_key_opt = analysis_cache_key(photo_id, source_path, scene_str);
+
+    // 1. 优先命中内存与本地持久化分析缓存（二次打开相册或切换场景后极速秒开，零重复解码开销）
+    if let Some(ref key) = cache_key_opt {
+        let mem_cache = ANALYSIS_MEM_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Ok(guard) = mem_cache.lock() {
+            if let Some(cached) = guard.get(key) {
+                return cached.clone();
+            }
+        }
+        let disk_cache_path = app_data_dir
+            .join("analysis_cache_v3")
+            .join(format!("{key}.json"));
+        if disk_cache_path.is_file() {
+            if let Ok(bytes) = std::fs::read(&disk_cache_path) {
+                if let Ok(cached) = serde_json::from_slice::<PhotoAnalysisResult>(&bytes) {
+                    if let Ok(mut guard) = mem_cache.lock() {
+                        if guard.len() > 4096 {
+                            guard.clear();
+                        }
+                        guard.insert(key.clone(), cached.clone());
+                    }
+                    return cached;
+                }
+            }
+        }
+    }
+
     let exif = if quickpick_lib::engine::is_raw_file(source_path) {
         quickpick_lib::libraw_ffi::extract_raw_metadata(source_path).ok()
     } else {
@@ -76,8 +128,8 @@ fn analyze_photo_details_blocking(
         _ => quickpick_lib::models::WorkflowScene::General,
     };
 
-    let Ok((bytes, _)) =
-        quickpick_lib::engine::cache::load_cached_preview(app_data_dir, photo_id, path)
+    let Ok((bytes, _, already_decoded)) =
+        quickpick_lib::engine::cache::load_cached_preview_with_image(app_data_dir, photo_id, path)
     else {
         return PhotoAnalysisResult {
             exif,
@@ -90,7 +142,7 @@ fn analyze_photo_details_blocking(
             sharpness: None,
         };
     };
-    let image_opt = image::load_from_memory(&bytes).ok();
+    let image_opt = already_decoded.or_else(|| image::load_from_memory(&bytes).ok());
     let (faces, preview_width, preview_height, phash) = if let Some(ref image) = image_opt {
         let dimensions = (Some(image.width()), Some(image.height()));
         let hash = quickpick_lib::rules::phash::compute_phash(image);
@@ -151,7 +203,7 @@ fn analyze_photo_details_blocking(
         AnalysisStatus::Pending => "pending",
         AnalysisStatus::Failed => "failed",
     };
-    PhotoAnalysisResult {
+    let result = PhotoAnalysisResult {
         exif,
         analysis_status: analysis_status.to_string(),
         defect_tags,
@@ -160,7 +212,26 @@ fn analyze_photo_details_blocking(
         preview_height,
         phash,
         sharpness: Some(metrics.sharpness),
+    };
+
+    if let Some(key) = cache_key_opt {
+        if let Some(mem_cache) = ANALYSIS_MEM_CACHE.get() {
+            if let Ok(mut guard) = mem_cache.lock() {
+                if guard.len() > 4096 {
+                    guard.clear();
+                }
+                guard.insert(key.clone(), result.clone());
+            }
+        }
+        let cache_dir = app_data_dir.join("analysis_cache_v3");
+        if std::fs::create_dir_all(&cache_dir).is_ok() {
+            if let Ok(json_bytes) = serde_json::to_vec(&result) {
+                let _ = std::fs::write(cache_dir.join(format!("{key}.json")), json_bytes);
+            }
+        }
     }
+
+    result
 }
 
 #[tauri::command]
@@ -192,17 +263,26 @@ async fn get_photo_preview(
     photo_id: Option<String>,
 ) -> Result<String, String> {
     let app_data_dir = app_data_directory(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let (data, mime) = quickpick_lib::engine::cache::load_cached_preview(
-            &app_data_dir,
-            photo_id.as_deref().unwrap_or(""),
-            &path,
-        )?;
-        let encoded = BASE64.encode(&data);
-        Ok(format!("data:{};base64,{}", mime, encoded))
-    })
-    .await
-    .map_err(|error| format!("后台照片预览任务异常结束: {error}"))?
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    // 独立专用高优先级预览线程：绝不与后台人脸/画质分析排队挤占同一个 spawn_blocking 队列
+    std::thread::Builder::new()
+        .name("qp-preview-loader".into())
+        .spawn(move || {
+            let res = (|| {
+                let (data, mime) = quickpick_lib::engine::cache::load_cached_preview(
+                    &app_data_dir,
+                    photo_id.as_deref().unwrap_or(""),
+                    &path,
+                )?;
+                let encoded = BASE64.encode(&data);
+                Ok(format!("data:{};base64,{}", mime, encoded))
+            })();
+            let _ = tx.send(res);
+        })
+        .map_err(|error| format!("启动照片预览线程失败: {error}"))?;
+
+    rx.await
+        .map_err(|error| format!("后台照片预览任务异常结束: {error}"))?
 }
 
 fn app_data_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {

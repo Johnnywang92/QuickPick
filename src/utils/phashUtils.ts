@@ -94,7 +94,10 @@ export function arePhotosBurstConsecutive(current: LocalPhoto, previous: LocalPh
   if (visualDist !== null) {
     return visualDist <= 8;
   }
-  return sequenceGap === 1;
+  if (current.burstGroupId && current.burstGroupId === previous.burstGroupId) {
+    return sequenceGap === null || sequenceGap <= 5;
+  }
+  return false;
 }
 
 /**

@@ -38,12 +38,23 @@ pub fn is_raw_file(path: &Path) -> bool {
 /// 整个相册目录移动后，相对路径不变，照片身份也保持不变。
 pub fn stable_photo_id(root: &Path, path: &Path) -> String {
     let canonical_root = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    stable_photo_id_with_canonical_root(&canonical_root, path)
+}
+
+fn stable_photo_id_with_canonical_root(canonical_root: &Path, path: &Path) -> String {
     let canonical_path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let normalized = canonical_path
-        .strip_prefix(&canonical_root)
+        .strip_prefix(canonical_root)
         .unwrap_or(&canonical_path);
     let mut hasher = Sha256::new();
     hasher.update(normalized.to_string_lossy().as_bytes());
+    format!("photo:{:x}", hasher.finalize())
+}
+
+#[inline]
+fn stable_photo_id_from_relative_name(relative_name: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(relative_name.as_bytes());
     format!("photo:{:x}", hasher.finalize())
 }
 
@@ -69,6 +80,8 @@ fn scan_directory_fast_impl(
         ));
     }
 
+    let canonical_root = fs::canonicalize(p_dir).unwrap_or_else(|_| p_dir.to_path_buf());
+
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
@@ -91,11 +104,11 @@ fn scan_directory_fast_impl(
             continue;
         }
 
-        let is_file = match entry.file_type() {
-            Ok(ft) => ft.is_file(),
-            Err(_) => path.is_file(),
+        let (is_file, is_symlink) = match entry.file_type() {
+            Ok(ft) => (ft.is_file(), ft.is_symlink()),
+            Err(_) => (path.is_file(), false),
         };
-        if !is_file {
+        if !is_file && !path.is_file() {
             continue;
         }
 
@@ -104,11 +117,17 @@ fn scan_directory_fast_impl(
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        // 快速扫描零 stat/RPC 开销：SMB/网络盘场景下避免逐张同步发起网络 getattr 请求
+        let file_size = 0;
         let is_raw = is_raw_file(&path);
+        let id = if is_symlink {
+            stable_photo_id_with_canonical_root(&canonical_root, &path)
+        } else {
+            stable_photo_id_from_relative_name(&filename)
+        };
 
         items.push(PhotoItem {
-            id: stable_photo_id(p_dir, &path),
+            id,
             path: path.to_string_lossy().to_string(),
             filename,
             file_size,
@@ -133,6 +152,7 @@ pub fn scan_directory<P: AsRef<Path>>(dir: P) -> Result<Vec<PhotoItem>, String> 
 
     for item in &mut items {
         let path = Path::new(&item.path);
+        item.file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         item.exif = if item.is_raw {
             libraw_ffi::extract_raw_metadata(path).ok()
         } else {

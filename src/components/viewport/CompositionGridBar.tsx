@@ -15,7 +15,13 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-export const CompositionGridBar: React.FC = () => {
+interface CompositionGridBarProps {
+  popoverDirection?: 'up' | 'down';
+}
+
+export const CompositionGridBar: React.FC<CompositionGridBarProps> = ({
+  popoverDirection = 'down',
+}) => {
   const {
     gridType,
     spiralOrientation,
@@ -93,7 +99,12 @@ export const CompositionGridBar: React.FC = () => {
 
       {/* 展开的悬浮参数调控面板 */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl border border-dark-700/90 bg-dark-900/95 p-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 z-30 select-none text-xs text-slate-200">
+        <div
+          className={clsx(
+            'absolute right-0 w-72 rounded-2xl border border-dark-700/90 bg-dark-900/95 p-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 z-40 select-none text-xs text-slate-200',
+            popoverDirection === 'up' ? 'bottom-full mb-2' : 'top-full mt-2',
+          )}
+        >
           {/* 标题栏 */}
           <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-dark-750">
             <div className="flex items-center space-x-1.5 font-bold text-slate-100">

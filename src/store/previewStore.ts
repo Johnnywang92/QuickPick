@@ -8,7 +8,7 @@ const inFlightPreviews = new Map<string, Promise<string>>();
 
 let prefetchQueue: LocalPhoto[] = [];
 let activePrefetchWorkers = 0;
-const MAX_CONCURRENT_PREFETCH = 4;
+const MAX_CONCURRENT_PREFETCH = 2;
 
 function pumpPrefetchQueue(storeGet: () => PreviewStore) {
   const currentGen = previewGeneration;
@@ -83,12 +83,24 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
         if (generation !== previewGeneration) return url;
         const nextCache = new Map(get().previewCache);
         nextCache.set(photo.path, url);
+
+        // 淘汰超额缓存，但绝不淘汰当前主视口正在展示的照片纹理，防止黑屏闪烁
+        const currentPath = get().currentPhotoPath;
+        const currentUrl = get().currentPreviewUrl;
         while (nextCache.size > MAX_CACHE_ENTRIES) {
-          const oldestPath = nextCache.keys().next().value as string | undefined;
-          if (!oldestPath) break;
-          const evictedUrl = nextCache.get(oldestPath);
-          nextCache.delete(oldestPath);
-          if (evictedUrl) releasePreviewTexture(evictedUrl);
+          let candidateKey: string | undefined;
+          for (const key of nextCache.keys()) {
+            if (key !== currentPath) {
+              candidateKey = key;
+              break;
+            }
+          }
+          if (!candidateKey) break;
+          const evictedUrl = nextCache.get(candidateKey);
+          nextCache.delete(candidateKey);
+          if (evictedUrl && evictedUrl !== currentUrl) {
+            releasePreviewTexture(evictedUrl);
+          }
         }
         set({ previewCache: nextCache });
         return url;
@@ -104,6 +116,9 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
       return;
     }
 
+    // 从后台预取队列中移出（若存在），避免重复调度
+    prefetchQueue = prefetchQueue.filter((p) => p.path !== photo.path);
+
     set({ currentPhotoPath: photo.path, currentPhoto: photo });
 
     const cached = get().previewCache.get(photo.path);
@@ -114,6 +129,7 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
         previewError: null,
       });
     } else {
+      // 保持当前底片原位呈现，绝不清空 currentPreviewUrl，直到新图就绪瞬间替换
       set({ previewStatus: 'loading', previewError: null });
       try {
         const url = await get().getPreview(photo);

@@ -12,6 +12,7 @@ import { useCinemaStore } from '../store/cinemaStore';
 
 interface KeyboardShortcutsOptions {
   onToggleRetouch?: () => void;
+  onToggleSidebar?: () => void;
 }
 
 export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
@@ -201,12 +202,13 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
           }
           break;
 
-        // 明确标记为不选 [N]
+        // 明确标记为不选并跳到下一张 [N]
         case 'n':
         case 'N':
           e.preventDefault();
           if (currentPhoto) {
             setSkipped(currentPhoto.id);
+            nextPhoto();
           }
           break;
 
@@ -244,6 +246,13 @@ export function useKeyboardShortcuts(options?: KeyboardShortcutsOptions) {
         case 'F11': {
           e.preventDefault();
           useCinemaStore.getState().toggleCinemaMode();
+          break;
+        }
+
+        // 收起 / 展开左侧筛选与工具栏 [
+        case '[': {
+          e.preventDefault();
+          optionsRef.current?.onToggleSidebar?.();
           break;
         }
 

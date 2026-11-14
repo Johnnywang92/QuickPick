@@ -3,6 +3,7 @@ import { useAlbumStore } from '../../store/albumStore';
 import { useSelectionStore } from '../../store/selectionStore';
 import { useInsightStore } from '../../store/insightStore';
 import { useCompareStore } from '../../store/compareStore';
+import { useCinemaStore } from '../../store/cinemaStore';
 import { hasRetouchRequirements, parseAnnotation } from '../../utils/annotationUtils';
 import {
   Check,
@@ -13,22 +14,26 @@ import {
   Undo2,
   Sparkles,
   Zap,
+  Film,
 } from 'lucide-react';
 
 interface TriageControlsProps {
   onToggleRetouch?: () => void;
   isRetouchOpen?: boolean;
+  embedded?: boolean;
 }
 
 export const TriageControls: React.FC<TriageControlsProps> = ({
   onToggleRetouch,
   isRetouchOpen = false,
+  embedded = false,
 }) => {
-  const { photos, currentIndex } = useAlbumStore();
+  const { photos, currentIndex, nextPhoto } = useAlbumStore();
   const { selections, toggleSelect, setMaybe, setSkipped, undoStack, undoLast, setNote } =
     useSelectionStore();
   const { isFaceLoupeOpen, toggleFaceLoupe } = useInsightStore();
   const { toggleCompareMode, isCompareMode, startBurstPk } = useCompareStore();
+  const { toggleCinemaMode } = useCinemaStore();
 
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
@@ -77,7 +82,13 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
       )}
 
       {/* 核心选片操作条 */}
-      <div className="flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md border border-dark-700/80 px-3 py-1.5 rounded-2xl shadow-2xl whitespace-nowrap shrink-0 max-w-[95vw] overflow-x-auto no-scrollbar">
+      <div
+        className={
+          embedded
+            ? 'flex items-center space-x-1.5 whitespace-nowrap shrink-0'
+            : 'flex items-center space-x-2 bg-dark-850/90 backdrop-blur-md border border-dark-700/80 px-3 py-1.5 rounded-2xl shadow-2xl whitespace-nowrap shrink-0 max-w-[95vw] overflow-x-auto no-scrollbar'
+        }
+      >
         {/* 选择 / 取消选择 [Space] */}
         <button
           onClick={() => toggleSelect(currentPhoto.id)}
@@ -108,8 +119,11 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
 
         {/* 明确不选 [N] */}
         <button
-          onClick={() => setSkipped(currentPhoto.id)}
-          title="明确将这张照片标记为不选 [快捷键 N]"
+          onClick={() => {
+            setSkipped(currentPhoto.id);
+            nextPhoto();
+          }}
+          title="明确将这张照片标记为不选并跳到下一张 [快捷键 N]"
           className={`flex items-center space-x-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer select-none ${
             isSkipped
               ? 'bg-slate-600 text-white shadow-md shadow-slate-700/20'
@@ -185,6 +199,16 @@ export const TriageControls: React.FC<TriageControlsProps> = ({
                 : '已填'}
             </span>
           )}
+        </button>
+
+        {/* 沉浸式选片 [Tab] */}
+        <button
+          onClick={toggleCinemaMode}
+          title="进入全屏纯粹沉浸式选片模式 [快捷键 Tab]"
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 hover:bg-dark-700/90 text-slate-300 hover:text-brand-300 transition-all cursor-pointer select-none"
+        >
+          <Film className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+          <span>沉浸 (Tab)</span>
         </button>
 
         {/* 撤销按钮 */}

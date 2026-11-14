@@ -575,17 +575,39 @@ fn associate_and_upsert_photos(
     let mut photo_id_remaps = HashMap::new();
     let mut matched_existing = 0;
 
-    for photo in photos {
+    let modified_nanos_list: Vec<String> = if photos.len() < 16 {
+        photos
+            .iter()
+            .map(|p| modified_nanos(Path::new(&p.path)).to_string())
+            .collect()
+    } else {
+        // 多线程并发获取 mtime，消弭 SMB/网络驱动器上千张照片的高网络往返时延
+        let num_threads = 16.min(photos.len());
+        let chunk_size = (photos.len() + num_threads - 1) / num_threads;
+        let mut results = vec![String::new(); photos.len()];
+        std::thread::scope(|s| {
+            for (chunk, out_chunk) in photos.chunks(chunk_size).zip(results.chunks_mut(chunk_size)) {
+                s.spawn(move || {
+                    for (i, p) in chunk.iter().enumerate() {
+                        out_chunk[i] = modified_nanos(Path::new(&p.path)).to_string();
+                    }
+                });
+            }
+        });
+        results
+    };
+
+    for (idx, photo) in photos.iter().enumerate() {
         let photo_path = Path::new(&photo.path);
         let relative_path = photo_path
             .strip_prefix(canonical_root)
             .unwrap_or(photo_path)
             .to_string_lossy()
             .to_string();
-        let current_modified_nanos = modified_nanos(photo_path).to_string();
+        let current_modified_nanos = &modified_nanos_list[idx];
         let metadata_matches = |candidate: &&ExistingPhotoIdentity| {
             candidate.file_size == photo.file_size
-                && candidate.modified_nanos == current_modified_nanos
+                && &candidate.modified_nanos == current_modified_nanos
                 && !used_existing.contains(&candidate.photo_id)
         };
         let same_path_metadata_matches = existing

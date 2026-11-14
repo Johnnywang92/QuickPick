@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Application, Assets, Sprite, Container, Graphics, Text } from 'pixi.js';
-import { AlertTriangle, Loader2, Maximize2, RefreshCw, Sliders, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, Loader2, Maximize2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useInsightStore } from '../../store/insightStore';
 import { useAlbumStore } from '../../store/albumStore';
 import { useThemeStore } from '../../store/themeStore';
@@ -8,7 +8,6 @@ import { useLutStore } from '../../store/lutStore';
 import { useAdjustStore } from '../../store/adjustStore';
 import { getOrCreateLutTexture, LutFilter } from '../../utils/lutEngine';
 import { ColorAdjustFilter, isAdjustmentsNoop } from '../../utils/adjustEngine';
-import { CompositionGridBar } from './CompositionGridBar';
 import { useGridStore } from '../../store/gridStore';
 import { useCinemaStore } from '../../store/cinemaStore';
 import { renderCompositionGrid } from '../../utils/gridRenderer';
@@ -70,7 +69,6 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const colorAdjustFilterRef = useRef<ColorAdjustFilter | null>(null);
 
   const getPhotoAdjustments = useAdjustStore((state) => state.getPhotoAdjustments);
-  const openModal = useAdjustStore((state) => state.openModal);
   const photoAdjustmentsMap = useAdjustStore((state) => state.photoAdjustments);
 
   const currentPhoto = photos[currentIndex];
@@ -78,7 +76,6 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
   const currentPhotoLut = currentPhoto ? photoLuts[currentPhoto.id] : null;
   const effectiveLutId = currentPhoto ? currentPhotoLut?.lutId ?? null : activeLutId;
   const effectiveLutIntensity = currentPhoto ? (currentPhotoLut ? currentPhotoLut.intensity : lutIntensity) : lutIntensity;
-  const hasActiveWorkbenchEffects = (currentAdjustments && !isAdjustmentsNoop(currentAdjustments)) || Boolean(effectiveLutId);
   const activeDisplayLutId =
     hoverLutId === '__bypass__'
       ? null
@@ -911,8 +908,13 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
       {(pixiStatus === 'initializing' || previewStatus === 'loading' || imageStatus === 'loading') && (
-        <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-dark-900/55">
-          <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/90 px-3 py-2 text-xs text-slate-300 shadow-lg">
+        <div
+          className={clsx(
+            'pointer-events-none absolute inset-0 z-[5] flex items-center justify-center transition-opacity duration-150',
+            spriteRef.current ? 'bg-black/25' : 'bg-dark-900',
+          )}
+        >
+          <div className="flex items-center gap-2 rounded-lg border border-dark-700/80 bg-dark-800/90 px-3 py-2 text-xs text-slate-200 shadow-2xl backdrop-blur-md">
             <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
             <span>{pixiStatus === 'initializing' ? '正在初始化图形渲染器…' : '正在载入预览…'}</span>
           </div>
@@ -971,26 +973,9 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
         </div>
       )}
 
-      {/* 悬浮控制栏（调色工作台 + 构图辅助 + 缩放控制，沉浸模式下隐藏以还给画面纯粹空间） */}
+      {/* 悬浮缩放控制栏（调色与构图已移至底部操作条，还给画面纯净四角） */}
       {!isCinemaMode && (
-        <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
-          {/* 调色工作台 [E] */}
-          <button
-            onClick={() => openModal()}
-            title="打开调色工作台 [快捷键 E / 胶片 L] (包含基础微调、胶片LUT、相机相框、水印签名)"
-            className="flex items-center space-x-1.5 bg-dark-800/85 hover:bg-dark-700 text-slate-200 border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-xs font-medium transition-all cursor-pointer select-none"
-          >
-            <Sliders className="w-3.5 h-3.5 text-brand-400" />
-            <span className="font-sans">调色工作台 (E)</span>
-            {hasActiveWorkbenchEffects && (
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
-            )}
-          </button>
-
-          <CompositionGridBar />
-
-          {/* 悬浮缩放控制栏 */}
-          <div className="flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1.5 rounded-lg shadow-lg text-slate-300 text-xs">
+        <div className="absolute top-3 right-3 z-10 flex items-center space-x-1.5 bg-dark-800/80 backdrop-blur border border-dark-700/80 px-2.5 py-1 rounded-lg shadow-lg text-slate-300 text-xs">
             <span className="font-mono text-slate-400 w-12 text-center">{zoomLevel}%</span>
             <div className="w-[1px] h-3.5 bg-dark-600" />
             <button
@@ -1036,7 +1021,6 @@ export const PixiCanvas: React.FC<PixiCanvasProps> = ({
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-          </div>
         </div>
       )}
     </div>

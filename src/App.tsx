@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { photoMatchesFilter, useAlbumStore } from './store/albumStore';
 import { useSelectionStore } from './store/selectionStore';
@@ -6,6 +6,8 @@ import { usePreviewStore } from './store/previewStore';
 import { useCompareStore } from './store/compareStore';
 import { useExportStore } from './store/exportStore';
 import { useInsightStore } from './store/insightStore';
+import { useLutStore } from './store/lutStore';
+import { isAdjustmentsNoop } from './utils/adjustEngine';
 import {
   fetchEngineInfo,
   fetchStartupHealth,
@@ -16,10 +18,11 @@ import {
 } from './services/tauriBridge';
 import { Filmstrip } from './components/filmstrip/Filmstrip';
 import { TriageControls } from './components/triage/TriageControls';
-import { FilterToolbar } from './components/triage/FilterToolbar';
+import { WorkspaceSidebar } from './components/triage/WorkspaceSidebar';
 import { DefectBadge } from './components/triage/DefectBadge';
 import { QuickTagBar } from './components/triage/QuickTagBar';
 import { PhotoInfoHud } from './components/viewport/PhotoInfoHud';
+import { CompositionGridBar } from './components/viewport/CompositionGridBar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import {
   FolderOpen,
@@ -27,7 +30,6 @@ import {
   Sparkles,
   Image as ImageIcon,
   Undo2,
-  Eye,
   Info,
   Keyboard,
   AlertCircle,
@@ -40,6 +42,9 @@ import {
   Filter,
   Film,
   CircleHelp,
+  MoreHorizontal,
+  PanelLeft,
+  Sliders,
 } from 'lucide-react';
 import { useThemeStore } from './store/themeStore';
 import { useAdjustStore } from './store/adjustStore';
@@ -99,7 +104,6 @@ const TimelineQuotasModal = lazy(() =>
     default: module.TimelineQuotasModal,
   })),
 );
-import { StorylineBar } from './components/timeline/StorylineBar';
 const FamilyRadarModal = lazy(() =>
   import('./components/modal/FamilyRadarModal').then((module) => ({
     default: module.FamilyRadarModal,
@@ -167,6 +171,11 @@ export default function App() {
   const { isExportModalOpen, setExportModalOpen } = useExportStore();
   const { isSettingsOpen, setSettingsOpen, effectiveTheme, setThemeMode } = useThemeStore();
   const isAdjustModalOpen = useAdjustStore((state) => state.isModalOpen);
+  const openAdjustModal = useAdjustStore((state) => state.openModal);
+  const photoAdjustmentsMap = useAdjustStore((state) => state.photoAdjustments);
+  const getPhotoAdjustments = useAdjustStore((state) => state.getPhotoAdjustments);
+  const activeLutId = useLutStore((state) => state.activeLutId);
+  const photoLuts = useLutStore((state) => state.photoLuts);
   const { isCinemaMode, toggleCinemaMode } = useCinemaStore();
   const {
     isFaceLoupeOpen,
@@ -191,9 +200,24 @@ export default function App() {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState<boolean>(false);
   const [isAlbumPreviewOpen, setIsAlbumPreviewOpen] = useState<boolean>(false);
   const [isDragHovering, setIsDragHovering] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState<boolean>(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMoreMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setIsMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isMoreMenuOpen]);
 
   useKeyboardShortcuts({
     onToggleRetouch: () => setIsRetouchOpen((prev) => !prev),
+    onToggleSidebar: () => setIsSidebarOpen((prev) => !prev),
   });
 
   // macOS 访达 (Finder) 原生拖拽目录支持
@@ -308,6 +332,12 @@ export default function App() {
   };
 
   const currentPhoto = photos[currentIndex];
+  const currentAdjustments = currentPhoto
+    ? photoAdjustmentsMap[currentPhoto.id] || getPhotoAdjustments(currentPhoto.id)
+    : null;
+  const effectiveLutId = currentPhoto ? photoLuts[currentPhoto.id]?.lutId ?? null : activeLutId;
+  const hasActiveWorkbenchEffects =
+    (currentAdjustments && !isAdjustmentsNoop(currentAdjustments)) || Boolean(effectiveLutId);
   const stats = getStats(photos.length);
 
   // 计算当前活动筛选条件下的匹配照片索引列表（仅在 unreviewed 筛选下关联 currentIndex，其余模式下翻页 0 数组计算消耗）
@@ -358,9 +388,9 @@ export default function App() {
     <div className="flex flex-col h-screen w-screen bg-dark-900 text-slate-100 select-none overflow-hidden font-sans">
       {/* 顶部工具与状态栏（沉浸看片模式下隐藏） */}
       {!isCinemaMode && (
-        <header className="h-12 border-b border-dark-700 bg-dark-800/95 backdrop-blur flex items-center justify-between px-3 md:px-4 z-30 shrink-0 gap-2 select-none overflow-x-auto no-scrollbar">
-        {/* 左侧：Logo 与相册名称 */}
-        <div className="flex items-center space-x-2 md:space-x-3 shrink-0 min-w-0">
+        <header className="h-12 border-b border-dark-700 bg-dark-800/95 backdrop-blur flex items-center justify-between px-3 md:px-4 z-30 shrink-0 gap-2 select-none">
+        {/* 左侧：Logo、相册名称与侧栏折叠开关 */}
+        <div className="flex items-center space-x-2 md:space-x-2.5 shrink-0 min-w-0">
           <div className="flex items-center space-x-2 font-semibold tracking-wide shrink-0">
             <img src="/icon.png" alt="QuickPick Logo" className="w-6 h-6 rounded-md shadow-sm object-cover shrink-0" />
             <span className="text-sm md:text-base font-bold bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent whitespace-nowrap">
@@ -372,9 +402,8 @@ export default function App() {
 
           {folderPath ? (
             <div className="flex items-center space-x-1.5 text-xs text-slate-300 min-w-0">
-              <span className="text-slate-500 font-medium whitespace-nowrap hidden sm:inline">相册:</span>
               <span
-                className="font-semibold bg-dark-700/80 px-2 py-0.5 rounded text-slate-100 max-w-[100px] xl:max-w-[180px] truncate whitespace-nowrap"
+                className="font-semibold bg-dark-700/80 px-2 py-0.5 rounded text-slate-100 max-w-[120px] xl:max-w-[200px] truncate whitespace-nowrap"
                 title={folderPath}
               >
                 {albumName}
@@ -383,20 +412,36 @@ export default function App() {
           ) : (
             <span className="text-xs text-slate-500 whitespace-nowrap">未打开照片文件夹</span>
           )}
+
+          {photos.length > 0 && !isPkMode && (
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen((v) => !v)}
+              className={clsx(
+                'rounded-lg p-1.5 border transition-colors cursor-pointer shrink-0',
+                isSidebarOpen
+                  ? 'bg-dark-700/80 border-dark-600 text-brand-300'
+                  : 'bg-dark-800 border-dark-700 text-slate-400 hover:text-slate-200',
+              )}
+              title={isSidebarOpen ? '收起筛选与工具栏 ([)' : '展开筛选与工具栏 ([)'}
+              aria-label="切换左侧筛选与工具栏"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
-        {/* 中间：相册总进度 */}
+        {/* 中间：唯一汇总进度胶囊 */}
         {photos.length > 0 && (
-          <div className="flex items-center space-x-1.5 md:space-x-2 text-xs shrink-0 whitespace-nowrap">
+          <div className="hidden md:flex items-center text-xs shrink-0 whitespace-nowrap">
             <div
-              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-dark-750 border border-dark-700 text-slate-300 font-mono whitespace-nowrap shrink-0"
-              title={`相册总进度：已查看 ${stats.viewedCount} / 共 ${photos.length} 张照片`}
+              className="flex items-center space-x-2 px-3 py-1 rounded-full bg-dark-750/90 border border-dark-700 text-slate-300 font-mono text-[11px] whitespace-nowrap shrink-0"
+              title={`已选 ${stats.selectedCount} / 共 ${photos.length} 张 · 已查看 ${stats.viewedCount} 张`}
             >
-              <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="text-slate-400">已浏览</span>
-              <span className="font-bold text-slate-100">{stats.viewedCount}</span>
-              <span className="text-slate-500">/</span>
-              <span>{photos.length}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span>已选 {stats.selectedCount} / {photos.length}</span>
+              <span className="text-slate-600">·</span>
+              <span className="text-slate-400">已浏览 {stats.viewedCount}</span>
             </div>
           </div>
         )}
@@ -477,6 +522,21 @@ export default function App() {
 
           {photos.length > 0 && (
             <button
+              type="button"
+              onClick={() => toggleCinemaMode()}
+              className="flex items-center space-x-1.5 px-2.5 lg:px-3 py-1.5 bg-brand-600/20 hover:bg-brand-600/35 text-brand-300 border border-brand-500/40 text-xs font-semibold rounded-lg shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap"
+              title="进入纯粹沉浸式选片模式 [快捷键 Tab / F11]"
+            >
+              <Film className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+              <span>沉浸选片</span>
+              <span className="hidden xl:inline font-mono text-[10px] text-brand-300/80 bg-brand-500/20 px-1 rounded">
+                Tab
+              </span>
+            </button>
+          )}
+
+          {photos.length > 0 && (
+            <button
               onClick={undoLast}
               disabled={undoStack.length === 0 || isUndoing}
               className="flex items-center gap-1 rounded-lg border border-dark-600 bg-dark-700/60 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-dark-600 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer shrink-0 whitespace-nowrap"
@@ -517,85 +577,115 @@ export default function App() {
             <span>打开<span className="hidden sm:inline">照片目录</span></span>
           </button>
 
-          {/* 一键深浅色模式切换 */}
-          <button
-            onClick={() => setThemeMode(effectiveTheme === 'dark' ? 'light' : 'dark')}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
-            title={effectiveTheme === 'dark' ? '切换为明亮浅色模式' : '切换为暗调专业模式'}
-            aria-label="切换深浅外观主题"
-          >
-            {effectiveTheme === 'dark' ? (
-              <Sun className="h-4 w-4 text-amber-400 hover:text-amber-300 transition-transform hover:scale-110" />
-            ) : (
-              <Moon className="h-4 w-4 text-indigo-500 hover:text-indigo-600 transition-transform hover:scale-110" />
-            )}
-          </button>
-
-          {/* 纯粹沉浸看片模式 (Cinema / Lights Out) [Tab / Shift+F] */}
-          {photos.length > 0 && (
+          {/* 收纳低频辅助入口的「更多」菜单 */}
+          <div className="relative" ref={moreMenuRef}>
             <button
-              onClick={toggleCinemaMode}
-              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-brand-300 cursor-pointer shrink-0"
-              title="纯粹沉浸看片模式 (快捷键 Tab / Shift+F)"
-              aria-label="纯粹沉浸看片模式"
+              type="button"
+              onClick={() => setIsMoreMenuOpen((v) => !v)}
+              className={clsx(
+                'rounded-lg p-1.5 border transition-colors cursor-pointer shrink-0',
+                isMoreMenuOpen
+                  ? 'bg-dark-700 border-dark-600 text-slate-100'
+                  : 'bg-dark-750/70 border-dark-700 text-slate-300 hover:bg-dark-700 hover:text-slate-100',
+              )}
+              title="更多功能：主题、沉浸模式、快捷键、帮助与设置"
+              aria-label="更多功能"
+              aria-expanded={isMoreMenuOpen}
             >
-              <Film className="h-4 w-4 text-brand-400 hover:text-brand-300 transition-transform hover:scale-110" />
+              <MoreHorizontal className="h-4 w-4" />
             </button>
-          )}
 
-          <button
-            onClick={() => setIsShortcutsOpen(true)}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
-            title="查看快捷键帮助"
-            aria-label="查看快捷键帮助"
-          >
-            <Keyboard className="h-4 w-4" />
-          </button>
+            {isMoreMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-dark-700 bg-dark-850 p-1.5 shadow-2xl z-50 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setThemeMode(effectiveTheme === 'dark' ? 'light' : 'dark');
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-dark-800 cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    {effectiveTheme === 'dark' ? (
+                      <Sun className="h-3.5 w-3.5 text-amber-400" />
+                    ) : (
+                      <Moon className="h-3.5 w-3.5 text-indigo-400" />
+                    )}
+                    <span>{effectiveTheme === 'dark' ? '切换明亮浅色' : '切换暗调专业'}</span>
+                  </span>
+                </button>
 
-          <button
-            onClick={() => setIsHelpOpen(true)}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
-            title="帮助中心：常见问题与检索"
-            aria-label="帮助中心"
-          >
-            <CircleHelp className="h-4 w-4" />
-          </button>
+                {photos.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleCinemaMode();
+                      setIsMoreMenuOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-dark-800 cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Film className="h-3.5 w-3.5 text-brand-400" />
+                      <span>纯粹沉浸看片</span>
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">Tab</span>
+                  </button>
+                )}
 
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-slate-200 cursor-pointer shrink-0"
-            title="偏好设置与外观主题"
-            aria-label="偏好设置与外观主题"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
+                <div className="my-1 border-t border-dark-750" />
 
-          <button
-            onClick={() => setIsAboutOpen(true)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-dark-700 transition-colors cursor-pointer shrink-0"
-            title="关于 QuickPick 与安全选片说明"
-          >
-            <Info className="h-4 w-4" />
-          </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsShortcutsOpen(true);
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-dark-800 cursor-pointer"
+                >
+                  <Keyboard className="h-3.5 w-3.5 text-slate-400" />
+                  <span>快捷键帮助</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsHelpOpen(true);
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-dark-800 cursor-pointer"
+                >
+                  <CircleHelp className="h-3.5 w-3.5 text-slate-400" />
+                  <span>帮助中心</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsOpen(true);
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-dark-800 cursor-pointer"
+                >
+                  <Settings className="h-3.5 w-3.5 text-slate-400" />
+                  <span>偏好设置</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAboutOpen(true);
+                    setIsMoreMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-dark-800 cursor-pointer"
+                >
+                  <Info className="h-3.5 w-3.5 text-slate-400" />
+                  <span>关于 QuickPick</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
-      )}
-
-      {/* 故事线常驻胶囊进度条（沉浸模式隐藏） */}
-      {!isCinemaMode && photos.length > 0 && (
-        <StorylineBar
-          onOpenFamilyRadar={() => setIsFamilyRadarOpen(true)}
-          onOpenMerge={() => setIsMergeModalOpen(true)}
-          onOpenAlbumPreview={() => setIsAlbumPreviewOpen(true)}
-        />
-      )}
-
-      {/* 视图过滤条（沉浸模式隐藏） */}
-      {!isCinemaMode && photos.length > 0 && (
-        <FilterToolbar
-          onOpenReviewCenter={() => setIsReviewCenterOpen(true)}
-          onOpenDefectFunnel={() => setIsDefectFunnelOpen(true)}
-        />
       )}
 
       {/* macOS 访达拖拽打开目录全屏毛玻璃指引遮罩 */}
@@ -626,13 +716,23 @@ export default function App() {
         </div>
       )}
 
-      {/* 主工作区 */}
+      {/* 主工作区：方案 A 双栏布局（左侧可折叠筛选与工具栏 + 右侧纯画布与底部独立动作条） */}
       <main
         className={clsx(
-          'flex-1 relative flex items-center justify-center overflow-hidden transition-colors duration-300',
+          'flex-1 relative flex items-stretch justify-center overflow-hidden transition-colors duration-300',
           isCinemaMode ? 'bg-black' : 'bg-dark-900',
         )}
       >
+        {photos.length > 0 && !isCinemaMode && !isPkMode && isSidebarOpen && (
+          <WorkspaceSidebar
+            onOpenReviewCenter={() => setIsReviewCenterOpen(true)}
+            onOpenDefectFunnel={() => setIsDefectFunnelOpen(true)}
+            onOpenFamilyRadar={() => setIsFamilyRadarOpen(true)}
+            onOpenMerge={() => setIsMergeModalOpen(true)}
+            onOpenAlbumPreview={() => setIsAlbumPreviewOpen(true)}
+          />
+        )}
+        <div className="flex-1 relative flex items-center justify-center min-w-0 overflow-hidden">
         {photos.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 md:p-10 text-center max-w-lg border border-dashed border-dark-700/90 rounded-2xl bg-dark-850/60 shadow-2xl backdrop-blur-sm">
             <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/15 dark:ring-white/15 ring-black/5 mb-5">
@@ -754,70 +854,93 @@ export default function App() {
           </div>
         ) : (
           <div className="flex h-full w-full min-w-0">
-            <div className="relative min-w-0 flex-1">
-              {/* Pixi.js 硬件加速照片视口 */}
-              <Suspense fallback={<LoadingPanel />}>
-                <PixiCanvas
-                  imageUrl={currentPreviewUrl}
-                  filename={currentPhoto ? currentPhoto.filename : ''}
-                  previewStatus={previewStatus}
-                  previewError={previewError}
-                  onRetryPreview={retryCurrentPreview}
-                  isAddingPin={isAddingPin}
-                  pins={currentPhoto ? getAnnotation(currentPhoto.id).pins : []}
-                  onDropPin={(x, y) => {
-                    if (currentPhoto) {
-                      const currentAnn = getAnnotation(currentPhoto.id);
-                      const nextPins = currentAnn.pins || [];
-                      const newPin = createPin(x, y, nextPins.length + 1);
-                      setAnnotation(currentPhoto.id, {
-                        ...currentAnn,
-                        pins: [...nextPins, newPin],
-                      });
-                      setIsAddingPin(false);
-                      setIsRetouchOpen(true);
-                    }
-                  }}
-                />
-              </Suspense>
+            <div className="flex flex-col min-w-0 flex-1 h-full">
+              <div className="relative min-w-0 flex-1 min-h-0">
+                {/* Pixi.js 硬件加速照片视口 */}
+                <Suspense fallback={<LoadingPanel />}>
+                  <PixiCanvas
+                    imageUrl={currentPreviewUrl}
+                    filename={currentPhoto ? currentPhoto.filename : ''}
+                    previewStatus={previewStatus}
+                    previewError={previewError}
+                    onRetryPreview={retryCurrentPreview}
+                    isAddingPin={isAddingPin}
+                    pins={currentPhoto ? getAnnotation(currentPhoto.id).pins : []}
+                    onDropPin={(x, y) => {
+                      if (currentPhoto) {
+                        const currentAnn = getAnnotation(currentPhoto.id);
+                        const nextPins = currentAnn.pins || [];
+                        const newPin = createPin(x, y, nextPins.length + 1);
+                        setAnnotation(currentPhoto.id, {
+                          ...currentAnn,
+                          pins: [...nextPins, newPin],
+                        });
+                        setIsAddingPin(false);
+                        setIsRetouchOpen(true);
+                      }
+                    }}
+                  />
+                </Suspense>
 
-              {/* 画布中央瞬态操作微反馈 */}
-              <TriageFeedbackOverlay currentPhotoId={currentPhoto?.id} />
+                {/* 画布中央瞬态操作微反馈 */}
+                <TriageFeedbackOverlay currentPhotoId={currentPhoto?.id} />
 
-              {/* 沉浸看片模式专属浮动控制条 */}
-              {isCinemaMode && <CinemaHud />}
+                {/* 沉浸看片模式专属浮动控制条 */}
+                {isCinemaMode && <CinemaHud />}
 
-              {/* 普通模式视口辅助 UI */}
-              {!isCinemaMode && (
-                <>
-                  {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
-                  <div className="absolute top-4 left-4 z-20">
-                    <PhotoInfoHud />
-                  </div>
-
-                  {/* 视口上方：本地辅助提示药丸 */}
-                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
-                    <DefectBadge />
-                  </div>
-
-                  {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
-                  {isFaceLoupeOpen && (
-                    <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
-                      <Suspense fallback={null}>
-                        <FaceLoupe />
-                      </Suspense>
+                {/* 普通模式视口辅助 UI（四角纯净，无底部遮挡） */}
+                {!isCinemaMode && (
+                  <>
+                    {/* 视口左上方：极简 HUD 与可选展开高级信息 */}
+                    <div className="absolute top-3 left-3 z-20">
+                      <PhotoInfoHud />
                     </div>
-                  )}
 
-                  {/* 视口下方：快捷打标签与核心选片操作条 */}
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
-                    <QuickTagBar />
+                    {/* 视口上方：本地辅助提示药丸 */}
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20">
+                      <DefectBadge />
+                    </div>
+
+                    {/* 视口下方：多脸联动特写窗格 (Face Loupe) */}
+                    {isFaceLoupeOpen && (
+                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex justify-center w-full px-4 pointer-events-none [&>*]:pointer-events-auto">
+                        <Suspense fallback={null}>
+                          <FaceLoupe />
+                        </Suspense>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* 底部独立非遮挡操作条（选片、快捷标签、构图与调色） */}
+              {!isCinemaMode && (
+                <div className="h-11 bg-dark-850 border-t border-dark-700 px-3 flex items-center justify-between gap-2 shrink-0 z-20 overflow-x-auto no-scrollbar">
+                  <div className="flex items-center gap-2 shrink-0">
                     <TriageControls
+                      embedded
                       onToggleRetouch={() => setIsRetouchOpen((v) => !v)}
                       isRetouchOpen={isRetouchOpen}
                     />
+                    <QuickTagBar compact />
                   </div>
-                </>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <CompositionGridBar popoverDirection="up" />
+                    <button
+                      type="button"
+                      onClick={() => openAdjustModal()}
+                      title="打开调色工作台 [快捷键 E / 胶片 L] (包含基础微调、胶片LUT、相机相框、水印签名)"
+                      className="flex items-center space-x-1.5 bg-dark-800 hover:bg-dark-750 text-slate-200 border border-dark-700 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer select-none whitespace-nowrap"
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-brand-400" />
+                      <span>调色工作台 (E)</span>
+                      {hasActiveWorkbenchEffects && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
+                      )}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -835,6 +958,7 @@ export default function App() {
             )}
           </div>
         )}
+        </div>
       </main>
 
       {/* 底部缩略图轮播栏（沉浸模式隐藏，支持 macOS Dock 鱼眼悬停放大） */}

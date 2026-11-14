@@ -11,7 +11,10 @@ import { findBestPicksByBurstGroup } from '../utils/phashUtils';
 
 export type FaceReviewPreset = 'group' | 'candid' | 'portrait';
 
-const ANALYSIS_CONCURRENCY = 4;
+const ANALYSIS_CONCURRENCY =
+  typeof navigator !== 'undefined' && typeof navigator.hardwareConcurrency === 'number'
+    ? Math.min(3, Math.max(2, Math.floor(navigator.hardwareConcurrency / 3)))
+    : 2;
 let analysisGeneration = 0;
 
 function insightFromAnalysis(
@@ -21,16 +24,26 @@ function insightFromAnalysis(
 ): PhotoInsight {
   const reasons: string[] = [];
   let possibleBlur: number | undefined;
+  const hasDetectedFaces = Array.isArray(result.faces) && result.faces.length > 0;
   for (const tag of result.defect_tags) {
-    if (tag.id.includes('blink') || tag.id.includes('eye')) {
+    if ((tag.id.includes('blink') || tag.id.includes('eye')) && hasDetectedFaces) {
       reasons.push('可能闭眼');
     }
-    if (tag.id.includes('blur') || tag.id.includes('focus')) {
+    if (tag.id === 'possible_severe_blur') {
+      possibleBlur = Math.max(possibleBlur || 0, Math.round(tag.confidence * 100));
+      reasons.push('可能模糊');
+    } else if (tag.id === 'review_borderline_sharpness') {
+      possibleBlur = Math.max(possibleBlur || 0, 42);
+      reasons.push('临界合焦');
+    } else if (tag.id === 'possible_slight_blur') {
+      possibleBlur = Math.max(possibleBlur || 0, 25);
+      reasons.push('焦点微软');
+    } else if (tag.id.includes('blur') || tag.id.includes('focus')) {
       possibleBlur = Math.max(possibleBlur || 0, Math.round(tag.confidence * 100));
       reasons.push('可能模糊');
     }
   }
-  const possibleClosedEyes = result.faces.length
+  const possibleClosedEyes = hasDetectedFaces
     ? Math.min(...result.faces.map((face) => face.eye_open_score))
     : undefined;
   if (possibleClosedEyes !== undefined && possibleClosedEyes < 0.40) {
@@ -42,7 +55,11 @@ function insightFromAnalysis(
     reasons.push('未见明显问题');
   }
   const needsCheck = reasons.some(
-    (reason) => reason.includes('闭眼') || reason.includes('眼睛') || reason.includes('模糊'),
+    (reason) =>
+      reason.includes('闭眼') ||
+      reason.includes('眼睛') ||
+      reason.includes('模糊') ||
+      reason.includes('临界合焦'),
   );
   return {
     photoId,
@@ -246,13 +263,15 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
   startBackgroundAnalysis: (photos) => {
     const generation = ++analysisGeneration;
     const seen = new Set<string>();
+    const activeIndex = useAlbumStore.getState().currentIndex || 0;
     const jobs = photos
       .map((photo, index) => ({ photo, index }))
       .filter(({ photo }) => {
         if (seen.has(photo.id)) return false;
         seen.add(photo.id);
         return true;
-      });
+      })
+      .sort((a, b) => Math.abs(a.index - activeIndex) - Math.abs(b.index - activeIndex));
     set({
       isAnalyzing: jobs.length > 0,
       analysisTotal: jobs.length,
@@ -262,6 +281,7 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     if (jobs.length === 0) return;
 
     let cursor = 0;
+    let sinceLastBurstRefresh = 0;
     let pendingBatch: { photoId: string; result: PhotoAnalysisResult; isFailed: boolean }[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -275,6 +295,11 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
       pendingBatch = [];
 
       applyAnalysisBatch(batch);
+      sinceLastBurstRefresh += batch.length;
+      if (sinceLastBurstRefresh >= 32) {
+        sinceLastBurstRefresh = 0;
+        refreshBurstGroups();
+      }
       const failedCount = batch.filter((b) => b.isFailed).length;
       set((state) => ({
         analysisCompleted: state.analysisCompleted + batch.length,
@@ -283,7 +308,7 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     };
 
     const scheduleFlush = () => {
-      if (pendingBatch.length >= 8) {
+      if (pendingBatch.length >= 12) {
         flushBatch();
       } else if (!flushTimer) {
         flushTimer = setTimeout(flushBatch, 120);
@@ -322,14 +347,18 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
       }
     };
 
-    const workers = Array.from(
-      { length: Math.min(ANALYSIS_CONCURRENCY, jobs.length) },
-      () => worker(),
-    );
-    void Promise.all(workers).then(() => {
-      flushBatch();
-      finalizeBurstGroups(generation);
-    });
+    // 适度错峰 500ms 启动后台深度分析，确保首张照片预览和视口首帧渲染享有 100% 网络带宽与线程独占
+    setTimeout(() => {
+      if (generation !== analysisGeneration) return;
+      const workers = Array.from(
+        { length: Math.min(ANALYSIS_CONCURRENCY, jobs.length) },
+        () => worker(),
+      );
+      void Promise.all(workers).then(() => {
+        flushBatch();
+        finalizeBurstGroups(generation);
+      });
+    }, 500);
   },
 
   cancelBackgroundAnalysis: () => {

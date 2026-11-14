@@ -206,20 +206,24 @@ export const Filmstrip: React.FC = () => {
     }
   }
 
-  // 视口动态加载：预加载可视范围内缩略图
+  // 视口动态加载：防抖预加载可视范围内缩略图，避免快速划动胶片栏时瞬间泛洪队列
   useEffect(() => {
     if (totalItems === 0) return;
-    const screenCenterIdx = Math.floor(
-      (scrollLeft - CONTAINER_PADDING_X + containerWidth / 2) / ITEM_TOTAL,
-    );
-    const sorted = [...visiblePhotos]
-      .sort(
-        (a, b) =>
-          Math.abs(a.filteredIndex - screenCenterIdx) - Math.abs(b.filteredIndex - screenCenterIdx),
-      )
-      .map((item) => item.photo);
+    const timer = setTimeout(() => {
+      const screenCenterIdx = Math.floor(
+        (scrollLeft - CONTAINER_PADDING_X + containerWidth / 2) / ITEM_TOTAL,
+      );
+      const sorted = [...visiblePhotos]
+        .sort(
+          (a, b) =>
+            Math.abs(a.filteredIndex - screenCenterIdx) - Math.abs(b.filteredIndex - screenCenterIdx),
+        )
+        .map((item) => item.photo);
 
-    prefetchPhotos(sorted);
+      prefetchPhotos(sorted);
+    }, 150);
+
+    return () => clearTimeout(timer);
   }, [startIdx, endIdx, totalItems, prefetchPhotos]);
 
   if (photos.length === 0) return null;

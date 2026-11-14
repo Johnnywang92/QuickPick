@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -17,6 +18,7 @@ pub const PREVIEW_CACHE_DIR_NAME: &str = "previews";
 pub const PREVIEW_CACHE_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 static ACTIVE_PREVIEW_REQUESTS: OnceLock<(Mutex<HashSet<String>>, Condvar)> = OnceLock::new();
+static PREVIEW_CACHE_WRITE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 struct PreviewRequestGuard {
     key: String,
@@ -123,9 +125,23 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
     photo_id: &str,
     photo_path: P,
 ) -> Result<(Vec<u8>, String), String> {
+    let (bytes, mime, _) = load_cached_preview_with_image(cache_root, photo_id, photo_path)?;
+    Ok((bytes, mime))
+}
+
+/// 从应用数据目录读取版本化预览缓存；若在写入缓存过程中已将图像解码到内存，则一并返回 `Option<DynamicImage>`，
+/// 避免后台分析流程对刚编码的 JPEG 字节执行二次重复解码。
+pub fn load_cached_preview_with_image<C: AsRef<Path>, P: AsRef<Path>>(
+    cache_root: C,
+    photo_id: &str,
+    photo_path: P,
+) -> Result<(Vec<u8>, String, Option<image::DynamicImage>), String> {
     let photo_path = photo_path.as_ref();
     let cache_dir = cache_root.as_ref().join(PREVIEW_CACHE_DIR_NAME);
-    fs::create_dir_all(&cache_dir).map_err(|error| format!("创建预览缓存目录失败: {error}"))?;
+    if !cache_dir.is_dir() {
+        fs::create_dir_all(&cache_dir)
+            .map_err(|error| format!("创建预览缓存目录失败: {error}"))?;
+    }
     let key = preview_cache_key(photo_id, photo_path)?;
     let _request_guard = PreviewRequestGuard::acquire(&key)?;
 
@@ -140,7 +156,7 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
                 "ppm" => "image/x-portable-pixmap",
                 _ => "image/jpeg",
             };
-            return Ok((bytes, mime.to_string()));
+            return Ok((bytes, mime.to_string(), None));
         }
     }
 
@@ -151,7 +167,8 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
 
     // 对高分辨率大图 (如数十兆机内 JPEG) 或具有 EXIF 旋转标记的照片，在写入本地缓存前自动校正方向并等比规范化至 2K (max edge 2048px)。
     // 这消除向前端 IPC 传输数十兆 Base64 的严重卡顿，同时保证相机竖拍照片在 Pixi 视口及分析中方向正确。
-    let (bytes_to_cache, mime_to_cache) = if orientation > 1 || bytes.len() > 1_000_000 {
+    let (bytes_to_cache, mime_to_cache, decoded_img) = if orientation > 1 || bytes.len() > 1_000_000
+    {
         if let Ok(mut img) = image::load_from_memory(&bytes) {
             if orientation > 1 {
                 img = crate::engine::exif::apply_orientation(img, orientation);
@@ -173,24 +190,20 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
                 .write_to(&mut cursor, image::ImageFormat::Jpeg)
                 .is_ok()
             {
-                (jpeg_buf, "image/jpeg".to_string())
+                (jpeg_buf, "image/jpeg".to_string(), Some(final_img))
             } else {
-                (bytes, mime)
+                (bytes, mime, Some(final_img))
             }
         } else {
-            (bytes, mime)
+            (bytes, mime, None)
         }
     } else {
-        (bytes, mime)
+        (bytes, mime, None)
     };
 
     let destination = cache_dir.join(format!("{key}.{}", preview_cache_extension(&mime_to_cache)));
     let temporary = cache_dir.join(format!(".{key}.{}.tmp", uuid::Uuid::new_v4()));
-    let mut file = fs::File::create(&temporary)
-        .map_err(|error| format!("创建预览缓存临时文件失败: {error}"))?;
-    use std::io::Write;
-    file.write_all(&bytes_to_cache)
-        .and_then(|_| file.sync_all())
+    fs::write(&temporary, &bytes_to_cache)
         .map_err(|error| format!("写入预览缓存失败: {error}"))?;
     if let Err(error) = fs::rename(&temporary, &destination) {
         let _ = fs::remove_file(&temporary);
@@ -198,8 +211,11 @@ pub fn load_cached_preview<C: AsRef<Path>, P: AsRef<Path>>(
             return Err(format!("提交预览缓存失败: {error}"));
         }
     }
-    let _ = prune_preview_cache(&cache_dir);
-    Ok((bytes_to_cache, mime_to_cache))
+    let write_idx = PREVIEW_CACHE_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    if write_idx.is_multiple_of(64) {
+        let _ = prune_preview_cache(&cache_dir);
+    }
+    Ok((bytes_to_cache, mime_to_cache, decoded_img))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

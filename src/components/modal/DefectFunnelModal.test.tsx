@@ -115,4 +115,56 @@ describe('DefectFunnelModal component', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(mockOnClose).toHaveBeenCalled();
   });
+
+  it('never classifies a photo with no people (faces: []) as blink', () => {
+    useAlbumStore.setState({
+      photos: [
+        {
+          id: 'cat-photo',
+          filename: 'CAT_0001.JPG',
+          path: '/photos/CAT_0001.JPG',
+          fileSize: 1024,
+          format: 'jpeg',
+          isRaw: false,
+          faces: [], // 明确无人脸
+          sharpness: 85,
+        },
+      ],
+      currentIndex: 0,
+    });
+    useInsightStore.setState({
+      insights: {
+        'cat-photo': {
+          photoId: 'cat-photo',
+          analysisStatus: 'needs_check',
+          possibleClosedEyes: 0.12,
+          reasons: ['可能闭眼'],
+        },
+      },
+    });
+
+    render(<DefectFunnelModal onClose={mockOnClose} />);
+
+    expect(screen.queryByText('CAT_0001.JPG')).not.toBeInTheDocument();
+    expect(screen.getByText('太棒了！当前分类下无明显废片')).toBeInTheDocument();
+  });
+
+  it('opens full-photo zoom preview inside the modal when clicking a photo or 检视 button', () => {
+    render(<DefectFunnelModal onClose={mockOnClose} />);
+
+    // Click on the photo card / thumbnail to zoom in-place
+    const thumb = screen.getByTestId('funnel-thumb-photo-2');
+    expect(thumb.className).toContain('aspect-[4/3]');
+    fireEvent.click(thumb);
+
+    // Full preview overlay should appear inside the modal without calling onClose
+    expect(screen.getByTestId('funnel-full-preview')).toBeInTheDocument();
+    expect(screen.getByText('关闭全片')).toBeInTheDocument();
+    expect(mockOnClose).not.toHaveBeenCalled();
+
+    // Pressing Escape closes the full-photo overlay first, keeping the modal open
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('funnel-full-preview')).not.toBeInTheDocument();
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
 });

@@ -4,7 +4,7 @@ import { Camera, ChevronDown, ChevronUp } from 'lucide-react';
 import { isDisplayP3Supported } from '../../utils/colorSpace';
 
 export const PhotoInfoHud: React.FC = () => {
-  const { photos, currentIndex, scenes, setScenesModalOpen } = useAlbumStore();
+  const { photos, currentIndex } = useAlbumStore();
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -12,10 +12,6 @@ export const PhotoInfoHud: React.FC = () => {
   if (!currentPhoto) return null;
 
   const exif = currentPhoto.exif;
-
-  const currentScene = scenes.find(
-    (s) => currentIndex >= s.startIndex && currentIndex <= s.endIndex,
-  );
 
   const cameraDisplay = [exif?.camera_make, exif?.camera_model].filter(Boolean).join(' ');
   const lensDisplay = exif?.lens_model || exif?.lens_make;
@@ -55,17 +51,6 @@ export const PhotoInfoHud: React.FC = () => {
               : ''}
             {' · 非完整 RAW 像素'}
           </span>
-        )}
-
-        {currentScene && (
-          <button
-            onClick={() => setScenesModalOpen(true)}
-            className="text-[9px] px-1.5 py-0.2 rounded font-sans font-medium flex items-center space-x-1 cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ backgroundColor: `${currentScene.color}25`, color: currentScene.color }}
-            title={`所属场景：${currentScene.name} (点击打开场景管理)`}
-          >
-            <span>{currentScene.name}</span>
-          </button>
         )}
 
         {burstPhotos.length > 1 && (

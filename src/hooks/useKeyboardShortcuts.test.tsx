@@ -96,6 +96,19 @@ describe('useKeyboardShortcuts', () => {
     expect(prevPhoto).toHaveBeenCalledTimes(1);
   });
 
+  it('marks current photo as skipped and advances to next photo on N key', () => {
+    const setSkipped = vi.fn();
+    const nextPhoto = vi.fn();
+    useSelectionStore.setState({ setSkipped });
+    useAlbumStore.setState({ nextPhoto });
+
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(window, { key: 'n' });
+    expect(setSkipped).toHaveBeenCalledWith('current');
+    expect(nextPhoto).toHaveBeenCalledTimes(1);
+  });
+
   it('toggles LUT with L key, toggles monochrome with B key, and bypasses with backslash', () => {
     useLutStore.setState({
       activeLutId: null,
