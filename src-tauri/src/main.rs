@@ -8,10 +8,10 @@ use quickpick_lib::engine::delivery::{
 };
 use quickpick_lib::engine::{load_photo_preview, scan_directory_fast};
 use quickpick_lib::libraw_ffi::get_libraw_version;
-use quickpick_lib::models::{AnalysisStatus, DefectTag, ExifMetadata, FaceInfo, PhotoItem};
+use quickpick_lib::models::{AnalysisStatus, PhotoAnalysisResult, PhotoItem};
 use quickpick_lib::project::{
-    PersistedSelection, PersistenceOutcome, ProjectPhotoInput, ProjectState, ProjectViewStateInput,
-    RecentProject, StartupHealth,
+    CachedProjectData, IncrementalSyncResult, PersistedSelection, PersistenceOutcome,
+    ProjectPhotoInput, ProjectState, ProjectViewStateInput, RecentProject, StartupHealth,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -41,18 +41,6 @@ fn get_startup_health(health: tauri::State<'_, StartupHealth>) -> StartupHealth 
 #[tauri::command]
 fn scan_folder(path: String) -> Result<Vec<PhotoItem>, String> {
     scan_directory_fast(&path)
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct PhotoAnalysisResult {
-    exif: Option<ExifMetadata>,
-    analysis_status: String,
-    defect_tags: Vec<DefectTag>,
-    faces: Vec<FaceInfo>,
-    preview_width: Option<u32>,
-    preview_height: Option<u32>,
-    phash: Option<String>,
-    sharpness: Option<f32>,
 }
 
 static ANALYSIS_MEM_CACHE: std::sync::OnceLock<Mutex<HashMap<String, PhotoAnalysisResult>>> =
@@ -230,6 +218,8 @@ fn analyze_photo_details_blocking(
             }
         }
     }
+
+    let _ = quickpick_lib::project::save_photo_analysis(app_data_dir, photo_id, &result);
 
     result
 }
@@ -637,6 +627,32 @@ fn detect_photo_faces(path: String) -> Result<Vec<quickpick_lib::models::FaceInf
     Ok(Vec::new())
 }
 
+#[tauri::command]
+async fn get_cached_project(
+    app: tauri::AppHandle,
+    folder_path: String,
+) -> Result<Option<CachedProjectData>, String> {
+    let app_data_dir = app_data_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        quickpick_lib::project::get_cached_project(&app_data_dir, &folder_path)
+    })
+    .await
+    .map_err(|e| format!("读取项目缓存任务执行失败: {e}"))?
+}
+
+#[tauri::command]
+async fn sync_folder_incremental(
+    app: tauri::AppHandle,
+    folder_path: String,
+) -> Result<IncrementalSyncResult, String> {
+    let app_data_dir = app_data_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        quickpick_lib::project::sync_folder_incremental(&app_data_dir, &folder_path)
+    })
+    .await
+    .map_err(|e| format!("增量同步任务执行失败: {e}"))?
+}
+
 fn main() {
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -655,6 +671,8 @@ fn main() {
             scan_folder,
             get_photo_preview,
             open_project,
+            get_cached_project,
+            sync_folder_incremental,
             save_selection,
             save_selections,
             mark_photo_viewed,

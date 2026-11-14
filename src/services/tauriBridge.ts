@@ -96,6 +96,17 @@ export interface RecentProject {
   source_available: boolean;
 }
 
+export interface CachedProjectResult {
+  project: ProjectState;
+  photos: PhotoItem[];
+  analyses: Record<string, PhotoAnalysisResult>;
+}
+
+export interface IncrementalSyncResult {
+  added: PhotoItem[];
+  removed_ids: string[];
+}
+
 // 检查是否在 Tauri 原生桌面环境中运行
 export const isTauri = () => {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -267,6 +278,20 @@ export async function scanFolder(folderPath: string): Promise<PhotoItem[]> {
     ];
   }
   return await invoke<PhotoItem[]>('scan_folder', { path: folderPath });
+}
+
+export async function getCachedProject(
+  folderPath: string,
+): Promise<CachedProjectResult | null> {
+  if (!isTauri()) return null;
+  return await invoke<CachedProjectResult | null>('get_cached_project', { folderPath });
+}
+
+export async function syncFolderIncremental(
+  folderPath: string,
+): Promise<IncrementalSyncResult> {
+  if (!isTauri()) return { added: [], removed_ids: [] };
+  return await invoke<IncrementalSyncResult>('sync_folder_incremental', { folderPath });
 }
 
 export async function openProjectState(

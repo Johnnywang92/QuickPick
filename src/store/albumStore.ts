@@ -20,7 +20,12 @@ import {
   ProjectViewStateInput,
   relocateProjectState,
   scanFolder as tauriScanFolder,
+  getCachedProject,
+  syncFolderIncremental,
   PhotoItem,
+  IncrementalSyncResult,
+  ProjectState,
+  PhotoAnalysisResult,
 } from '../services/tauriBridge';
 import { useSelectionStore } from './selectionStore';
 import { useInsightStore, notifyUserActive } from './insightStore';
@@ -350,6 +355,7 @@ interface AlbumStore {
 
   // Actions
   openFolder: (path: string, relocateProjectId?: string) => Promise<void>;
+  applyIncrementalChanges: (syncResult: IncrementalSyncResult) => void;
   retryOpenFolder: () => Promise<void>;
   selectIndex: (index: number) => void;
   nextPhoto: () => void;
@@ -507,43 +513,71 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
       detectedPreset: null,
     });
     try {
-      const items: PhotoItem[] = await tauriScanFolder(path);
+      let items: PhotoItem[];
+      let project: ProjectState;
+      let cachedAnalyses: Record<string, PhotoAnalysisResult> | undefined;
 
-      // 数据库将本次扫描的临时路径 ID 关联到跨重命名稳定的 photo_key。
-      const project = relocateProjectId
-        ? await relocateProjectState(relocateProjectId, path, items)
-        : await useSelectionStore.getState().openProject(path, items);
+      // 1. 如果不是重新关联项目，尝试直接读取 SQLite 本地项目缓存秒开
+      const cached = !relocateProjectId ? await getCachedProject(path) : null;
+      const isFromCache = !!(cached && cached.photos.length > 0);
+
+      if (isFromCache && cached) {
+        items = cached.photos;
+        project = cached.project;
+        cachedAnalyses = cached.analyses;
+      } else {
+        items = await tauriScanFolder(path);
+        project = relocateProjectId
+          ? await relocateProjectState(relocateProjectId, path, items)
+          : await useSelectionStore.getState().openProject(path, items);
+      }
+
       const mappedItems = items.map((item) => ({
         ...item,
-        id: project.photo_id_remaps[item.id] || item.id,
+        id: project.photo_id_remaps?.[item.id] || item.id,
       }));
 
       // 转换为面向普通用户的 LocalPhoto 实体与 PhotoInsight 实体
-      const localPhotos: LocalPhoto[] = withUpdatedBurstGroups(mappedItems.map((it) => ({
-        id: it.id,
-        path: it.path,
-        filename: it.filename,
-        fileSize: it.file_size,
-        format: it.is_raw ? 'raw' : it.filename.toLowerCase().endsWith('.png') ? 'png' : 'jpeg',
-        isRaw: it.is_raw,
-        previewWidth: it.thumb_width,
-        previewHeight: it.thumb_height,
-        capturedAt: it.exif?.date_time_original,
-        burstGroupId: it.burst_group_id,
-        faces: [],
-        exif: it.exif,
-      })));
+      const localPhotos: LocalPhoto[] = withUpdatedBurstGroups(mappedItems.map((it) => {
+        const cachedAnalysis = cachedAnalyses ? cachedAnalyses[it.id] : undefined;
+        return {
+          id: it.id,
+          path: it.path,
+          filename: it.filename,
+          fileSize: it.file_size,
+          format: it.is_raw ? 'raw' : it.filename.toLowerCase().endsWith('.png') ? 'png' : 'jpeg',
+          isRaw: it.is_raw,
+          previewWidth: cachedAnalysis?.preview_width ?? it.thumb_width,
+          previewHeight: cachedAnalysis?.preview_height ?? it.thumb_height,
+          capturedAt: cachedAnalysis?.exif?.date_time_original ?? it.exif?.date_time_original,
+          burstGroupId: it.burst_group_id,
+          faces: cachedAnalysis?.faces ?? [],
+          exif: cachedAnalysis?.exif ?? it.exif,
+          phash: cachedAnalysis?.phash ?? undefined,
+          sharpness: cachedAnalysis?.sharpness ?? undefined,
+        };
+      }));
 
       const photoIds = localPhotos.map((p) => p.id);
       useSelectionStore.getState().initSelections(project, photoIds);
 
       // 初始化与用户选择相互独立的本地分析提示
-      useInsightStore.getState().initInsightsFromItems(
-        mappedItems.map((item, index) => ({
-          ...item,
-          burst_group_id: localPhotos[index].burstGroupId,
-        })),
-      );
+      if (isFromCache && cachedAnalyses) {
+        useInsightStore.getState().initInsightsWithCachedAnalyses(
+          mappedItems.map((item, index) => ({
+            ...item,
+            burst_group_id: localPhotos[index].burstGroupId,
+          })),
+          cachedAnalyses,
+        );
+      } else {
+        useInsightStore.getState().initInsightsFromItems(
+          mappedItems.map((item, index) => ({
+            ...item,
+            burst_group_id: localPhotos[index].burstGroupId,
+          })),
+        );
+      }
 
       // 自动推断最贴切的故事线模板
       const detected = detectOptimalPreset(path, localPhotos);
@@ -600,7 +634,20 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         const currentPhoto = localPhotos[currentIndex];
         useSelectionStore.getState().markAsViewed(currentPhoto.id);
         usePreviewStore.getState().loadPreviewForCurrent(currentPhoto, localPhotos);
-        useInsightStore.getState().startBackgroundAnalysis(localPhotos);
+        useInsightStore.getState().startBackgroundAnalysis(localPhotos, isFromCache);
+      }
+
+      // 若从本地缓存秒开，在后台静默发起增量同步与增量检查，绝不阻塞前端界面
+      if (isFromCache) {
+        syncFolderIncremental(path)
+          .then((syncResult) => {
+            if (syncResult && (syncResult.added.length > 0 || syncResult.removed_ids.length > 0)) {
+              get().applyIncrementalChanges(syncResult);
+            }
+          })
+          .catch((err) => {
+            console.warn('增量同步失败:', err);
+          });
       }
 
       try {
@@ -623,6 +670,72 @@ export const useAlbumStore = create<AlbumStore>((set, get) => ({
         failedFolderPath: path,
         scanError: `无法打开照片文件夹：${e instanceof Error ? e.message : String(e)}`,
       });
+    }
+  },
+
+  applyIncrementalChanges: (syncResult: IncrementalSyncResult) => {
+    const { added, removed_ids } = syncResult;
+    if (added.length === 0 && removed_ids.length === 0) return;
+
+    const removedSet = new Set(removed_ids);
+    let currentPhotos = get().photos;
+    if (removedSet.size > 0) {
+      currentPhotos = currentPhotos.filter((p) => !removedSet.has(p.id));
+    }
+
+    let newlyAddedPhotos: LocalPhoto[] = [];
+    if (added.length > 0) {
+      newlyAddedPhotos = added.map((it) => ({
+        id: it.id,
+        path: it.path,
+        filename: it.filename,
+        fileSize: it.file_size,
+        format: it.is_raw ? 'raw' : it.filename.toLowerCase().endsWith('.png') ? 'png' : 'jpeg',
+        isRaw: it.is_raw,
+        previewWidth: it.thumb_width,
+        previewHeight: it.thumb_height,
+        capturedAt: it.exif?.date_time_original,
+        burstGroupId: it.burst_group_id,
+        faces: [],
+        exif: it.exif,
+      }));
+
+      // 注册到 insightStore 待分析
+      useInsightStore.setState((s) => {
+        const next = { ...s.insights };
+        for (const item of newlyAddedPhotos) {
+          next[item.id] = {
+            photoId: item.id,
+            analysisStatus: 'pending',
+            similarityGroupId: item.burstGroupId,
+            reasons: item.burstGroupId ? ['与其他照片相似'] : [],
+          };
+        }
+        return { insights: next };
+      });
+
+      currentPhotos = [...currentPhotos, ...newlyAddedPhotos].sort((a, b) =>
+        a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }),
+      );
+    }
+
+    const updatedPhotos = withUpdatedBurstGroups(currentPhotos);
+    const activePreset = getStorylinePreset(get().activePresetId);
+    const scenes = restoredScenes(
+      '[]',
+      updatedPhotos,
+      get().activePresetId,
+      get().targetGoal,
+      activePreset.defaultGapMinutes,
+    );
+
+    set({
+      photos: updatedPhotos,
+      scenes,
+    });
+
+    if (newlyAddedPhotos.length > 0) {
+      useInsightStore.getState().startBackgroundAnalysis(updatedPhotos, true);
     }
   },
 

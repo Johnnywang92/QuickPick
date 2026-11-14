@@ -72,4 +72,16 @@ pub struct PhotoItem {
     pub exif: Option<ExifMetadata>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhotoAnalysisResult {
+    pub exif: Option<ExifMetadata>,
+    pub analysis_status: String,
+    pub defect_tags: Vec<DefectTag>,
+    pub faces: Vec<FaceInfo>,
+    pub preview_width: Option<u32>,
+    pub preview_height: Option<u32>,
+    pub phash: Option<String>,
+    pub sharpness: Option<f32>,
+}
+
 pub use crate::rules::timeline::TimelineChapter;

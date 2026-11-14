@@ -1,4 +1,6 @@
 use crate::engine::export::{ExportOptions, ExportProgressUpdate};
+use crate::engine::{is_raw_file, scan_directory_fast};
+use crate::models::{PhotoAnalysisResult, PhotoItem};
 use rusqlite::{params, Connection, DatabaseName, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,8 +15,21 @@ const BACKUP_FILE: &str = "quickpick.backup.sqlite3";
 const SESSION_FILE: &str = "quickpick.session";
 const RECOVERY_DIR: &str = "recovery";
 const BACKUP_INTERVAL_SECS: u64 = 10;
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 const FINGERPRINT_CHUNK_SIZE: u64 = 64 * 1024;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedProjectData {
+    pub project: ProjectState,
+    pub photos: Vec<PhotoItem>,
+    pub analyses: HashMap<String, PhotoAnalysisResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IncrementalSyncResult {
+    pub added: Vec<PhotoItem>,
+    pub removed_ids: Vec<String>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProjectPhotoInput {
@@ -34,7 +49,7 @@ pub struct PersistedSelection {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectState {
     pub project_id: String,
     pub selections: Vec<PersistedSelection>,
@@ -395,7 +410,15 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                    PRIMARY KEY (job_id, item_index),
                    FOREIGN KEY (job_id) REFERENCES export_jobs(id) ON DELETE CASCADE
                  );
-                 PRAGMA user_version = 5;
+                  CREATE TABLE photo_analyses (
+                    project_id TEXT NOT NULL,
+                    photo_id TEXT NOT NULL,
+                    analysis_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, photo_id),
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                  );
+                  PRAGMA user_version = 6;
                  COMMIT;",
             )
             .map_err(|error| format!("初始化项目数据库失败: {error}"))?;
@@ -473,6 +496,24 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                  COMMIT;",
             )
             .map_err(|error| format!("升级项目数据库到版本 5 失败: {error}"))?;
+    }
+
+    if (1..=5).contains(&current_version) {
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 CREATE TABLE IF NOT EXISTS photo_analyses (
+                   project_id TEXT NOT NULL,
+                   photo_id TEXT NOT NULL,
+                   analysis_json TEXT NOT NULL,
+                   updated_at TEXT NOT NULL,
+                   PRIMARY KEY (project_id, photo_id),
+                   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                 );
+                 PRAGMA user_version = 6;
+                 COMMIT;",
+            )
+            .map_err(|error| format!("升级项目数据库到版本 6 失败: {error}"))?;
     }
 
     Ok(())
@@ -1347,6 +1388,291 @@ pub fn mark_viewed(
     })
 }
 
+pub fn get_cached_project(
+    app_data_dir: &Path,
+    source_root: &str,
+) -> Result<Option<CachedProjectData>, String> {
+    let canonical_root = match fs::canonicalize(source_root) {
+        Ok(path) => path,
+        Err(_) => return Ok(None),
+    };
+    let canonical_root_str = canonical_root.to_string_lossy().to_string();
+
+    let connection = open_connection(app_data_dir)?;
+
+    let existing_project_id: Option<String> = connection
+        .query_row(
+            "SELECT id FROM projects WHERE source_root = ?1",
+            [&canonical_root_str],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("查询已有项目失败: {e}"))?;
+
+    let Some(project_id) = existing_project_id else {
+        return Ok(None);
+    };
+
+    let photo_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM photos WHERE project_id = ?1 AND missing = 0",
+            [&project_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("查询照片数量失败: {e}"))?;
+
+    if photo_count == 0 {
+        return Ok(None);
+    }
+
+    let project_state = load_project_state(&connection, &project_id)?;
+
+    let mut analysis_stmt = connection
+        .prepare("SELECT photo_id, analysis_json FROM photo_analyses WHERE project_id = ?1")
+        .map_err(|e| format!("准备读取分析缓存失败: {e}"))?;
+    let mut analyses = HashMap::new();
+    let analysis_rows = analysis_stmt
+        .query_map([&project_id], |row| {
+            let pid: String = row.get(0)?;
+            let json_str: String = row.get(1)?;
+            Ok((pid, json_str))
+        })
+        .map_err(|e| format!("读取分析缓存失败: {e}"))?;
+
+    for row in analysis_rows {
+        if let Ok((pid, json_str)) = row {
+            if let Ok(res) = serde_json::from_str::<PhotoAnalysisResult>(&json_str) {
+                analyses.insert(pid, res);
+            }
+        }
+    }
+
+    let mut photo_stmt = connection
+        .prepare(
+            "SELECT photo_id, relative_path, filename, file_size, format, captured_at
+             FROM photos
+             WHERE project_id = ?1 AND missing = 0
+             ORDER BY filename ASC",
+        )
+        .map_err(|e| format!("准备读取照片失败: {e}"))?;
+
+    let photo_rows = photo_stmt
+        .query_map([&project_id], |row| {
+            let photo_id: String = row.get(0)?;
+            let relative_path: String = row.get(1)?;
+            let filename: String = row.get(2)?;
+            let file_size: u64 = row.get(3)?;
+            let _format: String = row.get(4)?;
+            let captured_at: Option<String> = row.get(5)?;
+            Ok((photo_id, relative_path, filename, file_size, captured_at))
+        })
+        .map_err(|e| format!("读取照片失败: {e}"))?;
+
+    let mut photos = Vec::new();
+    for row in photo_rows {
+        let (photo_id, relative_path, filename, file_size, captured_at) =
+            row.map_err(|e| format!("解析照片行失败: {e}"))?;
+        let full_path = canonical_root.join(&relative_path);
+        let is_raw = is_raw_file(&full_path);
+
+        let cached_analysis = analyses.get(&photo_id);
+        let exif = cached_analysis
+            .and_then(|a| a.exif.clone())
+            .or_else(|| {
+                captured_at.map(|date| crate::models::ExifMetadata {
+                    date_time_original: Some(date),
+                    ..Default::default()
+                })
+            });
+
+        photos.push(PhotoItem {
+            id: photo_id,
+            path: full_path.to_string_lossy().to_string(),
+            filename,
+            file_size,
+            is_raw,
+            thumb_width: cached_analysis.and_then(|a| a.preview_width),
+            thumb_height: cached_analysis.and_then(|a| a.preview_height),
+            burst_group_id: None,
+            exif,
+        });
+    }
+
+    Ok(Some(CachedProjectData {
+        project: project_state,
+        photos,
+        analyses,
+    }))
+}
+
+pub fn sync_folder_incremental(
+    app_data_dir: &Path,
+    source_root: &str,
+) -> Result<IncrementalSyncResult, String> {
+    let canonical_root = fs::canonicalize(source_root)
+        .map_err(|e| format!("无法定位照片目录: {e}"))?;
+    let canonical_root_str = canonical_root.to_string_lossy().to_string();
+
+    let mut connection = open_connection(app_data_dir)?;
+
+    let project_id: String = connection
+        .query_row(
+            "SELECT id FROM projects WHERE source_root = ?1",
+            [&canonical_root_str],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("项目尚未建立缓存: {e}"))?;
+
+    let existing_records: HashMap<String, String> = {
+        let mut stmt = connection
+            .prepare(
+                "SELECT photo_id, relative_path
+                 FROM photos
+                 WHERE project_id = ?1 AND missing = 0",
+            )
+            .map_err(|e| format!("准备读取照片列表失败: {e}"))?;
+
+        let rows = stmt
+            .query_map([&project_id], |row| {
+                let id: String = row.get(0)?;
+                let rel_path: String = row.get(1)?;
+                Ok((rel_path, id))
+            })
+            .map_err(|e| format!("查询照片列表失败: {e}"))?;
+
+        let mut map = HashMap::new();
+        for r in rows {
+            if let Ok((rel, id)) = r {
+                map.insert(rel, id);
+            }
+        }
+        map
+    };
+
+    let disk_photos = scan_directory_fast(&canonical_root)?;
+    let mut disk_relative_paths = std::collections::HashSet::new();
+    let mut new_photos_to_add = Vec::new();
+
+    for disk_item in &disk_photos {
+        let p = Path::new(&disk_item.path);
+        let rel = p
+            .strip_prefix(&canonical_root)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .to_string();
+        disk_relative_paths.insert(rel.clone());
+
+        if !existing_records.contains_key(&rel) {
+            new_photos_to_add.push((disk_item.clone(), rel));
+        }
+    }
+
+    let mut removed_ids = Vec::new();
+    for (rel_path, photo_id) in &existing_records {
+        if !disk_relative_paths.contains(rel_path) {
+            removed_ids.push(photo_id.clone());
+        }
+    }
+
+    if !removed_ids.is_empty() {
+        let tx = connection
+            .transaction()
+            .map_err(|e| format!("开启事务失败: {e}"))?;
+        for id in &removed_ids {
+            tx.execute(
+                "UPDATE photos SET missing = 1 WHERE project_id = ?1 AND photo_id = ?2",
+                params![project_id, id],
+            ).map_err(|e| format!("标记缺失照片失败: {e}"))?;
+        }
+        tx.commit().map_err(|e| format!("提交事务失败: {e}"))?;
+    }
+
+    let mut added = Vec::new();
+    if !new_photos_to_add.is_empty() {
+        let tx = connection
+            .transaction()
+            .map_err(|e| format!("开启事务失败: {e}"))?;
+
+        for (mut item, rel_path) in new_photos_to_add {
+            let stable_photo_id = format!("photo:{}", uuid::Uuid::new_v4());
+            let current_modified_nanos = modified_nanos(Path::new(&item.path)).to_string();
+            let format_str = if item.is_raw {
+                "raw".to_string()
+            } else {
+                Path::new(&item.filename)
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_lowercase()
+            };
+
+            tx.execute(
+                "INSERT INTO photos
+                   (project_id, photo_id, relative_path, filename, file_size, modified_nanos,
+                    format, captured_at, content_fingerprint, missing)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, '', 0)",
+                params![
+                    project_id,
+                    stable_photo_id,
+                    rel_path,
+                    item.filename,
+                    item.file_size,
+                    current_modified_nanos,
+                    format_str,
+                    item.exif.as_ref().and_then(|e| e.date_time_original.clone())
+                ],
+            ).map_err(|e| format!("写入新增照片失败: {e}"))?;
+
+            item.id = stable_photo_id;
+            added.push(item);
+        }
+
+        tx.execute(
+            "UPDATE projects SET updated_at = ?2 WHERE id = ?1",
+            params![project_id, now()],
+        ).map_err(|e| format!("更新项目时间失败: {e}"))?;
+
+        tx.commit().map_err(|e| format!("提交事务失败: {e}"))?;
+    }
+
+    Ok(IncrementalSyncResult { added, removed_ids })
+}
+
+pub fn save_photo_analysis(
+    app_data_dir: &Path,
+    photo_id: &str,
+    result: &PhotoAnalysisResult,
+) -> Result<(), String> {
+    if photo_id.is_empty() {
+        return Ok(());
+    }
+    let connection = open_connection(app_data_dir)?;
+    let analysis_json = serde_json::to_string(result)
+        .map_err(|e| format!("序列化图片分析结果失败: {e}"))?;
+    let timestamp = now();
+
+    let mut stmt = connection
+        .prepare("SELECT project_id FROM photos WHERE photo_id = ?1")
+        .map_err(|e| format!("准备查询项目ID失败: {e}"))?;
+    let project_ids: Vec<String> = stmt
+        .query_map([photo_id], |row| row.get(0))
+        .map_err(|e| format!("查询项目ID失败: {e}"))?
+        .filter_map(Result::ok)
+        .collect();
+
+    for pid in project_ids {
+        let _ = connection.execute(
+            "INSERT INTO photo_analyses (project_id, photo_id, analysis_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(project_id, photo_id) DO UPDATE SET
+               analysis_json = excluded.analysis_json,
+               updated_at = excluded.updated_at",
+            params![pid, photo_id, analysis_json, timestamp],
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1739,7 +2065,7 @@ mod tests {
         let version: i64 = migrated
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let (format, fingerprint, missing): (String, String, bool) = migrated
             .query_row(
                 "SELECT format, content_fingerprint, missing

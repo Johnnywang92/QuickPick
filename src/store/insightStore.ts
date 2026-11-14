@@ -178,6 +178,10 @@ interface InsightStore {
 
   // Actions
   initInsightsFromItems: (items: PhotoItem[]) => void;
+  initInsightsWithCachedAnalyses: (
+    items: PhotoItem[],
+    cachedAnalyses: Record<string, PhotoAnalysisResult>,
+  ) => void;
   getInsight: (photoId: string) => PhotoInsight | null;
   toggleFaceLoupe: () => void;
   setFaceLoupeOpen: (open: boolean) => void;
@@ -185,7 +189,7 @@ interface InsightStore {
   setFaceReviewPreset: (preset: FaceReviewPreset) => void;
   togglePinFace: (photoId: string, faceId: string) => void;
   setFaceLabel: (photoId: string, faceId: string, label: string) => void;
-  startBackgroundAnalysis: (photos: LocalPhoto[]) => void;
+  startBackgroundAnalysis: (photos: LocalPhoto[], onlyUnanalyzed?: boolean) => void;
   cancelBackgroundAnalysis: () => void;
   analyzeSinglePhoto: (photoId: string, photoPath: string, index: number) => Promise<void>;
   detectFacesForPhoto: (photoId: string, photoPath: string) => Promise<void>;
@@ -214,6 +218,30 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     });
 
     set({ insights: map });
+  },
+
+  initInsightsWithCachedAnalyses: (
+    items: PhotoItem[],
+    cachedAnalyses: Record<string, PhotoAnalysisResult>,
+  ) => {
+    const map: Record<string, PhotoInsight> = {};
+
+    items.forEach((it) => {
+      const cached = cachedAnalyses[it.id];
+      if (cached) {
+        map[it.id] = insightFromAnalysis(it.id, cached, it.burst_group_id);
+      } else {
+        map[it.id] = {
+          photoId: it.id,
+          analysisStatus: 'pending',
+          similarityGroupId: it.burst_group_id,
+          reasons: it.burst_group_id ? ['与其他照片相似'] : [],
+        };
+      }
+    });
+
+    set({ insights: map });
+    refreshBurstGroups();
   },
 
   getInsight: (photoId: string) => {
@@ -277,15 +305,20 @@ export const useInsightStore = create<InsightStore>((set, get) => ({
     }
   },
 
-  startBackgroundAnalysis: (photos) => {
+  startBackgroundAnalysis: (photos, onlyUnanalyzed = false) => {
     const generation = ++analysisGeneration;
     const seen = new Set<string>();
     const activeIndex = useAlbumStore.getState().currentIndex || 0;
+    const currentInsights = get().insights;
     const jobs = photos
       .map((photo, index) => ({ photo, index }))
       .filter(({ photo }) => {
         if (seen.has(photo.id)) return false;
         seen.add(photo.id);
+        if (onlyUnanalyzed) {
+          const status = currentInsights[photo.id]?.analysisStatus;
+          if (status && status !== 'pending') return false;
+        }
         return true;
       })
       .sort((a, b) => Math.abs(a.index - activeIndex) - Math.abs(b.index - activeIndex));
